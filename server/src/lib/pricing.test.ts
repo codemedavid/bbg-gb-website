@@ -74,6 +74,29 @@ describe('validateKahatiCommit', () => {
   });
 });
 
+describe('admin-editable kahati overrides', () => {
+  it('enforces the group buy minVials over the default 7', () => {
+    // Admin raised this kahati's minimum to 20 vials; a 7-vial commit must be rejected.
+    expect(validateKahatiCommit(7, 100, 20).ok).toBe(false);
+    expect(validateKahatiCommit(20, 100, 20).ok).toBe(true);
+  });
+  it('falls back to the default minimum when the group buy sets none', () => {
+    expect(validateKahatiCommit(KAHATI_MIN_VIALS - 1, 100).ok).toBe(false);
+    expect(validateKahatiCommit(KAHATI_MIN_VIALS, 100).ok).toBe(true);
+  });
+  it('charges the group buy repack fee over the default 150', () => {
+    expect(repackFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, repackFeePhp: 200 }])).toBe(200);
+  });
+  it('falls back to the default repack fee when the group buy sets none', () => {
+    expect(repackFeeFor([kahati(900)])).toBe(REPACK_FEE_PHP);
+  });
+  it('charges a single repack fee for a mixed cart using the edited fee', () => {
+    const t = computeTotals([product(3200), { kind: 'group_buy', unitPricePhp: 900, qty: 7, repackFeePhp: 200 }]);
+    expect(t.repackFee).toBe(200);
+    expect(t.total).toBe(3200 + 900 * 7 + SHIPPING_PHP + 200);
+  });
+});
+
 describe('soloMoqStatus', () => {
   it('flags when 10 kits + 10 BAC are met', () => {
     const s = soloMoqStatus(100, 10); // 100 vials = 10 kits
