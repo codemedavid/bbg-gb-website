@@ -64,10 +64,11 @@ ordersRouter.post('/', requireAuth, upload.single('proof'), asyncHandler(async (
       const [g] = await db.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
       if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
       if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
-      const check = validateKahatiCommit(it.qty, g.totalSlots - g.claimedSlots);
+      const check = validateKahatiCommit(it.qty, g.totalSlots - g.claimedSlots, g.minVials);
       if (!check.ok) throw new ApiError(400, check.message!);
       priced.push({
         kind: 'group_buy', unitPricePhp: perVialPrice(Number(g.pricePerKitPhp)), qty: it.qty,
+        repackFeePhp: Number(g.repackFeePhp),
         nameSnapshot: `${g.name} — kahati`, specSnapshot: `Kahati · min ${g.minVials} vials`, groupBuyId: g.id,
       });
     }

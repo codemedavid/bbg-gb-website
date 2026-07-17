@@ -13,6 +13,8 @@ export type PriceableItem = {
   kind: 'product' | 'group_buy';
   unitPricePhp: number;
   qty: number;
+  // Kahati items carry the group buy's own admin-editable repack fee; omitted means REPACK_FEE_PHP.
+  repackFeePhp?: number;
 };
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -31,8 +33,12 @@ export function subtotal(items: PriceableItem[]): number {
 export function shippingFor(items: PriceableItem[]): number {
   return hasSolo(items) ? SHIPPING_PHP : 0;
 }
+// One repack fee per order. When a cart joins several kahatis, the highest fee applies.
 export function repackFeeFor(items: PriceableItem[]): number {
-  return hasKahati(items) ? REPACK_FEE_PHP : 0;
+  const fees = items
+    .filter((i) => i.kind === 'group_buy')
+    .map((i) => i.repackFeePhp ?? REPACK_FEE_PHP);
+  return fees.length ? round2(Math.max(...fees)) : 0;
 }
 
 export type OrderTotals = {
@@ -63,9 +69,14 @@ export function perVialPrice(pricePerKitPhp: number): number {
 }
 
 // Validate a kahati commitment against min vials and remaining slots.
-export function validateKahatiCommit(qty: number, remainingSlots: number): { ok: boolean; message?: string } {
-  if (!Number.isInteger(qty) || qty < KAHATI_MIN_VIALS) {
-    return { ok: false, message: `Minimum kahati commitment is ${KAHATI_MIN_VIALS} vials.` };
+// minVials comes from the group buy (admin-editable); falls back to KAHATI_MIN_VIALS.
+export function validateKahatiCommit(
+  qty: number,
+  remainingSlots: number,
+  minVials: number = KAHATI_MIN_VIALS,
+): { ok: boolean; message?: string } {
+  if (!Number.isInteger(qty) || qty < minVials) {
+    return { ok: false, message: `Minimum kahati commitment is ${minVials} vials.` };
   }
   if (qty > remainingSlots) {
     return { ok: false, message: `Only ${remainingSlots} vials left in this kahati.` };
