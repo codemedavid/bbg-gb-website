@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeTotals, subtotal, shippingFor, repackFeeFor, perVialPrice,
-  validateKahatiCommit, soloMoqStatus, hasSolo, hasKahati,
-  SHIPPING_PHP, REPACK_FEE_PHP, KAHATI_MIN_VIALS, type PriceableItem,
+  validateKahatiCommit, soloMoqStatus, hasSolo, hasKahati, hasGroupBuy,
+  validateGroupBuyCommit, groupBuyMoqStatus, validateSoloCheckout,
+  SHIPPING_PHP, REPACK_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS,
+  type PriceableItem,
 } from './pricing';
 
 const product = (price: number, qty = 1): PriceableItem => ({ kind: 'product', unitPricePhp: price, qty });
 const kahati = (price: number, qty = 7): PriceableItem => ({ kind: 'group_buy', unitPricePhp: price, qty });
+const moq = (price: number, qty = 1): PriceableItem => ({ kind: 'moq_campaign', unitPricePhp: price, qty });
 
 describe('subtotal', () => {
   it('sums unit price times qty', () => {
@@ -94,6 +97,62 @@ describe('admin-editable kahati overrides', () => {
     const t = computeTotals([product(3200), { kind: 'group_buy', unitPricePhp: 900, qty: 7, repackFeePhp: 200 }]);
     expect(t.repackFee).toBe(200);
     expect(t.total).toBe(3200 + 900 * 7 + SHIPPING_PHP + 200);
+  });
+});
+
+describe('group buy (MOQ) mode', () => {
+  it('charges LBC shipping for a group-buy campaign order, no repack fee', () => {
+    expect(hasGroupBuy([moq(10400)])).toBe(true);
+    expect(shippingFor([moq(10400)])).toBe(SHIPPING_PHP);
+    expect(repackFeeFor([moq(10400)])).toBe(0);
+  });
+  it('labels a group-buy-only cart as group_buy', () => {
+    expect(computeTotals([moq(10400, 2)])).toMatchObject({
+      subtotal: 20800, shipping: SHIPPING_PHP, repackFee: 0, total: 20800 + SHIPPING_PHP, buyType: 'group_buy',
+    });
+  });
+});
+
+describe('validateGroupBuyCommit', () => {
+  it('rejects below the per-customer minimum', () => {
+    expect(validateGroupBuyCommit(GROUP_BUY_MIN_KITS - 1).ok).toBe(false);
+  });
+  it('accepts a commitment at or above the minimum', () => {
+    expect(validateGroupBuyCommit(GROUP_BUY_MIN_KITS).ok).toBe(true);
+    expect(validateGroupBuyCommit(5).ok).toBe(true);
+  });
+  it('honours a campaign-specific per-customer minimum', () => {
+    expect(validateGroupBuyCommit(2, 3).ok).toBe(false);
+    expect(validateGroupBuyCommit(3, 3).ok).toBe(true);
+  });
+  it('rejects non-integer commitments', () => {
+    expect(validateGroupBuyCommit(2.5).ok).toBe(false);
+  });
+});
+
+describe('groupBuyMoqStatus', () => {
+  it('reports progress and not-yet-reached below MOQ', () => {
+    const s = groupBuyMoqStatus(6, 10);
+    expect(s.reached).toBe(false);
+    expect(s.remaining).toBe(4);
+    expect(s.progress).toBeCloseTo(0.6);
+  });
+  it('reports reached at or above MOQ and caps progress at 1', () => {
+    const s = groupBuyMoqStatus(12, 10);
+    expect(s.reached).toBe(true);
+    expect(s.remaining).toBe(0);
+    expect(s.progress).toBe(1);
+  });
+});
+
+describe('validateSoloCheckout', () => {
+  it('blocks checkout below 10 kits + 10 BAC', () => {
+    expect(validateSoloCheckout(50, 3).ok).toBe(false);
+    expect(validateSoloCheckout(100, 3).ok).toBe(false);
+    expect(validateSoloCheckout(50, 10).ok).toBe(false);
+  });
+  it('allows checkout once both minimums are met', () => {
+    expect(validateSoloCheckout(100, 10).ok).toBe(true);
   });
 });
 
