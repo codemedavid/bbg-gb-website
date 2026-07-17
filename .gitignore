@@ -11,3 +11,7 @@ server/.pglite/
 .vercel
 .tsbuildinfo
 *.tsbuildinfo
+_archive_*/
+.next/
+.pglite/
+uploads/
