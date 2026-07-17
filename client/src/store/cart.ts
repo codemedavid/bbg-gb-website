@@ -9,7 +9,8 @@ export type CartItem = {
   spec: string;
   unitPricePhp: number;
   qty: number;
-  minQty: number;                 // 1 for products, 7 for kahati
+  minQty: number;                 // 1 for products, the group buy's minVials for kahati
+  repackFeePhp?: number;          // kahati only — the group buy's admin-editable fee
 };
 
 type CartState = {
@@ -61,4 +62,10 @@ export const useCart = create<CartState>()(
 export const SHIPPING_PHP = 180;
 export const REPACK_FEE_PHP = 150;
 export const shippingFor = (hasSolo: boolean) => (hasSolo ? SHIPPING_PHP : 0);
-export const repackFor = (hasKahati: boolean) => (hasKahati ? REPACK_FEE_PHP : 0);
+
+// Mirrors server/src/lib/pricing.ts: one repack fee per order, highest applies
+// across kahati items. Carts persisted before repackFeePhp existed fall back to the default.
+export const repackFor = (items: CartItem[]) => {
+  const fees = items.filter((i) => i.kind === 'group_buy').map((i) => i.repackFeePhp ?? REPACK_FEE_PHP);
+  return fees.length ? Math.max(...fees) : 0;
+};

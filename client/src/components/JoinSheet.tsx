@@ -11,7 +11,7 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
 
   const clamp = (n: number) => Math.min(g.remaining, Math.max(g.minVials, n));
   const confirm = () => {
-    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, qty });
+    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, repackFeePhp: Number(g.repackFeePhp), qty });
     toast('Kahati claimed! Nasa cart na.');
     onClose();
   };

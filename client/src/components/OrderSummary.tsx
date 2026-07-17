@@ -2,11 +2,12 @@ import { php } from '../lib/format';
 import { useCart, shippingFor, repackFor } from '../store/cart';
 
 export function useOrderTotals() {
+  const items = useCart((s) => s.items);
   const subtotal = useCart((s) => s.subtotal());
   const hasSolo = useCart((s) => s.hasSolo());
   const hasKahati = useCart((s) => s.hasKahati());
   const shipping = shippingFor(hasSolo);
-  const repack = repackFor(hasKahati);
+  const repack = repackFor(items);
   return { subtotal, shipping, repack, total: subtotal + shipping + repack, hasSolo, hasKahati };
 }
 
