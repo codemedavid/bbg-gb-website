@@ -1,0 +1,17 @@
+{
+  "name": "bbg-peptides",
+  "private": true,
+  "version": "1.0.0",
+  "description": "BBG Peptides — group-buy e-commerce (React + Express + Supabase Postgres, deploys to Vercel)",
+  "scripts": {
+    "dev": "concurrently -n server,client -c green,blue \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "db:push": "npm run db:push --prefix server",
+    "db:seed": "npm run db:seed --prefix server",
+    "db:setup": "npm run db:push --prefix server && npm run db:seed --prefix server",
+    "test": "npm run test --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

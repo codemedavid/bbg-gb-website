@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.local
+server/.env
+server/uploads/
+server/email-log/
+server/.pglite/
+*.log
+.DS_Store
+.vercel
+.tsbuildinfo
+*.tsbuildinfo
