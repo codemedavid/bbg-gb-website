@@ -17,10 +17,10 @@ async function init(): Promise<DB> {
     _close = () => client.end();
     _db = drizzle(client, { schema }) as unknown as DB;
   } else {
-    // Dev fallback: embedded Postgres (PGlite) persisted at ./.pglite
+    // Dev fallback: embedded Postgres (PGlite), persisted at env.pglitePath.
     const { drizzle } = await import('drizzle-orm/pglite');
     const { PGlite } = await import('@electric-sql/pglite');
-    const client = new PGlite('./.pglite');
+    const client = new PGlite(env.pglitePath);
     _close = async () => { await client.close(); };
     _db = drizzle(client, { schema }) as unknown as DB;
   }

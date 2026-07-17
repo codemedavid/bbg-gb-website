@@ -1,8 +1,12 @@
 import {
   pgTable, uuid, text, varchar, integer, numeric, boolean,
-  timestamp, jsonb, pgEnum, index,
+  timestamp, jsonb, pgEnum, index, pgSequence,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
+
+// Order numbers come from a sequence so concurrent checkouts can never collide.
+// Starts at 2418 to continue the existing BBG-#### series.
+export const orderNoSeq = pgSequence('order_no_seq', { startWith: 2418 });
 
 // ---- Enums -------------------------------------------------------------
 export const roleEnum = pgEnum('user_role', ['customer', 'admin']);
