@@ -3,8 +3,6 @@ import 'dotenv/config';
 export const env = {
   // Empty => local embedded Postgres (PGlite) for dev/verification.
   databaseUrl: process.env.DATABASE_URL || '',
-  // Where PGlite persists when databaseUrl is empty. Tests use 'memory://'.
-  pglitePath: process.env.PGLITE_PATH || './.pglite',
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret-change-me',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',

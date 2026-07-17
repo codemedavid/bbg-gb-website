@@ -16,7 +16,7 @@ if (env.databaseUrl) {
   // Dev fallback: embedded Postgres (PGlite), persisted under server/.pglite.
   const { drizzle } = await import('drizzle-orm/pglite');
   const { PGlite } = await import('@electric-sql/pglite');
-  const client = new PGlite('./.pglite');
+  const client = new PGlite(env.pglitePath);
   db = drizzle(client, { schema }) as unknown as PgDatabase<any, typeof schema>;
   closeDb = async () => { await client.close(); };
 }
