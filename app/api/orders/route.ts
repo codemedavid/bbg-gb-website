@@ -26,6 +26,16 @@ const checkoutSchema = z.object({
 
 type Priced = PriceableItem & { nameSnapshot: string; specSnapshot: string; productId?: string; groupBuyId?: string };
 
+// Order numbers come from a Postgres sequence: nextval is atomic, so concurrent
+// checkouts can never derive the same BBG-#### the way a count(*) would.
+type Executor = { execute: (query: any) => Promise<unknown> };
+async function nextOrderNo(tx: Executor): Promise<string> {
+  const result = await tx.execute(sql`select nextval('order_no_seq')::int as n`);
+  // postgres-js returns the rows array; PGlite returns { rows }.
+  const rows = (Array.isArray(result) ? result : (result as { rows: unknown[] }).rows) as { n: number }[];
+  return `BBG-${rows[0].n}`;
+}
+
 export const POST = handler(async (req: Request) => {
   const session = await requireSession();
   const form = await req.formData();
@@ -43,57 +53,90 @@ export const POST = handler(async (req: Request) => {
 
   const db = await getDb();
 
-  // Re-price server-side; never trust client prices.
-  const priced: Priced[] = [];
-  for (const it of body.items) {
-    if (it.kind === 'product') {
-      const [p] = await db.select().from(products).where(and(eq(products.id, it.refId), eq(products.isActive, true)));
-      if (!p) throw new ApiError(400, `Product not available: ${it.refId}`);
-      priced.push({ kind: 'product', unitPricePhp: Number(p.pricePhp), qty: it.qty, nameSnapshot: `${p.name} ${p.spec}`, specSnapshot: p.spec, productId: p.id });
-    } else {
-      const [g] = await db.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
-      if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
-      if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
-      const check = validateKahatiCommit(it.qty, g.totalSlots - g.claimedSlots);
-      if (!check.ok) throw new ApiError(400, check.message!);
-      priced.push({ kind: 'group_buy', unitPricePhp: perVialPrice(Number(g.pricePerKitPhp)), qty: it.qty, nameSnapshot: `${g.name} — kahati`, specSnapshot: `Kahati · min ${g.minVials} vials`, groupBuyId: g.id });
-    }
-  }
-
-  const totals = computeTotals(priced);
-  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(orders);
-  const orderNo = `BBG-${2418 + Number(count)}`;
-
+  // Store the proof before opening the transaction — it is an external side effect.
+  // A rolled-back order leaves an orphaned object, which is harmless.
   const ext = (proof.name.split('.').pop() || 'bin').toLowerCase();
-  const proofKey = `${orderNo}/${randomUUID()}.${ext}`;
+  const proofKey = `${randomUUID()}.${ext}`;
   await putFile(BUCKETS.proofs, proofKey, Buffer.from(await proof.arrayBuffer()), proof.type);
 
-  const [order] = await db.insert(orders).values({
-    orderNo, userId: session.sub, status: 'proof_review', buyType: totals.buyType,
-    subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
-    repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
-    shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
-    paymentProofKey: proofKey,
-  }).returning();
+  // Everything touching inventory runs in one transaction, so a failure part-way
+  // through cannot leave claimed kahati slots or decremented stock behind.
+  const { order, orderNo, totals } = await db.transaction(async (tx) => {
+    // Re-price server-side; never trust client prices.
+    const priced: Priced[] = [];
+    for (const it of body.items) {
+      if (it.kind === 'product') {
+        const [p] = await tx.select().from(products).where(and(eq(products.id, it.refId), eq(products.isActive, true)));
+        if (!p) throw new ApiError(400, `Product not available: ${it.refId}`);
+        priced.push({ kind: 'product', unitPricePhp: Number(p.pricePhp), qty: it.qty, nameSnapshot: `${p.name} ${p.spec}`, specSnapshot: p.spec, productId: p.id });
+      } else {
+        const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
+        if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
+        if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
+        // Honour this group buy's admin-editable minimum, not just the global default.
+        const check = validateKahatiCommit(it.qty, g.totalSlots - g.claimedSlots, g.minVials);
+        if (!check.ok) throw new ApiError(400, check.message!);
 
-  await db.insert(orderItems).values(priced.map((p) => ({
-    orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,
-    nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,
-    unitPricePhp: String(p.unitPricePhp), qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),
-  })));
-  await db.insert(orderStatusHistory).values({ orderId: order.id, status: 'proof_review', note: 'Order placed' });
+        // Claim the slots atomically. The guard lives in the UPDATE itself, so two
+        // concurrent commits cannot both pass a stale remaining-slots check and oversell.
+        const [claimed] = await tx.update(groupBuys)
+          .set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${it.qty}` })
+          .where(and(
+            eq(groupBuys.id, g.id),
+            eq(groupBuys.status, 'open'),
+            sql`${groupBuys.claimedSlots} + ${it.qty} <= ${groupBuys.totalSlots}`,
+          ))
+          .returning({ claimedSlots: groupBuys.claimedSlots });
+        if (!claimed) {
+          const [fresh] = await tx.select({ remaining: sql<number>`${groupBuys.totalSlots} - ${groupBuys.claimedSlots}` })
+            .from(groupBuys).where(eq(groupBuys.id, g.id));
+          throw new ApiError(400, `Only ${Math.max(fresh?.remaining ?? 0, 0)} vials left in this kahati.`);
+        }
 
-  for (const p of priced) {
-    if (p.kind === 'product' && p.productId) {
-      await db.update(products).set({
-        soldCount: sql`${products.soldCount} + ${p.qty}`,
-        stock: sql`GREATEST(${products.stock} - ${p.qty}, 0)`,
-      }).where(eq(products.id, p.productId));
-    } else if (p.groupBuyId) {
-      await db.update(groupBuys).set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${p.qty}` }).where(eq(groupBuys.id, p.groupBuyId));
+        priced.push({
+          kind: 'group_buy',
+          unitPricePhp: perVialPrice(Number(g.pricePerKitPhp)),
+          qty: it.qty,
+          repackFeePhp: Number(g.repackFeePhp), // admin-editable per group buy
+          nameSnapshot: `${g.name} — kahati`,
+          specSnapshot: `Kahati · min ${g.minVials} vials`,
+          groupBuyId: g.id,
+        });
+      }
     }
-  }
 
+    const totals = computeTotals(priced);
+    const orderNo = await nextOrderNo(tx);
+
+    const [order] = await tx.insert(orders).values({
+      orderNo, userId: session.sub, status: 'proof_review', buyType: totals.buyType,
+      subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
+      repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
+      shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
+      paymentProofKey: proofKey,
+    }).returning();
+
+    await tx.insert(orderItems).values(priced.map((p) => ({
+      orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,
+      nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,
+      unitPricePhp: String(p.unitPricePhp), qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),
+    })));
+    await tx.insert(orderStatusHistory).values({ orderId: order.id, status: 'proof_review', note: 'Order placed' });
+
+    // Solo inventory counters. Kahati slots were already claimed above.
+    for (const p of priced) {
+      if (p.kind === 'product' && p.productId) {
+        await tx.update(products).set({
+          soldCount: sql`${products.soldCount} + ${p.qty}`,
+          stock: sql`GREATEST(${products.stock} - ${p.qty}, 0)`,
+        }).where(eq(products.id, p.productId));
+      }
+    }
+
+    return { order, orderNo, totals };
+  });
+
+  // Email only after the transaction commits — never notify about a rolled-back order.
   await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total }), kind: 'order_placed' });
   return ok({ order, orderNo, totals }, 201);
 });
