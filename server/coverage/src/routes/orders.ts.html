@@ -1,0 +1,523 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/routes/orders.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../prettify.css" />
+    <link rel="stylesheet" href="../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/routes</a> orders.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/146</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/1</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/1</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/146</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js"><span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >import { Router } from 'express';</span></span></span>
+<span class="cstat-no" title="statement not covered" >import multer from 'multer';</span>
+<span class="cstat-no" title="statement not covered" >import { z } from 'zod';</span>
+<span class="cstat-no" title="statement not covered" >import { and, desc, eq, sql } from 'drizzle-orm';</span>
+<span class="cstat-no" title="statement not covered" >import { randomUUID } from 'node:crypto';</span>
+<span class="cstat-no" title="statement not covered" >import {</span>
+<span class="cstat-no" title="statement not covered" >  db, orders, orderItems, orderStatusHistory, products, groupBuys, users,</span>
+<span class="cstat-no" title="statement not covered" >} from '../db/index.js';</span>
+<span class="cstat-no" title="statement not covered" >import { asyncHandler, ok, ApiError } from '../lib/http.js';</span>
+<span class="cstat-no" title="statement not covered" >import { requireAuth } from '../middleware/auth.js';</span>
+<span class="cstat-no" title="statement not covered" >import {</span>
+<span class="cstat-no" title="statement not covered" >  computeTotals, perVialPrice, validateKahatiCommit, round2, type PriceableItem,</span>
+<span class="cstat-no" title="statement not covered" >} from '../lib/pricing.js';</span>
+<span class="cstat-no" title="statement not covered" >import { putFile, signedUrl } from '../lib/storage.js';</span>
+<span class="cstat-no" title="statement not covered" >import { BUCKETS } from '../lib/env.js';</span>
+<span class="cstat-no" title="statement not covered" >import { sendEmail, orderPlacedEmail } from '../services/email.js';</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >export const ordersRouter = Router();</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >const upload = multer({</span>
+<span class="cstat-no" title="statement not covered" >  storage: multer.memoryStorage(),</span>
+<span class="cstat-no" title="statement not covered" >  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB</span>
+<span class="cstat-no" title="statement not covered" >  fileFilter: (_req, file, cb) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    const okType = /^(image\/(jpe?g|png|webp|heic)|application\/pdf)$/.test(file.mimetype);</span>
+<span class="cstat-no" title="statement not covered" >    if (!okType) return cb(new ApiError(400, 'Proof must be an image or PDF.'));</span>
+<span class="cstat-no" title="statement not covered" >    cb(null, true);</span>
+<span class="cstat-no" title="statement not covered" >  },</span>
+<span class="cstat-no" title="statement not covered" >});</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >const itemSchema = z.object({</span>
+<span class="cstat-no" title="statement not covered" >  kind: z.enum(['product', 'group_buy']),</span>
+<span class="cstat-no" title="statement not covered" >  refId: z.string().uuid(),</span>
+<span class="cstat-no" title="statement not covered" >  qty: z.number().int().positive().max(9999),</span>
+<span class="cstat-no" title="statement not covered" >});</span>
+<span class="cstat-no" title="statement not covered" >const checkoutSchema = z.object({</span>
+<span class="cstat-no" title="statement not covered" >  items: z.array(itemSchema).min(1),</span>
+<span class="cstat-no" title="statement not covered" >  shipName: z.string().min(2).max(120),</span>
+<span class="cstat-no" title="statement not covered" >  shipPhone: z.string().min(7).max(40),</span>
+<span class="cstat-no" title="statement not covered" >  shipAddress: z.string().min(5).max(500),</span>
+<span class="cstat-no" title="statement not covered" >});</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >async function nextOrderNo(): Promise&lt;string&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  const [{ count }] = await db.select({ count: sql&lt;number&gt;`count(*)::int` }).from(orders);</span>
+<span class="cstat-no" title="statement not covered" >  return `BBG-${2418 + Number(count)}`;</span>
+<span class="cstat-no" title="statement not covered" >}</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >// POST /api/orders  (multipart: proof file + JSON fields)</span>
+<span class="cstat-no" title="statement not covered" >ordersRouter.post('/', requireAuth, upload.single('proof'), asyncHandler(async (req, res) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  const raw = { ...req.body, items: typeof req.body.items === 'string' ? JSON.parse(req.body.items) : req.body.items };</span>
+<span class="cstat-no" title="statement not covered" >  const body = checkoutSchema.parse(raw);</span>
+<span class="cstat-no" title="statement not covered" >  if (!req.file) throw new ApiError(400, 'Payment proof is required to place an order.');</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  // Re-price everything server-side; never trust client prices.</span>
+<span class="cstat-no" title="statement not covered" >  const priced: (PriceableItem &amp; { nameSnapshot: string; specSnapshot: string; productId?: string; groupBuyId?: string })[] = [];</span>
+<span class="cstat-no" title="statement not covered" >  for (const it of body.items) {</span>
+<span class="cstat-no" title="statement not covered" >    if (it.kind === 'product') {</span>
+<span class="cstat-no" title="statement not covered" >      const [p] = await db.select().from(products).where(and(eq(products.id, it.refId), eq(products.isActive, true)));</span>
+<span class="cstat-no" title="statement not covered" >      if (!p) throw new ApiError(400, `Product not available: ${it.refId}`);</span>
+<span class="cstat-no" title="statement not covered" >      priced.push({</span>
+<span class="cstat-no" title="statement not covered" >        kind: 'product', unitPricePhp: Number(p.pricePhp), qty: it.qty,</span>
+<span class="cstat-no" title="statement not covered" >        nameSnapshot: `${p.name} ${p.spec}`, specSnapshot: p.spec, productId: p.id,</span>
+<span class="cstat-no" title="statement not covered" >      });</span>
+<span class="cstat-no" title="statement not covered" >    } else {</span>
+<span class="cstat-no" title="statement not covered" >      const [g] = await db.select().from(groupBuys).where(eq(groupBuys.id, it.refId));</span>
+<span class="cstat-no" title="statement not covered" >      if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);</span>
+<span class="cstat-no" title="statement not covered" >      if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);</span>
+<span class="cstat-no" title="statement not covered" >      const check = validateKahatiCommit(it.qty, g.totalSlots - g.claimedSlots, g.minVials);</span>
+<span class="cstat-no" title="statement not covered" >      if (!check.ok) throw new ApiError(400, check.message!);</span>
+<span class="cstat-no" title="statement not covered" >      priced.push({</span>
+<span class="cstat-no" title="statement not covered" >        kind: 'group_buy', unitPricePhp: perVialPrice(Number(g.pricePerKitPhp)), qty: it.qty,</span>
+<span class="cstat-no" title="statement not covered" >        repackFeePhp: Number(g.repackFeePhp),</span>
+<span class="cstat-no" title="statement not covered" >        nameSnapshot: `${g.name} — kahati`, specSnapshot: `Kahati · min ${g.minVials} vials`, groupBuyId: g.id,</span>
+<span class="cstat-no" title="statement not covered" >      });</span>
+<span class="cstat-no" title="statement not covered" >    }</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  const totals = computeTotals(priced);</span>
+<span class="cstat-no" title="statement not covered" >  const orderNo = await nextOrderNo();</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  // Store payment proof (private bucket / local dir)</span>
+<span class="cstat-no" title="statement not covered" >  const ext = (req.file.originalname.split('.').pop() || 'bin').toLowerCase();</span>
+<span class="cstat-no" title="statement not covered" >  const proofKey = `${orderNo}/${randomUUID()}.${ext}`;</span>
+<span class="cstat-no" title="statement not covered" >  await putFile(BUCKETS.proofs, proofKey, req.file.buffer, req.file.mimetype);</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  const [order] = await db.insert(orders).values({</span>
+<span class="cstat-no" title="statement not covered" >    orderNo, userId: req.user!.sub, status: 'proof_review', buyType: totals.buyType,</span>
+<span class="cstat-no" title="statement not covered" >    subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),</span>
+<span class="cstat-no" title="statement not covered" >    repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),</span>
+<span class="cstat-no" title="statement not covered" >    shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,</span>
+<span class="cstat-no" title="statement not covered" >    paymentProofKey: proofKey,</span>
+<span class="cstat-no" title="statement not covered" >  }).returning();</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  await db.insert(orderItems).values(priced.map((p) =&gt; ({</span>
+<span class="cstat-no" title="statement not covered" >    orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,</span>
+<span class="cstat-no" title="statement not covered" >    nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,</span>
+<span class="cstat-no" title="statement not covered" >    unitPricePhp: String(p.unitPricePhp), qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),</span>
+<span class="cstat-no" title="statement not covered" >  })));</span>
+<span class="cstat-no" title="statement not covered" >  await db.insert(orderStatusHistory).values({ orderId: order.id, status: 'proof_review', note: 'Order placed' });</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  // Update inventory counters + kahati slots</span>
+<span class="cstat-no" title="statement not covered" >  for (const p of priced) {</span>
+<span class="cstat-no" title="statement not covered" >    if (p.kind === 'product' &amp;&amp; p.productId) {</span>
+<span class="cstat-no" title="statement not covered" >      await db.update(products).set({</span>
+<span class="cstat-no" title="statement not covered" >        soldCount: sql`${products.soldCount} + ${p.qty}`,</span>
+<span class="cstat-no" title="statement not covered" >        stock: sql`GREATEST(${products.stock} - ${p.qty}, 0)`,</span>
+<span class="cstat-no" title="statement not covered" >      }).where(eq(products.id, p.productId));</span>
+<span class="cstat-no" title="statement not covered" >    } else if (p.kind === 'group_buy' &amp;&amp; p.groupBuyId) {</span>
+<span class="cstat-no" title="statement not covered" >      await db.update(groupBuys).set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${p.qty}` })</span>
+<span class="cstat-no" title="statement not covered" >        .where(eq(groupBuys.id, p.groupBuyId));</span>
+<span class="cstat-no" title="statement not covered" >    }</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  const email = orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total });</span>
+<span class="cstat-no" title="statement not covered" >  await sendEmail({ to: req.user!.email, ...email, kind: 'order_placed' });</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  ok(res, { order, orderNo, totals }, 201);</span>
+<span class="cstat-no" title="statement not covered" >}));</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >async function loadOrderDetail(orderId: string) {</span>
+<span class="cstat-no" title="statement not covered" >  const [order] = await db.select().from(orders).where(eq(orders.id, orderId));</span>
+<span class="cstat-no" title="statement not covered" >  if (!order) return null;</span>
+<span class="cstat-no" title="statement not covered" >  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));</span>
+<span class="cstat-no" title="statement not covered" >  const history = await db.select().from(orderStatusHistory)</span>
+<span class="cstat-no" title="statement not covered" >    .where(eq(orderStatusHistory.orderId, orderId)).orderBy(orderStatusHistory.createdAt);</span>
+<span class="cstat-no" title="statement not covered" >  return { order, items, history };</span>
+<span class="cstat-no" title="statement not covered" >}</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >// GET /api/orders  (current user's orders, newest first)</span>
+<span class="cstat-no" title="statement not covered" >ordersRouter.get('/', requireAuth, asyncHandler(async (req, res) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  const rows = await db.select().from(orders).where(eq(orders.userId, req.user!.sub)).orderBy(desc(orders.createdAt));</span>
+<span class="cstat-no" title="statement not covered" >  const withItems = await Promise.all(rows.map(async (o) =&gt; ({</span>
+<span class="cstat-no" title="statement not covered" >    ...o, items: await db.select().from(orderItems).where(eq(orderItems.orderId, o.id)),</span>
+<span class="cstat-no" title="statement not covered" >  })));</span>
+<span class="cstat-no" title="statement not covered" >  ok(res, withItems);</span>
+<span class="cstat-no" title="statement not covered" >}));</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >// GET /api/orders/:id  (owner or admin)</span>
+<span class="cstat-no" title="statement not covered" >ordersRouter.get('/:id', requireAuth, asyncHandler(async (req, res) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  const detail = await loadOrderDetail(req.params.id);</span>
+<span class="cstat-no" title="statement not covered" >  if (!detail) throw new ApiError(404, 'Order not found.');</span>
+<span class="cstat-no" title="statement not covered" >  if (detail.order.userId !== req.user!.sub &amp;&amp; req.user!.role !== 'admin') throw new ApiError(403, 'Not your order.');</span>
+<span class="cstat-no" title="statement not covered" >  const proofUrl = detail.order.paymentProofKey ? await signedUrl(BUCKETS.proofs, detail.order.paymentProofKey) : null;</span>
+<span class="cstat-no" title="statement not covered" >  ok(res, { ...detail, proofUrl });</span>
+<span class="cstat-no" title="statement not covered" >}));</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >export { loadOrderDetail };</span>
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-17T08:27:03.191Z
+            </div>
+        <script src="../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../sorter.js"></script>
+        <script src="../../block-navigation.js"></script>
+    </body>
+</html>
+    
