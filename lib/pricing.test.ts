@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computeTotals, subtotal, shippingFor, repackFeeFor, perVialPrice,
+  computeTotals, subtotal, packingFeeFor, perVialPrice,
   validateKahatiCommit, soloMoqStatus, hasSolo, hasKahati, hasGroupBuy,
   validateGroupBuyCommit, groupBuyMoqStatus, validateSoloCheckout,
-  SHIPPING_PHP, REPACK_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS,
+  PACKING_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS,
   type PriceableItem,
 } from './pricing';
 
@@ -20,23 +20,49 @@ describe('subtotal', () => {
   });
 });
 
-describe('shipping and repack rules', () => {
-  it('charges LBC shipping only when solo items are present', () => {
-    expect(shippingFor([product(3200)])).toBe(SHIPPING_PHP);
-    expect(shippingFor([kahati(900)])).toBe(0);
+describe('packing fee defaults (incl. local shipping, no admin fee)', () => {
+  it('charges the on-hand fee for a solo-only cart', () => {
+    expect(packingFeeFor([product(3200)])).toBe(PACKING_FEE_PHP.solo); // 200
   });
-  it('charges repack fee only when kahati items are present', () => {
-    expect(repackFeeFor([kahati(900)])).toBe(REPACK_FEE_PHP);
-    expect(repackFeeFor([product(3200)])).toBe(0);
+  it('charges the hatian fee for a kahati-only cart', () => {
+    expect(packingFeeFor([kahati(900)])).toBe(PACKING_FEE_PHP.kahati); // 150
   });
-  it('applies both fees for a mixed cart', () => {
-    const items = [product(3200), kahati(900, 7)];
-    expect(hasSolo(items)).toBe(true);
-    expect(hasKahati(items)).toBe(true);
-    const t = computeTotals(items);
-    expect(t.shipping).toBe(SHIPPING_PHP);
-    expect(t.repackFee).toBe(REPACK_FEE_PHP);
-    expect(t.total).toBe(3200 + 900 * 7 + SHIPPING_PHP + REPACK_FEE_PHP);
+  it('charges the pasabay fee for a group-buy-only cart', () => {
+    expect(packingFeeFor([moq(10400)])).toBe(PACKING_FEE_PHP.group_buy); // 300
+  });
+  it('is zero for an empty cart', () => {
+    expect(packingFeeFor([])).toBe(0);
+  });
+  it('sums one packing fee per fulfillment mode present (mixed cart)', () => {
+    // Each mode checks out as its own order, so each carries its own packing fee.
+    expect(packingFeeFor([product(3200), kahati(900, 7)])).toBe(
+      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati, // 200 + 150 = 350
+    );
+    expect(packingFeeFor([product(3200), kahati(900), moq(10400)])).toBe(
+      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati + PACKING_FEE_PHP.group_buy, // 650
+    );
+  });
+});
+
+describe('admin-editable packing-fee overrides', () => {
+  it('charges the item override over the mode default', () => {
+    expect(packingFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }])).toBe(250);
+    expect(packingFeeFor([{ kind: 'moq_campaign', unitPricePhp: 10400, qty: 1, packingFeePhp: 400 }])).toBe(400);
+  });
+  it('takes the highest override across items of the same mode', () => {
+    const items: PriceableItem[] = [
+      { kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 150 },
+      { kind: 'group_buy', unitPricePhp: 800, qty: 7, packingFeePhp: 220 },
+    ];
+    expect(packingFeeFor(items)).toBe(220);
+  });
+  it('falls back to the mode default when an item sets no override', () => {
+    expect(packingFeeFor([kahati(900)])).toBe(PACKING_FEE_PHP.kahati);
+  });
+  it('sums per-mode using the edited fee in a mixed cart', () => {
+    const t = computeTotals([product(3200), { kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }]);
+    expect(t.packingFee).toBe(PACKING_FEE_PHP.solo + 250);
+    expect(t.total).toBe(3200 + 900 * 7 + PACKING_FEE_PHP.solo + 250);
   });
 });
 
@@ -47,9 +73,32 @@ describe('computeTotals', () => {
   it('labels any cart containing kahati as kahati', () => {
     expect(computeTotals([product(3200), kahati(900)]).buyType).toBe('kahati');
   });
-  it('computes a solo total with shipping', () => {
+  it('computes a solo total with the on-hand packing fee', () => {
     const t = computeTotals([product(3200, 2)]);
-    expect(t).toMatchObject({ subtotal: 6400, shipping: 180, repackFee: 0, total: 6580, buyType: 'solo' });
+    expect(t).toMatchObject({ subtotal: 6400, packingFee: 200, total: 6600, buyType: 'solo' });
+  });
+  it('computes a kahati total with the hatian packing fee', () => {
+    const t = computeTotals([kahati(900, 7)]);
+    expect(t).toMatchObject({ subtotal: 6300, packingFee: 150, total: 6450, buyType: 'kahati' });
+  });
+  it('computes a group-buy total with the pasabay packing fee', () => {
+    const t = computeTotals([moq(10400, 2)]);
+    expect(t).toMatchObject({ subtotal: 20800, packingFee: 300, total: 21100, buyType: 'group_buy' });
+  });
+  it('never adds a separate shipping or admin fee', () => {
+    const t = computeTotals([product(3200)]);
+    expect(t).not.toHaveProperty('shipping');
+    expect(t).not.toHaveProperty('repackFee');
+    expect(t).not.toHaveProperty('adminFee');
+    expect(t.total).toBe(3200 + PACKING_FEE_PHP.solo);
+  });
+});
+
+describe('mode predicates', () => {
+  it('detects each mode', () => {
+    expect(hasSolo([product(1)])).toBe(true);
+    expect(hasKahati([kahati(1)])).toBe(true);
+    expect(hasGroupBuy([moq(1)])).toBe(true);
   });
 });
 
@@ -75,40 +124,16 @@ describe('validateKahatiCommit', () => {
   it('rejects non-integer quantities', () => {
     expect(validateKahatiCommit(7.5, 50).ok).toBe(false);
   });
-});
-
-describe('admin-editable kahati overrides', () => {
   it('enforces the group buy minVials over the default 7', () => {
-    // Admin raised this kahati's minimum to 20 vials; a 7-vial commit must be rejected.
     expect(validateKahatiCommit(7, 100, 20).ok).toBe(false);
     expect(validateKahatiCommit(20, 100, 20).ok).toBe(true);
-  });
-  it('falls back to the default minimum when the group buy sets none', () => {
-    expect(validateKahatiCommit(KAHATI_MIN_VIALS - 1, 100).ok).toBe(false);
-    expect(validateKahatiCommit(KAHATI_MIN_VIALS, 100).ok).toBe(true);
-  });
-  it('charges the group buy repack fee over the default 150', () => {
-    expect(repackFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, repackFeePhp: 200 }])).toBe(200);
-  });
-  it('falls back to the default repack fee when the group buy sets none', () => {
-    expect(repackFeeFor([kahati(900)])).toBe(REPACK_FEE_PHP);
-  });
-  it('charges a single repack fee for a mixed cart using the edited fee', () => {
-    const t = computeTotals([product(3200), { kind: 'group_buy', unitPricePhp: 900, qty: 7, repackFeePhp: 200 }]);
-    expect(t.repackFee).toBe(200);
-    expect(t.total).toBe(3200 + 900 * 7 + SHIPPING_PHP + 200);
   });
 });
 
 describe('group buy (MOQ) mode', () => {
-  it('charges LBC shipping for a group-buy campaign order, no repack fee', () => {
-    expect(hasGroupBuy([moq(10400)])).toBe(true);
-    expect(shippingFor([moq(10400)])).toBe(SHIPPING_PHP);
-    expect(repackFeeFor([moq(10400)])).toBe(0);
-  });
   it('labels a group-buy-only cart as group_buy', () => {
     expect(computeTotals([moq(10400, 2)])).toMatchObject({
-      subtotal: 20800, shipping: SHIPPING_PHP, repackFee: 0, total: 20800 + SHIPPING_PHP, buyType: 'group_buy',
+      subtotal: 20800, packingFee: PACKING_FEE_PHP.group_buy, total: 20800 + PACKING_FEE_PHP.group_buy, buyType: 'group_buy',
     });
   });
 });
