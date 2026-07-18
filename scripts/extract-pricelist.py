@@ -40,14 +40,14 @@ def parse_number(v):
     s = str(v).strip()
     if not s:
         return None, False
-    # strip currency symbols, spaces, commas: '₱ 5,350.00' -> 5350.0
-    cleaned = re.sub(r"[^\d.]", "", s)
-    if cleaned.count(".") > 1 or not cleaned:
-        return None, True
-    try:
+    # Strip only currency symbols, whitespace, and thousands commas, then
+    # require what remains to be a single number. This coerces '₱ 5,350.00'
+    # -> 5350.0 but rejects multi-number cells like '3200-4850' or
+    # '2300 / 3450' as malformed instead of silently fusing their digits.
+    cleaned = re.sub(r"[\s₱$]", "", s).replace(",", "")
+    if re.fullmatch(r"\d+(?:\.\d+)?", cleaned):
         return float(cleaned), False
-    except ValueError:
-        return None, True
+    return None, True
 
 
 def is_header_row(name):
@@ -79,8 +79,10 @@ def extract_block(ws, cols, block_name, warnings):
             current_name = None
             continue
 
-        has_data = any(x not in (None, "") for x in
-                       (size, code, usd_raw, php_raw))
+        # Use cleaned values so a whitespace-only price cell ("   ") does
+        # not count as data and misclassify a category header as a product.
+        has_data = any(x is not None for x in
+                       (size, code, clean(usd_raw), clean(php_raw)))
 
         # Category header: a name with no accompanying size/price data.
         if name and not has_data:
@@ -129,7 +131,11 @@ def dedupe(records, warnings):
     seen = {}
     out = []
     for rec in records:
-        key = (rec["name"], rec["size"], rec["code"], rec["usd"], rec["php"])
+        # Include block: the two column-blocks are independent lists, so
+        # identical fields in different blocks are distinct products, and
+        # keying on block keeps the "duplicate of" warning citing the right one.
+        key = (rec["block"], rec["name"], rec["size"], rec["code"],
+               rec["usd"], rec["php"])
         if key in seen:
             warnings.append(
                 f"{rec['block']} row {rec['row']}: duplicate of "
@@ -140,7 +146,7 @@ def dedupe(records, warnings):
     return out
 
 
-def extract_moq(ws):
+def extract_moq(ws, warnings):
     """Kit-level bundles listed under the MOQ banner (right block)."""
     moq = []
     in_moq = False
@@ -154,8 +160,13 @@ def extract_moq(ws):
         name = clean(ws.cell(r, 7).value)
         php, _ = parse_number(ws.cell(r, 9).value)
         note = clean(ws.cell(r, 10).value)
-        if name and php is not None:
-            moq.append({"name": name, "php": php, "note": note, "row": r})
+        if not name:
+            continue
+        if php is None:
+            warnings.append(
+                f"moq row {r}: bundle {name!r} has no parseable price; dropped")
+            continue
+        moq.append({"name": name, "php": php, "note": note, "row": r})
     return moq
 
 
@@ -200,7 +211,7 @@ def main():
     left = extract_block(pl, BLOCKS["left"], "left", warnings)
     right = extract_block(pl, BLOCKS["right"], "right", warnings)
     pricelist = dedupe(left + right, warnings)
-    moq = extract_moq(pl)
+    moq = extract_moq(pl, warnings)
     on_hand = extract_on_hand(wb["On Hand"], warnings)
 
     result = {
