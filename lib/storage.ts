@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env, BUCKETS } from './env';
+import { uploadToImageKit, imagekitUrl, provisionImageKitFolders } from './imagekit';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -18,8 +19,12 @@ function supabase(): SupabaseClient {
   return supa;
 }
 
-// Idempotently ensure both buckets exist (called at startup when driver=supabase).
+// Idempotently ensure storage containers exist (called at startup).
 export async function ensureBuckets(): Promise<void> {
+  if (env.storageDriver === 'imagekit') {
+    await provisionImageKitFolders();
+    return;
+  }
   if (env.storageDriver !== 'supabase') return;
   const client = supabase();
   for (const bucket of [BUCKETS.proofs, BUCKETS.coa, BUCKETS.qr]) {
@@ -31,6 +36,10 @@ export async function ensureBuckets(): Promise<void> {
 export type StoredFile = { key: string };
 
 export async function putFile(bucket: string, key: string, body: Buffer, contentType: string): Promise<StoredFile> {
+  if (env.storageDriver === 'imagekit') {
+    await uploadToImageKit(bucket, key, body, contentType);
+    return { key };
+  }
   if (env.storageDriver === 'supabase') {
     const { error } = await supabase().storage.from(bucket).upload(key, body, { contentType, upsert: true });
     if (error) throw error;
@@ -44,6 +53,9 @@ export async function putFile(bucket: string, key: string, body: Buffer, content
 
 // Returns a time-limited URL (supabase) or a local API path (dev).
 export async function signedUrl(bucket: string, key: string, expiresSec = 3600): Promise<string> {
+  if (env.storageDriver === 'imagekit') {
+    return imagekitUrl(bucket, key, expiresSec);
+  }
   if (env.storageDriver === 'supabase') {
     const { data, error } = await supabase().storage.from(bucket).createSignedUrl(key, expiresSec);
     if (error) throw error;

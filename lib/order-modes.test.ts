@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { modeOf, segmentByMode, splitCartIntoOrders } from './order-modes';
-import { SHIPPING_PHP, REPACK_FEE_PHP, type PriceableItem } from './pricing';
+import { PACKING_FEE_PHP, type PriceableItem } from './pricing';
 
 const solo = (price: number, qty = 1): PriceableItem => ({ kind: 'product', unitPricePhp: price, qty });
 const kahati = (price: number, qty = 7): PriceableItem => ({ kind: 'group_buy', unitPricePhp: price, qty });
@@ -37,12 +37,12 @@ describe('splitCartIntoOrders', () => {
     expect(splitCartIntoOrders([])).toEqual([]);
   });
 
-  it('produces one order for a solo-only cart with LBC shipping', () => {
+  it('produces one order for a solo-only cart with the on-hand packing fee', () => {
     const orders = splitCartIntoOrders([solo(3200, 2)]);
     expect(orders).toHaveLength(1);
     expect(orders[0].mode).toBe('solo');
-    expect(orders[0].totals.shipping).toBe(SHIPPING_PHP);
-    expect(orders[0].totals.total).toBe(6400 + SHIPPING_PHP);
+    expect(orders[0].totals.packingFee).toBe(PACKING_FEE_PHP.solo);
+    expect(orders[0].totals.total).toBe(6400 + PACKING_FEE_PHP.solo);
   });
 
   it('never merges modes: a solo+kahati cart splits into two separate orders', () => {
@@ -52,24 +52,21 @@ describe('splitCartIntoOrders', () => {
     expect(modes).toEqual(['kahati', 'solo']);
   });
 
-  it('splits a one-of-each cart into three orders with the correct per-mode fees', () => {
+  it('splits a one-of-each cart into three orders with the correct per-mode packing fee', () => {
     const orders = splitCartIntoOrders([solo(3200), kahati(900, 7), moq(10400, 1)]);
     expect(orders).toHaveLength(3);
 
     const soloOrder = orders.find((o) => o.mode === 'solo')!;
-    expect(soloOrder.totals.shipping).toBe(SHIPPING_PHP);
-    expect(soloOrder.totals.repackFee).toBe(0);
-    expect(soloOrder.totals.total).toBe(3200 + SHIPPING_PHP);
+    expect(soloOrder.totals.packingFee).toBe(PACKING_FEE_PHP.solo);
+    expect(soloOrder.totals.total).toBe(3200 + PACKING_FEE_PHP.solo);
 
     const kahatiOrder = orders.find((o) => o.mode === 'kahati')!;
-    expect(kahatiOrder.totals.shipping).toBe(0);
-    expect(kahatiOrder.totals.repackFee).toBe(REPACK_FEE_PHP);
-    expect(kahatiOrder.totals.total).toBe(900 * 7 + REPACK_FEE_PHP);
+    expect(kahatiOrder.totals.packingFee).toBe(PACKING_FEE_PHP.kahati);
+    expect(kahatiOrder.totals.total).toBe(900 * 7 + PACKING_FEE_PHP.kahati);
 
     const groupBuyOrder = orders.find((o) => o.mode === 'group_buy')!;
-    expect(groupBuyOrder.totals.shipping).toBe(SHIPPING_PHP);
-    expect(groupBuyOrder.totals.repackFee).toBe(0);
-    expect(groupBuyOrder.totals.total).toBe(10400 + SHIPPING_PHP);
+    expect(groupBuyOrder.totals.packingFee).toBe(PACKING_FEE_PHP.group_buy);
+    expect(groupBuyOrder.totals.total).toBe(10400 + PACKING_FEE_PHP.group_buy);
   });
 
   it('keeps a stable order: solo, then kahati, then group_buy', () => {

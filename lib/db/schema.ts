@@ -97,7 +97,8 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   moq: integer('moq').notNull().default(10),               // kits target
   committed: integer('committed').notNull().default(0),    // kits committed so far
   perCustomerMin: integer('per_customer_min').notNull().default(1),
-  shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('180'),
+  // Pasabay packing fee (local shipping included); admin-editable per campaign.
+  shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('300'),
   status: moqCampaignStatusEnum('status').notNull().default('open'),
   deadline: timestamp('deadline', { withTimezone: true }),
   // Included products with per-product out-of-stock flags: [{ productId, name, outOfStock }]
@@ -105,6 +106,15 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---- Settings (global key/value config) --------------------------------
+// Small key/value store for admin-editable global defaults (e.g. packing fees).
+// Absent keys fall back to code constants, so an empty table is a valid state.
+export const settings = pgTable('settings', {
+  key: varchar('key', { length: 60 }).primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ---- Payment methods ---------------------------------------------------
@@ -139,6 +149,9 @@ export const orders = pgTable('orders', {
   status: orderStatusEnum('status').notNull().default('proof_review'),
   buyType: buyTypeEnum('buy_type').notNull().default('solo'),
   subtotalPhp: numeric('subtotal_php', { precision: 12, scale: 2 }).notNull(),
+  // Single packing fee (local shipping incl., no admin fee). shipping_php/repack_fee_php
+  // are kept for legacy orders written before the packing-fee model; new orders use packing_fee_php.
+  packingFeePhp: numeric('packing_fee_php', { precision: 12, scale: 2 }).notNull().default('0'),
   shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('0'),
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('0'),
   totalPhp: numeric('total_php', { precision: 12, scale: 2 }).notNull(),

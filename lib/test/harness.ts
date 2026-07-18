@@ -14,6 +14,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const TABLES = [
   'order_status_history', 'order_items', 'orders',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'payment_methods', 'products', 'categories', 'users',
+  'settings',
 ];
 
 let migrated = false;

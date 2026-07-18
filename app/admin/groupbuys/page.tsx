@@ -24,7 +24,7 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2"><Labeled label="Name"><input className={field} value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} /></Labeled></div>
         <Labeled label="Price / kit ₱ (editable)"><input className={field} type="number" value={f.pricePerKitPhp as any} onChange={(e) => setF({ ...f, pricePerKitPhp: e.target.value })} /></Labeled>
-        <Labeled label="Repack fee ₱"><input className={field} type="number" value={f.repackFeePhp as any} onChange={(e) => setF({ ...f, repackFeePhp: e.target.value })} /></Labeled>
+        <Labeled label="Packing fee ₱ (local shipping incl.)"><input className={field} type="number" value={f.repackFeePhp as any} onChange={(e) => setF({ ...f, repackFeePhp: e.target.value })} /></Labeled>
         <Labeled label="Total slots (vials)"><input className={field} type="number" value={f.totalSlots ?? 0} onChange={(e) => setF({ ...f, totalSlots: Number(e.target.value) })} /></Labeled>
         <Labeled label="Claimed slots"><input className={field} type="number" value={f.claimedSlots ?? 0} onChange={(e) => setF({ ...f, claimedSlots: Number(e.target.value) })} /></Labeled>
         <Labeled label="Min vials / kahati"><input className={field} type="number" value={f.minVials ?? 7} onChange={(e) => setF({ ...f, minVials: Number(e.target.value) })} /></Labeled>

@@ -12,7 +12,7 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
 
   const clamp = (n: number) => Math.min(g.remaining, Math.max(g.minVials, n));
   const confirm = () => {
-    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, repackFeePhp: Number(g.repackFeePhp), qty });
+    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty });
     toast('Kahati claimed! Nasa cart na.');
     onClose();
   };
@@ -25,7 +25,7 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
           <button onClick={onClose} className="px-2 py-1 text-[20px] text-ink-muted">✕</button>
         </div>
         <div className="mb-4 text-[12.5px] text-ink-muted">
-          {g.remaining} vials open · min {g.minVials} vials · {php(g.repackFeePhp)} repack fee, shipping included
+          {g.remaining} vials open · min {g.minVials} vials · {php(g.repackFeePhp)} packing fee, local shipping included
         </div>
         <div className="mb-4 flex items-center justify-between rounded-[14px] bg-surface-mist px-4 py-3.5">
           <div>

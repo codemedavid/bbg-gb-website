@@ -43,8 +43,13 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
             </div>
           ))}
           <div className="flex justify-between pt-2 text-[13px] text-ink-body"><span>Subtotal</span><span>{php(order.subtotalPhp)}</span></div>
-          {Number(order.shippingPhp) > 0 && <div className="flex justify-between text-[13px] text-ink-body"><span>Shipping</span><span>{php(order.shippingPhp)}</span></div>}
-          {Number(order.repackFeePhp) > 0 && <div className="flex justify-between text-[13px] text-ink-body"><span>Repack fee</span><span>{php(order.repackFeePhp)}</span></div>}
+          {(() => {
+            // New orders carry a single packing fee; legacy orders sum shipping + repack.
+            const packing = Number(order.packingFeePhp ?? 0) || (Number(order.shippingPhp ?? 0) + Number(order.repackFeePhp ?? 0));
+            return packing > 0
+              ? <div className="flex justify-between text-[13px] text-ink-body"><span>Packing fee (local shipping incl.)</span><span>{php(packing)}</span></div>
+              : null;
+          })()}
           <div className="flex justify-between pt-1 text-[15px] font-bold"><span>Total</span><span className="font-display">{php(order.totalPhp)}</span></div>
         </div>
 

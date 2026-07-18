@@ -46,15 +46,16 @@ export const POST = handler(async (req: Request, ctx: Ctx) => {
     if (!bumped) throw new ApiError(400, 'This campaign is no longer accepting commitments.');
 
     const unitPrice = Number(c.pricePerKitPhp);
+    // c.shippingPhp stores this campaign's pasabay packing fee (local shipping incl.).
     const totals = computeTotals([{
-      kind: 'moq_campaign', unitPricePhp: unitPrice, qty: b.qty, shippingPhp: Number(c.shippingPhp),
+      kind: 'moq_campaign', unitPricePhp: unitPrice, qty: b.qty, packingFeePhp: Number(c.shippingPhp),
     }]);
     const orderNo = await nextOrderNo(tx);
 
     const [order] = await tx.insert(orders).values({
       orderNo, userId: session.sub, status: 'proof_review', buyType: 'group_buy',
-      subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
-      repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
+      subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
+      totalPhp: String(totals.total),
       shipName: b.shipName, shipPhone: b.shipPhone, shipAddress: b.shipAddress,
       paymentProofKey: proofKey,
     }).returning();

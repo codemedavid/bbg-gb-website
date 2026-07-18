@@ -8,7 +8,12 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret-change-me',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',
-  storageDriver: (process.env.STORAGE_DRIVER || 'local') as 'local' | 'supabase',
+  // ImageKit.io (STORAGE_DRIVER=imagekit). Public key + URL endpoint are safe to
+  // expose; the private key is server-only and used for uploads + signed URLs.
+  imagekitPublicKey: process.env.IMAGEKIT_PUBLIC_KEY || '',
+  imagekitPrivateKey: process.env.IMAGEKIT_PRIVATE_KEY || '',
+  imagekitUrlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT || '',
+  storageDriver: (process.env.STORAGE_DRIVER || 'local') as 'local' | 'supabase' | 'imagekit',
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: Number(process.env.SMTP_PORT || 587),
   smtpUser: process.env.SMTP_USER || '',
@@ -20,3 +25,7 @@ export const env = {
 };
 
 export const BUCKETS = { proofs: 'payment-proofs', coa: 'coa-files', qr: 'payment-qr' } as const;
+
+// Root folder in ImageKit that namespaces every file this website uploads, so the
+// dashboard clearly separates BBG groupbuy assets from other sites in the account.
+export const IMAGEKIT_ROOT = 'bbg-groupbuy';
