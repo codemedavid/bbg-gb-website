@@ -5,18 +5,29 @@ import { requireSession, ApiError } from '@/lib/session';
 import { computeTotals, validateGroupBuyCommit, round2 } from '@/lib/pricing';
 import { canCommit } from '@/lib/group-buy';
 import { campaignCommitSchema } from '@/lib/moq-schemas';
+import { validateAndStoreProof } from '@/lib/proof';
 import { nextOrderNo } from '@/lib/order-number';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // Customer: commit `qty` kits to a Group Buy (MOQ) campaign. The commitment is
-// held as a group_buy order; the campaign's committed counter is incremented
-// atomically under a status='open' guard so a concurrent cancel/approve can't
-// slip a commitment past a closed campaign.
+// held as a group_buy order (with a required payment proof); the campaign's
+// committed counter is incremented atomically under a status='open' guard so a
+// concurrent cancel/approve can't slip a commitment past a closed campaign.
 export const POST = handler(async (req: Request, ctx: Ctx) => {
   const session = await requireSession();
   const { id } = await ctx.params;
-  const b = campaignCommitSchema.parse(await req.json());
+  const form = await req.formData();
+  const b = campaignCommitSchema.parse({
+    qty: Number(form.get('qty')),
+    shipName: form.get('shipName'),
+    shipPhone: form.get('shipPhone'),
+    shipAddress: form.get('shipAddress'),
+  });
+
+  // Store the proof before opening the transaction — external side effect; a
+  // rolled-back order leaves a harmless orphaned object.
+  const proofKey = await validateAndStoreProof(form.get('proof'));
 
   const { order, totals } = await (await getDb()).transaction(async (tx) => {
     const [c] = await tx.select().from(moqCampaigns).where(eq(moqCampaigns.id, id));
@@ -45,6 +56,7 @@ export const POST = handler(async (req: Request, ctx: Ctx) => {
       subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
       repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
       shipName: b.shipName, shipPhone: b.shipPhone, shipAddress: b.shipAddress,
+      paymentProofKey: proofKey,
     }).returning();
 
     await tx.insert(orderItems).values({

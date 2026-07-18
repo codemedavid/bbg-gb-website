@@ -1,17 +1,12 @@
 import { z } from 'zod';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
 import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { computeTotals, perVialPrice, validateKahatiCommit, round2, type PriceableItem } from '@/lib/pricing';
-import { putFile } from '@/lib/storage';
-import { BUCKETS } from '@/lib/env';
+import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
-
-const MAX_PROOF_BYTES = 8 * 1024 * 1024;
-const PROOF_TYPES = /^(image\/(jpe?g|png|webp|heic)|application\/pdf)$/;
 
 const itemSchema = z.object({
   kind: z.enum(['product', 'group_buy']),
@@ -46,18 +41,11 @@ export const POST = handler(async (req: Request) => {
     shipAddress: form.get('shipAddress'),
   });
 
-  const proof = form.get('proof');
-  if (!(proof instanceof File) || proof.size === 0) throw new ApiError(400, 'Payment proof is required to place an order.');
-  if (proof.size > MAX_PROOF_BYTES) throw new ApiError(400, 'Proof must be 8MB or smaller.');
-  if (!PROOF_TYPES.test(proof.type)) throw new ApiError(400, 'Proof must be an image or PDF.');
-
-  const db = await getDb();
-
   // Store the proof before opening the transaction — it is an external side effect.
   // A rolled-back order leaves an orphaned object, which is harmless.
-  const ext = (proof.name.split('.').pop() || 'bin').toLowerCase();
-  const proofKey = `${randomUUID()}.${ext}`;
-  await putFile(BUCKETS.proofs, proofKey, Buffer.from(await proof.arrayBuffer()), proof.type);
+  const proofKey = await validateAndStoreProof(form.get('proof'));
+
+  const db = await getDb();
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
