@@ -1,5 +1,6 @@
-import { php } from '../lib/format';
-import { useCart, shippingFor, repackFor } from '../store/cart';
+'use client';
+import { php } from '@/lib/format';
+import { useCart, shippingFor, repackFor } from '@/lib/store/cart';
 
 export function useOrderTotals() {
   const items = useCart((s) => s.items);

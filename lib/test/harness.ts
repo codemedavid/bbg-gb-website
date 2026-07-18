@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { getDb, users, categories, products, groupBuys, moqCampaigns } from '@/lib/db';
+import { getDb, users, categories, products, groupBuys, moqCampaigns, paymentMethods } from '@/lib/db';
 import { hashPassword, signToken } from '@/lib/auth';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
@@ -13,7 +13,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 // Cleared between tests, children before parents.
 const TABLES = [
   'order_status_history', 'order_items', 'orders',
-  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'products', 'categories', 'users',
+  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'payment_methods', 'products', 'categories', 'users',
 ];
 
 let migrated = false;
@@ -96,13 +96,27 @@ export async function makeMoqCampaign(
 
 export const SHIPPING = { shipName: 'Ana Cruz', shipPhone: '09171234567', shipAddress: '123 Mabini St, Manila' } as const;
 
+export async function makePaymentMethod(
+  overrides: Partial<{ label: string; accountName: string; accountNumber: string; isActive: boolean }> = {},
+): Promise<{ id: string; label: string }> {
+  const db = await getDb();
+  const label = overrides.label ?? 'GCash';
+  const [row] = await db.insert(paymentMethods).values({
+    label, accountName: overrides.accountName ?? 'BBG Peptides',
+    accountNumber: overrides.accountNumber ?? '09171234567',
+    isActive: overrides.isActive ?? true,
+  }).returning();
+  return { id: row.id, label };
+}
+
 // Builds the multipart Request a checkout route handler expects.
-export function checkoutRequest(items: unknown, opts: { withProof?: boolean } = {}): Request {
+export function checkoutRequest(items: unknown, opts: { withProof?: boolean; paymentMethod?: string } = {}): Request {
   const form = new FormData();
   form.set('items', JSON.stringify(items));
   form.set('shipName', SHIPPING.shipName);
   form.set('shipPhone', SHIPPING.shipPhone);
   form.set('shipAddress', SHIPPING.shipAddress);
+  if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.withProof !== false) {
     form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
   }

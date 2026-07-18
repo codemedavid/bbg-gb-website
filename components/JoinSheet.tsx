@@ -1,8 +1,9 @@
+'use client';
 import { useState } from 'react';
-import type { GroupBuy } from '../lib/types';
-import { php } from '../lib/format';
-import { useCart } from '../store/cart';
-import { useToast } from '../store/toast';
+import type { GroupBuy } from '@/lib/types';
+import { php } from '@/lib/format';
+import { useCart } from '@/lib/store/cart';
+import { useToast } from '@/lib/store/toast';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
   const [qty, setQty] = useState(Math.max(g.minVials, 7));

@@ -28,7 +28,7 @@ vi.mock('@/lib/session', () => {
 
 const { POST } = await import('./route');
 const { getDb, groupBuys, orders } = await import('@/lib/db');
-const { resetDb, makeUser, makeProduct, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, makeUser, makeProduct, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
   const user = await makeUser({ role });
@@ -73,6 +73,27 @@ describe('POST /api/orders', () => {
     const body = await res.json();
     expect(res.status).toBe(400);
     expect(body.error).toContain('20');
+  });
+
+  it('persists the chosen payment method on the order', async () => {
+    await signIn();
+    const product = await makeProduct();
+    await makePaymentMethod({ label: 'GCash' });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }], { paymentMethod: 'GCash' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.order.paymentMethod).toBe('GCash');
+  });
+
+  it('rejects a payment method that is not an active option', async () => {
+    await signIn();
+    const product = await makeProduct();
+    await makePaymentMethod({ label: 'GCash', isActive: false });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }], { paymentMethod: 'GCash' }));
+    expect(res.status).toBe(400);
   });
 
   it('charges the group buy repack fee', async () => {

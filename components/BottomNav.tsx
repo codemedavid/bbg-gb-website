@@ -1,40 +1,44 @@
-import { NavLink } from 'react-router-dom';
-import { useCart } from '../store/cart';
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useCart } from '@/lib/store/cart';
 
 const TABS = [
-  { to: '/', icon: '🏠', label: 'Home' },
-  { to: '/kahati', icon: '🤝', label: 'Kahati' },
-  { to: '/shop', icon: '🧪', label: 'Shop' },
-  { to: '/calc', icon: '🧮', label: 'Calc' },
-  { to: '/orders', icon: '📦', label: 'Orders' },
+  { href: '/', icon: '🏠', label: 'Home' },
+  { href: '/kahati', icon: '🤝', label: 'Kahati' },
+  { href: '/shop', icon: '🧪', label: 'Shop' },
+  { href: '/calc', icon: '🧮', label: 'Calc' },
+  { href: '/orders', icon: '📦', label: 'Orders' },
+  { href: '/account', icon: '👤', label: 'Account' },
 ];
 
 export function BottomNav() {
+  const pathname = usePathname();
   return (
-    <nav className="fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 grid-cols-5 border-t border-line-mist bg-white pb-4 pt-2">
-      {TABS.map((t) => (
-        <NavLink key={t.to} to={t.to} end={t.to === '/'}
-          className={({ isActive }) =>
-            `text-center text-[10.5px] font-semibold ${isActive ? 'text-brand-greendark' : 'text-ink-faint'}`}>
-          <div className="text-[19px] leading-none mb-0.5">{t.icon}</div>
-          {t.label}
-        </NavLink>
-      ))}
+    <nav className="fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 grid-cols-6 border-t border-line-mist bg-white pb-4 pt-2">
+      {TABS.map((t) => {
+        const active = t.href === '/' ? pathname === '/' : pathname.startsWith(t.href);
+        return (
+          <Link key={t.href} href={t.href}
+            className={`text-center text-[10.5px] font-semibold ${active ? 'text-brand-greendark' : 'text-ink-faint'}`}>
+            <div className="mb-0.5 text-[19px] leading-none">{t.icon}</div>
+            {t.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }
 
-export function CartButton({ onClick, size = 40 }: { onClick: () => void; size?: number }) {
+export function CartButton({ size = 40 }: { size?: number }) {
   const count = useCart((s) => s.count());
   return (
-    <button onClick={onClick} style={{ width: size, height: size }}
+    <Link href="/cart" style={{ width: size, height: size }}
       className="relative flex items-center justify-center rounded-full bg-brand-blue text-white">
       <span className="text-[15px]">🛒</span>
       {count > 0 && (
-        <span className="absolute -right-1 -top-1 rounded-full bg-brand-green px-[5px] py-px text-[10px] font-bold text-white">
-          {count}
-        </span>
+        <span className="absolute -right-1 -top-1 rounded-full bg-brand-green px-[5px] py-px text-[10px] font-bold text-white">{count}</span>
       )}
-    </button>
+    </Link>
   );
 }

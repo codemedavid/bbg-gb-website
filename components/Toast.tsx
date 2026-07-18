@@ -1,4 +1,5 @@
-import { useToast } from '../store/toast';
+'use client';
+import { useToast } from '@/lib/store/toast';
 
 export function Toast() {
   const message = useToast((s) => s.message);

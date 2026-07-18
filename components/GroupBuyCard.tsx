@@ -1,5 +1,6 @@
-import type { GroupBuy } from '../lib/types';
-import { php, closesIn } from '../lib/format';
+'use client';
+import type { GroupBuy } from '@/lib/types';
+import { php, closesIn } from '@/lib/format';
 
 export function GroupBuyCard({ g, onJoin }: { g: GroupBuy; onJoin: (g: GroupBuy) => void }) {
   const badge = g.remaining <= 10 ? `${g.remaining} VIALS LEFT` : g.progress >= 50 ? 'FILLING FAST' : 'OPEN';

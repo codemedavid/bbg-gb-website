@@ -1,3 +1,4 @@
+'use client';
 import type { ReactNode } from 'react';
 
 export function AuthShell({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {

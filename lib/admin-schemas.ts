@@ -30,4 +30,14 @@ export const groupBuySchema = z.object({
   description: z.string().max(2000).nullable().optional(),
 });
 
+// Text fields of a payment method. The QR image arrives as a separate multipart
+// File part, validated by lib/uploads, so it is not part of this schema.
+export const paymentMethodSchema = z.object({
+  label: z.string().min(2).max(40),
+  accountName: z.string().min(2).max(120),
+  accountNumber: z.string().min(2).max(60),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+});
+
 export const numToStr = (n: number | null | undefined) => (n == null ? null : String(n));

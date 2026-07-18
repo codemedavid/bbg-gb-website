@@ -22,7 +22,7 @@ function supabase(): SupabaseClient {
 export async function ensureBuckets(): Promise<void> {
   if (env.storageDriver !== 'supabase') return;
   const client = supabase();
-  for (const bucket of [BUCKETS.proofs, BUCKETS.coa]) {
+  for (const bucket of [BUCKETS.proofs, BUCKETS.coa, BUCKETS.qr]) {
     const { data } = await client.storage.getBucket(bucket);
     if (!data) await client.storage.createBucket(bucket, { public: false });
   }

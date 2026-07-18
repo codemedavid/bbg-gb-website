@@ -28,7 +28,9 @@ export const GET = handler(async (_req: Request, ctx: Ctx) => {
 export const PATCH = handler(async (req: Request, ctx: Ctx) => {
   await requireAdmin();
   const { id } = await ctx.params;
-  const b = moqCampaignSchema.partial().parse(await req.json());
+  // status is lifecycle-owned: it may only change via /action (approve/extend/cancel),
+  // which enforces applyCampaignAction. Strip it here so a PATCH can't bypass the state machine.
+  const { status: _status, ...b } = moqCampaignSchema.partial().parse(await req.json());
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(b)) {
     if (k === 'pricePerKitPhp' || k === 'shippingPhp') patch[k] = String(v);

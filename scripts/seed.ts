@@ -13,6 +13,7 @@ async function clearAll(db: any) {
   await db.delete(s.products);
   await db.delete(s.categories);
   await db.delete(s.groupBuys);
+  await db.delete(s.paymentMethods);
   await db.delete(s.emailLog);
   await db.delete(s.users);
 }
@@ -63,6 +64,13 @@ async function main() {
     }))
   );
   console.log(`  ${GROUP_BUYS.length} group buys`);
+
+  // Placeholder payment methods — admin fills in real account details + uploads QR.
+  await db.insert(s.paymentMethods).values([
+    { label: 'GCash', accountName: 'BBG Peptides', accountNumber: 'Set in admin', sortOrder: 0, isActive: true },
+    { label: 'Maya', accountName: 'BBG Peptides', accountNumber: 'Set in admin', sortOrder: 1, isActive: true },
+  ]);
+  console.log('  2 payment methods (GCash, Maya — add details + QR in admin)');
 
   const pw = await hashPassword('password123');
   const [, customer] = await db.insert(s.users).values([

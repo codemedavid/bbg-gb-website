@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys } from '@/lib/db';
+import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, paymentMethods } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { computeTotals, perVialPrice, validateKahatiCommit, round2, type PriceableItem } from '@/lib/pricing';
@@ -18,6 +18,7 @@ const checkoutSchema = z.object({
   shipName: z.string().min(2).max(120),
   shipPhone: z.string().min(7).max(40),
   shipAddress: z.string().min(5).max(500),
+  paymentMethod: z.string().min(1).max(40).optional(),
 });
 
 // Persistence layer supports only solo ('product') and kahati ('group_buy') line
@@ -39,6 +40,7 @@ export const POST = handler(async (req: Request) => {
     shipName: form.get('shipName'),
     shipPhone: form.get('shipPhone'),
     shipAddress: form.get('shipAddress'),
+    paymentMethod: form.get('paymentMethod') ?? undefined,
   });
 
   // Store the proof before opening the transaction — it is an external side effect.
@@ -50,6 +52,13 @@ export const POST = handler(async (req: Request) => {
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
   const { order, orderNo, totals } = await db.transaction(async (tx) => {
+    // Reject a payment method the customer could not actually have chosen.
+    if (body.paymentMethod) {
+      const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
+        .where(and(eq(paymentMethods.label, body.paymentMethod), eq(paymentMethods.isActive, true)));
+      if (!m) throw new ApiError(400, 'Selected payment method is not available.');
+    }
+
     // Re-price server-side; never trust client prices.
     const priced: Priced[] = [];
     for (const it of body.items) {
@@ -105,6 +114,7 @@ export const POST = handler(async (req: Request) => {
       subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
       repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
       shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
+      paymentMethod: body.paymentMethod ?? null,
       paymentProofKey: proofKey,
     }).returning();
 

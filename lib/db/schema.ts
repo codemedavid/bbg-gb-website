@@ -107,6 +107,20 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---- Payment methods ---------------------------------------------------
+// Admin-managed checkout payment options (GCash, Maya, …). Each holds the
+// account details plus an optional QR image (stored in the `payment-qr` bucket).
+export const paymentMethods = pgTable('payment_methods', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  label: varchar('label', { length: 40 }).notNull(),          // e.g. "GCash"
+  accountName: varchar('account_name', { length: 120 }).notNull(),
+  accountNumber: varchar('account_number', { length: 60 }).notNull(),
+  qrKey: text('qr_key'),                                       // storage key of QR image
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ---- COA files ---------------------------------------------------------
 export const coaFiles = pgTable('coa_files', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -132,6 +146,7 @@ export const orders = pgTable('orders', {
   shipName: varchar('ship_name', { length: 120 }).notNull(),
   shipPhone: varchar('ship_phone', { length: 40 }).notNull(),
   shipAddress: text('ship_address').notNull(),
+  paymentMethod: varchar('payment_method', { length: 40 }), // snapshot of chosen method label
   paymentProofKey: text('payment_proof_key'), // storage key of uploaded proof
   trackingNo: varchar('tracking_no', { length: 80 }),
   notes: text('notes'),

@@ -3,12 +3,15 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/useAuth';
 import { AdminLogin } from './AdminLogin';
+import { Toast } from '@/components/Toast';
 
 const NAV = [
   { href: '/admin', label: 'Dashboard', icon: '📊', exact: true },
   { href: '/admin/orders', label: 'Orders', icon: '📦' },
   { href: '/admin/products', label: 'Products', icon: '🧪' },
   { href: '/admin/groupbuys', label: 'Group Buys', icon: '🤝' },
+  { href: '/admin/campaigns', label: 'MOQ Campaigns', icon: '🎯' },
+  { href: '/admin/payment-methods', label: 'Payment Methods', icon: '💳' },
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -53,6 +56,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <main className="min-w-0 flex-1 pt-12 md:pt-0">{children}</main>
       </div>
+      <Toast />
     </div>
   );
 }

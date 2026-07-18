@@ -19,4 +19,4 @@ export const env = {
   isProd: process.env.NODE_ENV === 'production',
 };
 
-export const BUCKETS = { proofs: 'payment-proofs', coa: 'coa-files' } as const;
+export const BUCKETS = { proofs: 'payment-proofs', coa: 'coa-files', qr: 'payment-qr' } as const;
