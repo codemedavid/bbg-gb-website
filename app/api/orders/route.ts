@@ -8,6 +8,7 @@ import { computeTotals, perVialPrice, validateKahatiCommit, round2, type Priceab
 import { putFile } from '@/lib/storage';
 import { BUCKETS } from '@/lib/env';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
+import { nextOrderNo } from '@/lib/order-number';
 
 const MAX_PROOF_BYTES = 8 * 1024 * 1024;
 const PROOF_TYPES = /^(image\/(jpe?g|png|webp|heic)|application\/pdf)$/;
@@ -34,16 +35,6 @@ type Priced = Omit<PriceableItem, 'kind'> & {
   productId?: string;
   groupBuyId?: string;
 };
-
-// Order numbers come from a Postgres sequence: nextval is atomic, so concurrent
-// checkouts can never derive the same BBG-#### the way a count(*) would.
-type Executor = { execute: (query: any) => Promise<unknown> };
-async function nextOrderNo(tx: Executor): Promise<string> {
-  const result = await tx.execute(sql`select nextval('order_no_seq')::int as n`);
-  // postgres-js returns the rows array; PGlite returns { rows }.
-  const rows = (Array.isArray(result) ? result : (result as { rows: unknown[] }).rows) as { n: number }[];
-  return `BBG-${rows[0].n}`;
-}
 
 export const POST = handler(async (req: Request) => {
   const session = await requireSession();
