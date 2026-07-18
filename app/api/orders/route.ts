@@ -24,7 +24,16 @@ const checkoutSchema = z.object({
   shipAddress: z.string().min(5).max(500),
 });
 
-type Priced = PriceableItem & { nameSnapshot: string; specSnapshot: string; productId?: string; groupBuyId?: string };
+// Persistence layer supports only solo ('product') and kahati ('group_buy') line
+// items today; the Group Buy (MOQ) mode is not yet wired into checkout, so Priced
+// narrows PriceableItem's kind to the order_item_kind enum's current values.
+type Priced = Omit<PriceableItem, 'kind'> & {
+  kind: 'product' | 'group_buy';
+  nameSnapshot: string;
+  specSnapshot: string;
+  productId?: string;
+  groupBuyId?: string;
+};
 
 // Order numbers come from a Postgres sequence: nextval is atomic, so concurrent
 // checkouts can never derive the same BBG-#### the way a count(*) would.
@@ -108,8 +117,12 @@ export const POST = handler(async (req: Request) => {
     const totals = computeTotals(priced);
     const orderNo = await nextOrderNo(tx);
 
+    // priced holds only 'product'/'group_buy' items (see Priced), so computeTotals
+    // never yields 'group_buy' here — narrow to the buy_type enum's current values.
+    const buyType = totals.buyType as 'solo' | 'kahati';
+
     const [order] = await tx.insert(orders).values({
-      orderNo, userId: session.sub, status: 'proof_review', buyType: totals.buyType,
+      orderNo, userId: session.sub, status: 'proof_review', buyType,
       subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
       repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
       shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
