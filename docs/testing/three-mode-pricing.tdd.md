@@ -88,3 +88,57 @@ the cart→multi-order split.
 - RED checkpoint: `caaa8ac` — 10 failing reproducers, 20 pre-existing pricing tests green.
 - GREEN checkpoint: `dc41f57` — all 50 tests pass, tsc clean.
 - No refactor commit was needed; the boundary narrowing was part of the GREEN change.
+
+---
+
+# Pass 2 — Group Buy (MOQ) mode: lifecycle, schema & API
+
+**Scope:** the "Full Group Buy mode" backend — campaign lifecycle state machine,
+schema/migration, and API routes. Storefront/admin UI wiring is a follow-up pass.
+
+## User journeys
+
+1. As an admin, I can approve / extend / cancel an open campaign, but not one that
+   is already approved or cancelled.
+2. As a customer, I can commit kits to an open campaign; it is rejected below the
+   per-customer minimum or if the campaign is not open.
+3. As a customer, my commitment is held as a group_buy order and the campaign's
+   committed counter increases atomically (no oversell/double-count under races).
+4. As anyone, I can view campaigns with derived MOQ progress, remaining, reached,
+   and outcome (awaiting_moq / processing / refunded).
+
+## Task report
+
+| Task | Validation command | RED → GREEN |
+|------|--------------------|-------------|
+| Campaign lifecycle state machine (`lib/group-buy.ts`) | `npx vitest run lib/group-buy.test.ts` | module-missing → 10 pass |
+| Schema: `moq_campaigns` table, enum values, migration `0001` | `npx vitest run app/api/orders/route.test.ts` (harness applies migration) | 7 pass under new migration |
+| Campaign API routes (list/detail/create/edit/delete/action/commit) | `npx vitest run app/api/campaigns/route.test.ts` | modules-missing → 10 pass |
+
+## Test specification (pass 2)
+
+| # | What is guaranteed | Test | Type | Result |
+|---|--------------------|------|------|--------|
+| 1 | Only open campaigns can be approved/extended/cancelled | `lib/group-buy.test.ts:applyCampaignAction` | unit | PASS |
+| 2 | Commitments allowed only while open; outcome derives from status + MOQ | `lib/group-buy.test.ts:canCommit,campaignOutcome` | unit | PASS |
+| 3 | Public list exposes derived progress/remaining/reached | `app/api/campaigns/route.test.ts:GET /api/campaigns` | integration | PASS |
+| 4 | Campaign create is admin-only | `app/api/campaigns/route.test.ts:POST (admin create)` | integration | PASS |
+| 5 | approve moves open→approved; action on non-open → 400; non-admin → 403 | `app/api/campaigns/route.test.ts:action` | integration | PASS |
+| 6 | Commit increments committed atomically and creates a held group_buy order | `app/api/campaigns/route.test.ts:commit` | integration | PASS |
+| 7 | Commit rejected below per-customer min, on non-open campaign, and unauthenticated | `app/api/campaigns/route.test.ts:commit` | integration | PASS |
+
+## Coverage and known gaps (pass 2)
+
+- Full suite: **70 passed (6 files)** — `npx vitest run`. Typecheck: `npx tsc --noEmit` exit 0.
+- Not yet built (next pass): storefront campaign list + commit sheet UI, admin
+  approve/extend/cancel + campaign CRUD UI, payment-proof upload on commit (the
+  commit order is currently created with a null proof key), and campaign-progress
+  notifications. The concurrency test for commit races was not added (kahati's
+  equivalent exists); the atomic guard is in place and unit-proven by the lifecycle
+  tests plus the single-commit integration test.
+
+## Merge evidence (pass 2)
+
+- `c49f8ad` lifecycle (RED validated, 10 pass), `8bca64b` union-narrow test fix.
+- `7bbd771` schema + migration + harness (existing 7 integration tests pass).
+- `2299805` API routes (70/70 pass, tsc clean).
