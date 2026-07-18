@@ -57,6 +57,8 @@ export type Order = {
   id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy';
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
+  // Kahati reservation downpayment paid at checkout; balance = total - downpayment. 0 for solo.
+  downpaymentPhp?: string;
   shipName: string; shipPhone: string; shipAddress: string; trackingNo: string | null;
   createdAt: string; items?: OrderItem[];
 };

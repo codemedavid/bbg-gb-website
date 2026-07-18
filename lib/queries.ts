@@ -11,6 +11,13 @@ export const usePackingFees = () =>
     staleTime: 5 * 60 * 1000,
   });
 
+export const useKahatiDownpayment = () =>
+  useQuery({
+    queryKey: ['kahati-downpayment'],
+    queryFn: () => apiGet<{ kahatiDownpayment: number }>('/settings').then((d) => d.kahatiDownpayment),
+    staleTime: 5 * 60 * 1000,
+  });
+
 export const useCategories = () =>
   useQuery({ queryKey: ['categories'], queryFn: () => apiGet<Category[]>('/categories') });
 

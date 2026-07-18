@@ -51,6 +51,18 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
               : null;
           })()}
           <div className="flex justify-between pt-1 text-[15px] font-bold"><span>Total</span><span className="font-display">{php(order.totalPhp)}</span></div>
+          {(() => {
+            // Kahati orders reserve slots with a downpayment; the balance is collected after the kahati ends.
+            const downpayment = Number(order.downpaymentPhp ?? 0);
+            if (downpayment <= 0) return null;
+            const balance = Number(order.totalPhp) - downpayment;
+            return (
+              <div className="mt-1 rounded-[10px] bg-[#f2f8ec] px-3 py-2 text-[13px]">
+                <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
+                {balance > 0 && <div className="flex justify-between text-ink-body"><span>Balance to collect</span><span>{php(balance)}</span></div>}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="mt-3">

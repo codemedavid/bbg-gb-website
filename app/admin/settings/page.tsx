@@ -77,6 +77,65 @@ function PackingFeesCard() {
   );
 }
 
+function DownpaymentCard() {
+  const [amount, setAmount] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiGet<{ kahatiDownpayment: number }>('/admin/settings')
+      .then((d) => setAmount(d.kahatiDownpayment))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load the downpayment.'));
+  }, []);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (amount == null) return;
+    if (!Number.isFinite(amount) || amount < 0) {
+      setError('Downpayment must be zero or more.');
+      return;
+    }
+    setError(null);
+    setDone(false);
+    setBusy(true);
+    try {
+      const d = await apiSend<{ kahatiDownpayment: number }>('/admin/settings', 'PATCH', { kahatiDownpayment: amount });
+      setAmount(d.kahatiDownpayment);
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the downpayment.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 rounded-2xl bg-white p-5 shadow-card">
+      <h2 className="mb-1 font-display text-[16px] font-bold text-ink">Hatian downpayment</h2>
+      <p className="mb-4 text-[13px] text-ink-muted">
+        Paid at checkout to reserve kahati slots — deducted from the order total. The balance is collected after the kahati ends.
+      </p>
+      {amount == null && !error && <p className="text-[13px] text-ink-muted">Loading…</p>}
+      {amount != null && (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <div>
+            <span className={label}>Downpayment per kahati order ₱</span>
+            <input type="number" min={0} step="1" required className={field}
+              value={amount} onChange={(e) => { setAmount(Number(e.target.value)); setDone(false); }} />
+            <span className="mt-0.5 block text-[12px] text-ink-muted">Small orders are capped at the order total.</span>
+          </div>
+          {done && <p className="rounded-[10px] bg-[#e8f5db] px-3 py-2 text-[13px] text-brand-greendark">Downpayment saved ✓</p>}
+          <button type="submit" disabled={busy} className={`mt-1 ${btnPrimary}`}>
+            {busy ? 'Saving…' : 'Update downpayment'}
+          </button>
+        </form>
+      )}
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">{error}</p>}
+    </div>
+  );
+}
+
 export default function AdminSettingsPage() {
   const { user } = useAuth();
   const [pw, setPw] = useState(empty);
@@ -142,6 +201,7 @@ export default function AdminSettingsPage() {
       </div>
 
       <PackingFeesCard />
+      <DownpaymentCard />
     </div>
   );
 }
