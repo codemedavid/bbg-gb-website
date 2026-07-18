@@ -46,11 +46,14 @@ const wrap = (title: string, body: string) => `
     </div>
   </div>`;
 
-export function orderPlacedEmail(o: { name: string; orderNo: string; total: number }) {
+export function orderPlacedEmail(o: { name: string; orderNo: string; total: number; downpayment?: number }) {
+  const downpaymentLine = o.downpayment && o.downpayment > 0
+    ? `<p>Downpayment received: <strong>${php(o.downpayment)}</strong> · Balance after the kahati ends: <strong>${php(o.total - o.downpayment)}</strong></p>`
+    : '';
   return {
     subject: `Order ${o.orderNo} received - payment under review`,
     html: wrap(`Salamat, ${o.name}!`, `
-      <p>We received order <strong>${o.orderNo}</strong> for <strong>${php(o.total)}</strong>.</p>
+      <p>We received order <strong>${o.orderNo}</strong> for <strong>${php(o.total)}</strong>.</p>${downpaymentLine}
       <p>Our team will verify your payment proof within 24 hours. You'll get another email once it's confirmed.</p>`),
   };
 }

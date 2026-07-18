@@ -3,8 +3,8 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, paymentMethods } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
-import { computeTotals, perVialPrice, validateKahatiCommit, round2, type PriceableItem } from '@/lib/pricing';
-import { getPackingFees } from '@/lib/settings';
+import { computeTotals, perVialPrice, splitKahatiDownpayment, validateKahatiCommit, round2, type PriceableItem } from '@/lib/pricing';
+import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
@@ -52,6 +52,9 @@ export const POST = handler(async (req: Request) => {
   // Global packing-fee defaults; the solo (on-hand) fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
   const packingFees = await getPackingFees();
+  // Kahati reservation downpayment (admin-editable). Deducted from the total —
+  // the customer pays this now and settles the balance after the kahati ends.
+  const kahatiDownpaymentSetting = await getKahatiDownpayment();
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
@@ -113,10 +116,15 @@ export const POST = handler(async (req: Request) => {
     // never yields 'group_buy' here — narrow to the buy_type enum's current values.
     const buyType = totals.buyType as 'solo' | 'kahati';
 
+    // Only kahati orders carry a reservation downpayment; solo orders pay in full.
+    const downpayment = buyType === 'kahati'
+      ? splitKahatiDownpayment(totals.total, kahatiDownpaymentSetting).downpayment
+      : 0;
+
     const [order] = await tx.insert(orders).values({
       orderNo, userId: session.sub, status: 'proof_review', buyType,
       subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
-      totalPhp: String(totals.total),
+      totalPhp: String(totals.total), downpaymentPhp: String(downpayment),
       shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
       paymentMethod: body.paymentMethod ?? null,
       paymentProofKey: proofKey,
@@ -143,7 +151,7 @@ export const POST = handler(async (req: Request) => {
   });
 
   // Email only after the transaction commits — never notify about a rolled-back order.
-  await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total }), kind: 'order_placed' });
+  await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp) }), kind: 'order_placed' });
   return ok({ order, orderNo, totals }, 201);
 });
 

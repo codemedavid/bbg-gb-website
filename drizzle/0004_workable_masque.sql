@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "downpayment_php" numeric(12, 2) DEFAULT '0' NOT NULL;

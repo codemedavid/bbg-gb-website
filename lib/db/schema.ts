@@ -155,6 +155,9 @@ export const orders = pgTable('orders', {
   shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('0'),
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('0'),
   totalPhp: numeric('total_php', { precision: 12, scale: 2 }).notNull(),
+  // Kahati reservation downpayment paid at checkout, deducted from total_php;
+  // the balance (total - downpayment) is collected after the kahati ends. 0 for solo.
+  downpaymentPhp: numeric('downpayment_php', { precision: 12, scale: 2 }).notNull().default('0'),
   // Delivery snapshot (captured at checkout — immutable record)
   shipName: varchar('ship_name', { length: 120 }).notNull(),
   shipPhone: varchar('ship_phone', { length: 40 }).notNull(),

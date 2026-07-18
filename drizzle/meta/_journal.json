@@ -29,6 +29,13 @@
       "when": 1784342740183,
       "tag": "0003_condemned_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784388676757,
+      "tag": "0004_workable_masque",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,11 @@ export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300 } as con
 export type PackingMode = keyof typeof PACKING_FEE_PHP;
 export type PackingFees = Record<PackingMode, number>;
 
+// Default downpayment (PHP) a customer pays at checkout to reserve kahati slots.
+// Deducted from the order total — the balance is collected after the kahati ends.
+// Admin-editable via the `kahati_downpayment` settings key; this is the fallback.
+export const KAHATI_DOWNPAYMENT_PHP = 150;
+
 export const KAHATI_MIN_VIALS = 7;    // minimum kahati commitment
 export const VIALS_PER_KIT = 10;      // 1 kit = 10 vials
 export const SOLO_MIN_KITS = 10;      // solo buy: 10 kits of any peptide
@@ -95,6 +100,19 @@ export function computeTotals(items: PriceableItem[]): OrderTotals {
 // Per-vial price for a kahati kit.
 export function perVialPrice(pricePerKitPhp: number): number {
   return round2(pricePerKitPhp / VIALS_PER_KIT);
+}
+
+export type KahatiDownpaymentSplit = { downpayment: number; balance: number };
+
+// Split a kahati order total into the downpayment due at checkout and the
+// balance payable after the kahati ends. The downpayment is clamped to
+// [0, total] so a small order never yields a negative balance.
+export function splitKahatiDownpayment(
+  total: number,
+  downpaymentPhp: number = KAHATI_DOWNPAYMENT_PHP,
+): KahatiDownpaymentSplit {
+  const downpayment = round2(Math.min(Math.max(downpaymentPhp, 0), total));
+  return { downpayment, balance: round2(total - downpayment) };
 }
 
 // Validate a kahati commitment against min vials and remaining slots.
