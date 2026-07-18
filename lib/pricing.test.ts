@@ -3,6 +3,7 @@ import {
   computeTotals, subtotal, packingFeeFor, perVialPrice,
   validateKahatiCommit, soloMoqStatus, hasSolo, hasKahati, hasGroupBuy,
   validateGroupBuyCommit, groupBuyMoqStatus, validateSoloCheckout,
+  splitKahatiDownpayment,
   PACKING_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS,
   type PriceableItem,
 } from './pricing';
@@ -191,5 +192,23 @@ describe('soloMoqStatus', () => {
     expect(s.meetsKits).toBe(false);
     expect(s.meetsBac).toBe(false);
     expect(s.met).toBe(false);
+  });
+});
+
+describe('kahati downpayment split', () => {
+  it('splits total into the default ₱150 downpayment and the balance', () => {
+    expect(splitKahatiDownpayment(6450)).toEqual({ downpayment: 150, balance: 6300 });
+  });
+  it('honours an admin-set downpayment amount', () => {
+    expect(splitKahatiDownpayment(6450, 500)).toEqual({ downpayment: 500, balance: 5950 });
+  });
+  it('caps the downpayment at the order total so balance never goes negative', () => {
+    expect(splitKahatiDownpayment(100, 150)).toEqual({ downpayment: 100, balance: 0 });
+  });
+  it('floors a negative downpayment at zero', () => {
+    expect(splitKahatiDownpayment(1000, -50)).toEqual({ downpayment: 0, balance: 1000 });
+  });
+  it('rounds to centavos', () => {
+    expect(splitKahatiDownpayment(1000.505, 150.004)).toEqual({ downpayment: 150, balance: 850.51 });
   });
 });

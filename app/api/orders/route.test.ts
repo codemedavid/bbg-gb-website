@@ -27,7 +27,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
-const { getDb, groupBuys, orders } = await import('@/lib/db');
+const { getDb, groupBuys, orders, settings } = await import('@/lib/db');
 const { resetDb, makeUser, makeProduct, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
@@ -103,6 +103,57 @@ describe('POST /api/orders', () => {
     const body = await res.json();
     expect(res.status).toBe(201);
     expect(body.data.totals).toMatchObject({ packingFee: 200, total: 900 * 7 + 200 });
+  });
+});
+
+describe('kahati downpayment at checkout', () => {
+  it('snapshots the default ₱150 downpayment on a kahati order', async () => {
+    await signIn();
+    const gb = await makeGroupBuy({ pricePerKitPhp: 9000, repackFeePhp: 150 });
+
+    const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(Number(body.data.order.downpaymentPhp)).toBe(150);
+    // The full total is unchanged — the downpayment is deducted from it, not added.
+    expect(body.data.totals.total).toBe(900 * 7 + 150);
+  });
+
+  it('uses the admin-set downpayment when configured', async () => {
+    await signIn();
+    const db = await getDb();
+    await db.insert(settings).values({ key: 'kahati_downpayment', value: '500' });
+    const gb = await makeGroupBuy({ pricePerKitPhp: 9000 });
+
+    const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(Number(body.data.order.downpaymentPhp)).toBe(500);
+  });
+
+  it('caps the downpayment at the order total', async () => {
+    await signIn();
+    // 7 vials × ₱10 + ₱0 packing = ₱70 total, below the ₱150 default downpayment.
+    const gb = await makeGroupBuy({ pricePerKitPhp: 100, repackFeePhp: 0 });
+
+    const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(Number(body.data.order.downpaymentPhp)).toBe(70);
+  });
+
+  it('records no downpayment on a solo order', async () => {
+    await signIn();
+    const product = await makeProduct({ pricePhp: 3200 });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(Number(body.data.order.downpaymentPhp)).toBe(0);
   });
 });
 
