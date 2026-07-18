@@ -1,0 +1,1095 @@
+{
+  "source": "bbg Price list.xlsx",
+  "counts": {
+    "pricelist": 97,
+    "moq": 2,
+    "onHand": 12,
+    "warnings": 10
+  },
+  "sheets": {
+    "pricelist": [
+      {
+        "category": "Tirzepatide",
+        "name": "Tirzepatide",
+        "size": "15.0",
+        "code": "BBG1000-15",
+        "usd": 51.2,
+        "php": 3200.0,
+        "block": "left",
+        "row": 5
+      },
+      {
+        "category": "Tirzepatide",
+        "name": "Tirzepatide",
+        "size": "30.0",
+        "code": "BBG1000-30",
+        "usd": 77.6,
+        "php": 4850.0,
+        "block": "left",
+        "row": 6
+      },
+      {
+        "category": "Tirzepatide",
+        "name": "Tirzepatide",
+        "size": "40.0",
+        "code": "BBG1000-40",
+        "usd": 100.0,
+        "php": 6250.0,
+        "block": "left",
+        "row": 7
+      },
+      {
+        "category": "Tirzepatide",
+        "name": "Tirzepatide",
+        "size": "60.0",
+        "code": "BBG1000-60",
+        "usd": 170.0,
+        "php": 10625.0,
+        "block": "left",
+        "row": 8
+      },
+      {
+        "category": "Tirzepatide",
+        "name": "Tirzepatide",
+        "size": "100.0",
+        "code": "BBG1000-100",
+        "usd": 215.0,
+        "php": 13437.5,
+        "block": "left",
+        "row": 9
+      },
+      {
+        "category": "Tirzepatide",
+        "name": "Tirzepatide (Salt Form/Mounjaro)",
+        "size": "30.0",
+        "code": "TR30",
+        "usd": 102.0,
+        "php": 6375.0,
+        "block": "left",
+        "row": 11
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide",
+        "size": "10.0",
+        "code": "BBG1000-10",
+        "usd": 70.0,
+        "php": 4375.0,
+        "block": "left",
+        "row": 13
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide",
+        "size": "15.0",
+        "code": "BBG1000-15",
+        "usd": 90.0,
+        "php": 5625.0,
+        "block": "left",
+        "row": 14
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide",
+        "size": "20.0",
+        "code": "BBG1000-20",
+        "usd": 110.0,
+        "php": 6875.0,
+        "block": "left",
+        "row": 15
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide",
+        "size": "30.0",
+        "code": "BBG1000-30",
+        "usd": 145.0,
+        "php": 9062.5,
+        "block": "left",
+        "row": 16
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide (Salt Form)",
+        "size": "10.0",
+        "code": "RT10",
+        "usd": 75.0,
+        "php": 4687.5,
+        "block": "left",
+        "row": 17
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide (Salt Form)",
+        "size": "15.0",
+        "code": "RT15",
+        "usd": 95.0,
+        "php": 5937.5,
+        "block": "left",
+        "row": 18
+      },
+      {
+        "category": "Retatrutide",
+        "name": "Retatrutide (Salt Form)",
+        "size": "20.0",
+        "code": "RT20",
+        "usd": 120.0,
+        "php": 7500.0,
+        "block": "left",
+        "row": 19
+      },
+      {
+        "category": "AOD",
+        "name": "AOD9604 Pro Max",
+        "size": "5.0",
+        "code": "BBG-5AD",
+        "usd": 85.6,
+        "php": 5350.0,
+        "block": "left",
+        "row": 21
+      },
+      {
+        "category": "Cagrilintide",
+        "name": "Cagrilintide",
+        "size": "5.0",
+        "code": "CGL5",
+        "usd": 64.8,
+        "php": 4050.0,
+        "block": "left",
+        "row": 23
+      },
+      {
+        "category": "Cagrilintide",
+        "name": "Cagrilintide",
+        "size": "10.0",
+        "code": "CGL10",
+        "usd": 112.8,
+        "php": 7050.0,
+        "block": "left",
+        "row": 24
+      },
+      {
+        "category": "Tesamorelin",
+        "name": "Tesamorelin",
+        "size": "5.0",
+        "code": "TS5",
+        "usd": 78.0,
+        "php": 4875.0,
+        "block": "left",
+        "row": 26
+      },
+      {
+        "category": "Tesamorelin",
+        "name": "Tesamorelin",
+        "size": "10.0",
+        "code": "TS10",
+        "usd": 165.0,
+        "php": 10312.5,
+        "block": "left",
+        "row": 27
+      },
+      {
+        "category": "MOTS-C",
+        "name": "MOTS-C",
+        "size": "10.0",
+        "code": "MS10",
+        "usd": 60.0,
+        "php": 3750.0,
+        "block": "left",
+        "row": 29
+      },
+      {
+        "category": "MOTS-C",
+        "name": "MOTS-C",
+        "size": "40.0",
+        "code": "MS40",
+        "usd": 185.0,
+        "php": 11562.5,
+        "block": "left",
+        "row": 30
+      },
+      {
+        "category": "5AMINO1MQ",
+        "name": "5Amino1",
+        "size": "10.0",
+        "code": "5AM10",
+        "usd": 50.0,
+        "php": 3125.0,
+        "block": "left",
+        "row": 32
+      },
+      {
+        "category": "5AMINO1MQ",
+        "name": "5Amino1",
+        "size": "50.0",
+        "code": "5AM50",
+        "usd": 65.0,
+        "php": 4062.5,
+        "block": "left",
+        "row": 33
+      },
+      {
+        "category": "SS31",
+        "name": "SS31",
+        "size": "10.0",
+        "code": "2S10",
+        "usd": 68.0,
+        "php": 4250.0,
+        "block": "left",
+        "row": 36
+      },
+      {
+        "category": "GHK-Cu & KPV",
+        "name": "GHK-CU",
+        "size": "50.0",
+        "code": "CU50",
+        "usd": 35.2,
+        "php": 2200.0,
+        "block": "left",
+        "row": 38
+      },
+      {
+        "category": "GHK-Cu & KPV",
+        "name": "GHK-CU",
+        "size": "100.0",
+        "code": "CU100",
+        "usd": 44.8,
+        "php": 2800.0,
+        "block": "left",
+        "row": 39
+      },
+      {
+        "category": "GHK-Cu & KPV",
+        "name": "GHKCU+KPV",
+        "size": "60.0",
+        "code": "CUV60",
+        "usd": 65.6,
+        "php": 4100.0,
+        "block": "left",
+        "row": 40
+      },
+      {
+        "category": "GHK-Cu & KPV",
+        "name": "KPV",
+        "size": "10.0",
+        "code": "KPV10",
+        "usd": 52.8,
+        "php": 3300.0,
+        "block": "left",
+        "row": 41
+      },
+      {
+        "category": "AHK-Cu (Pharmagrade Injectable)",
+        "name": "AHK-Cu",
+        "size": "100.0",
+        "code": null,
+        "usd": 58.0,
+        "php": 3625.0,
+        "block": "left",
+        "row": 43
+      },
+      {
+        "category": "KLOW",
+        "name": "KLOW",
+        "size": "80.0",
+        "code": "KLOW",
+        "usd": 170.0,
+        "php": 10625.0,
+        "block": "left",
+        "row": 45
+      },
+      {
+        "category": "NAD+",
+        "name": "NAD+",
+        "size": "100.0",
+        "code": "NJ100",
+        "usd": 40.0,
+        "php": 2500.0,
+        "block": "left",
+        "row": 47
+      },
+      {
+        "category": "NAD+",
+        "name": "NAD+",
+        "size": "500.0",
+        "code": "NJ500",
+        "usd": 42.0,
+        "php": 2625.0,
+        "block": "left",
+        "row": 48
+      },
+      {
+        "category": "NAD+",
+        "name": "NAD+",
+        "size": "1000.0",
+        "code": "NJ1000",
+        "usd": 72.0,
+        "php": 4500.0,
+        "block": "left",
+        "row": 49
+      },
+      {
+        "category": "SLU-PP",
+        "name": "SLU-PP",
+        "size": "5.0",
+        "code": "322.0",
+        "usd": 80.0,
+        "php": 5000.0,
+        "block": "left",
+        "row": 51
+      },
+      {
+        "category": "AICAR",
+        "name": "AICAR",
+        "size": "50.0",
+        "code": "AR50",
+        "usd": 50.0,
+        "php": 3125.0,
+        "block": "left",
+        "row": 53
+      },
+      {
+        "category": "Semax",
+        "name": "Semax",
+        "size": "10.0",
+        "code": "XA10",
+        "usd": 49.6,
+        "php": 3100.0,
+        "block": "left",
+        "row": 55
+      },
+      {
+        "category": "Selank",
+        "name": "Selank",
+        "size": "10.0",
+        "code": "SK10",
+        "usd": 49.6,
+        "php": 3100.0,
+        "block": "left",
+        "row": 57
+      },
+      {
+        "category": "Thymosin Alpha 1",
+        "name": "TA1",
+        "size": "5.0",
+        "code": null,
+        "usd": 71.6,
+        "php": 4475.0,
+        "block": "left",
+        "row": 73
+      },
+      {
+        "category": "Thymosin Alpha 1",
+        "name": "TA1",
+        "size": "10.0",
+        "code": null,
+        "usd": 131.0,
+        "php": 8187.5,
+        "block": "left",
+        "row": 74
+      },
+      {
+        "category": "Pinealon",
+        "name": "Pinealon",
+        "size": "10.0",
+        "code": null,
+        "usd": 60.0,
+        "php": 3750.0,
+        "block": "left",
+        "row": 76
+      },
+      {
+        "category": "Pinealon",
+        "name": "Pinealon",
+        "size": "20.0",
+        "code": null,
+        "usd": 108.0,
+        "php": 6750.0,
+        "block": "left",
+        "row": 77
+      },
+      {
+        "category": "Epithalon",
+        "name": "Epithalon",
+        "size": "10.0",
+        "code": null,
+        "usd": 45.0,
+        "php": 2812.5,
+        "block": "left",
+        "row": 79
+      },
+      {
+        "category": "Oxytocin",
+        "name": "Oxytocin",
+        "size": "5.0",
+        "code": null,
+        "usd": 32.0,
+        "php": 2000.0,
+        "block": "left",
+        "row": 81
+      },
+      {
+        "category": "Oxytocin",
+        "name": "Oxytocin",
+        "size": "10.0",
+        "code": null,
+        "usd": 47.0,
+        "php": 2937.5,
+        "block": "left",
+        "row": 82
+      },
+      {
+        "category": "PT141",
+        "name": "PT141",
+        "size": "10.0",
+        "code": null,
+        "usd": 60.0,
+        "php": 3750.0,
+        "block": "left",
+        "row": 84
+      },
+      {
+        "category": "LL-37",
+        "name": "LL-37",
+        "size": "5.0",
+        "code": null,
+        "usd": 80.0,
+        "php": 5000.0,
+        "block": "left",
+        "row": 86
+      },
+      {
+        "category": "BPC-157",
+        "name": "BPC157",
+        "size": "10.0",
+        "code": null,
+        "usd": 60.0,
+        "php": 3750.0,
+        "block": "left",
+        "row": 88
+      },
+      {
+        "category": "TB-500",
+        "name": "TB500",
+        "size": "10.0",
+        "code": null,
+        "usd": 120.0,
+        "php": 7500.0,
+        "block": "left",
+        "row": 90
+      },
+      {
+        "category": "CJC w/o DAC+IPA",
+        "name": "CJC w/o DAC+IPA",
+        "size": "10.0",
+        "code": null,
+        "usd": 93.0,
+        "php": 5812.5,
+        "block": "left",
+        "row": 92
+      },
+      {
+        "category": "Glutathione 600",
+        "name": "Glutathione 600",
+        "size": "600.0",
+        "code": null,
+        "usd": 50.0,
+        "php": 3125.0,
+        "block": "left",
+        "row": 94
+      },
+      {
+        "category": "DSIP",
+        "name": "DSIP",
+        "size": "5.0",
+        "code": null,
+        "usd": 42.0,
+        "php": 2625.0,
+        "block": "left",
+        "row": 96
+      },
+      {
+        "category": "DSIP",
+        "name": "DSIP",
+        "size": "10.0",
+        "code": null,
+        "usd": 69.0,
+        "php": 4312.5,
+        "block": "left",
+        "row": 97
+      },
+      {
+        "category": "LCAR",
+        "name": "LCAR",
+        "size": "1200.0",
+        "code": null,
+        "usd": null,
+        "php": 4200.0,
+        "block": "left",
+        "row": 99
+      },
+      {
+        "category": "Wolverine",
+        "name": "TB500+BPC157",
+        "size": "10.0",
+        "code": null,
+        "usd": null,
+        "php": 6300.0,
+        "block": "left",
+        "row": 101
+      },
+      {
+        "category": "BAC Water",
+        "name": "BAC Water",
+        "size": "3.0",
+        "code": "BBG0000-3ML",
+        "usd": 7.6,
+        "php": 475.0,
+        "block": "right",
+        "row": 5
+      },
+      {
+        "category": "BAC Water",
+        "name": "BAC Water",
+        "size": "5.0",
+        "code": "BBG0000-5ML",
+        "usd": 10.0,
+        "php": 625.0,
+        "block": "right",
+        "row": 6
+      },
+      {
+        "category": "BAC Water",
+        "name": "BAC Water",
+        "size": "10.0",
+        "code": "BBG0000-10ML",
+        "usd": 14.0,
+        "php": 875.0,
+        "block": "right",
+        "row": 7
+      },
+      {
+        "category": "Blends",
+        "name": "L Carnitine",
+        "size": "400.0",
+        "code": "LC500",
+        "usd": 55.0,
+        "php": 3437.5,
+        "block": "right",
+        "row": 10
+      },
+      {
+        "category": "Blends",
+        "name": "L Carnitine",
+        "size": "600.0",
+        "code": "LC600",
+        "usd": 60.0,
+        "php": 3750.0,
+        "block": "right",
+        "row": 11
+      },
+      {
+        "category": "Blends",
+        "name": "L Carnitine",
+        "size": "1200.0",
+        "code": "LC1200",
+        "usd": 67.2,
+        "php": 4200.0,
+        "block": "right",
+        "row": 12
+      },
+      {
+        "category": "Blends",
+        "name": "L Carnitine",
+        "size": "5000.0",
+        "code": "LC5000",
+        "usd": null,
+        "php": 0.0,
+        "block": "right",
+        "row": 13
+      },
+      {
+        "category": "Blends",
+        "name": "Lipo C",
+        "size": "10.0",
+        "code": "LC120",
+        "usd": 60.0,
+        "php": 3750.0,
+        "block": "right",
+        "row": 14
+      },
+      {
+        "category": "Blends",
+        "name": "Lipo C with B12",
+        "size": "10.0",
+        "code": "LC216",
+        "usd": 70.0,
+        "php": 4375.0,
+        "block": "right",
+        "row": 15
+      },
+      {
+        "category": "Blends",
+        "name": "Lipo-C (Focus)",
+        "size": "10.0",
+        "code": "LC425",
+        "usd": 72.0,
+        "php": 4500.0,
+        "block": "right",
+        "row": 16
+      },
+      {
+        "category": "Blends",
+        "name": "Fat Blaster",
+        "size": "10.0",
+        "code": "LC526",
+        "usd": 95.0,
+        "php": 5937.5,
+        "block": "right",
+        "row": 17
+      },
+      {
+        "category": "Blends",
+        "name": "Supershred",
+        "size": "10.0",
+        "code": "LC553",
+        "usd": 73.0,
+        "php": 4562.5,
+        "block": "right",
+        "row": 18
+      },
+      {
+        "category": "Blends",
+        "name": "Super Human Blend",
+        "size": "10.0",
+        "code": "SHB",
+        "usd": 73.0,
+        "php": 4562.5,
+        "block": "right",
+        "row": 19
+      },
+      {
+        "category": "Blends",
+        "name": "Healthy Hair Skin and Nails Blend",
+        "size": "10.0",
+        "code": "HHB",
+        "usd": 73.0,
+        "php": 4562.5,
+        "block": "right",
+        "row": 20
+      },
+      {
+        "category": "FAT Contouring",
+        "name": "Lemon Bottle (China)",
+        "size": "50.0",
+        "code": null,
+        "usd": 152.0,
+        "php": 9500.0,
+        "block": "right",
+        "row": 26
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Rejuran i (1 prefilled Syringe) 1ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2300.0,
+        "block": "right",
+        "row": 29
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Rejuran s (1 prefilled Syringe) 1 ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2300.0,
+        "block": "right",
+        "row": 30
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Rejuran hb (1 prefilled Syringe) 1ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2300.0,
+        "block": "right",
+        "row": 31
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Rejuran Healer (2x2ml prefilled Syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3450.0,
+        "block": "right",
+        "row": 32
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Rejuran Essence (2x2ml prefilled Syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3450.0,
+        "block": "right",
+        "row": 33
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Rejuran Trueskin",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3450.0,
+        "block": "right",
+        "row": 34
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Profhilo (1x2ml)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2300.0,
+        "block": "right",
+        "row": 36
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Hyaron Skin Booster (2.5mlx10 prefilled syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3250.0,
+        "block": "right",
+        "row": 37
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "NCTF135HA (3mlx5 vials)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1375.0,
+        "block": "right",
+        "row": 38
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "NCTF135HA Plus (3mlx5 vials)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1490.0,
+        "block": "right",
+        "row": 39
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Mesoestetic Mesohyal Organic Silicon",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3970.0,
+        "block": "right",
+        "row": 40
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "KIARA REJU (2.2mlx3 prefilled syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2500.0,
+        "block": "right",
+        "row": 41
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Restylane Skin Booster (1x1ml prefilled syringe)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1400.0,
+        "block": "right",
+        "row": 42
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "JUVEDERM Ultra 2 (2x1ml prefilled Syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3970.0,
+        "block": "right",
+        "row": 43
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "JUVEDERM Ultra 3 (2x1ml prefilled Syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3970.0,
+        "block": "right",
+        "row": 44
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "JUVEDERM Ultra 4 (2x1ml prefilled Syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3970.0,
+        "block": "right",
+        "row": 45
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "JUVEDERM Voluma (2x1ml prefilled Syringes)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3970.0,
+        "block": "right",
+        "row": 46
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Periocular Peptide YSG01/5ML",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3437.5,
+        "block": "right",
+        "row": 47
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Recombinant Peptide ZSG02/5ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3000.0,
+        "block": "right",
+        "row": 48
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Composite Peptide FSG03/5ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2812.5,
+        "block": "right",
+        "row": 49
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Salmon Peptide SSG04/5ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 2500.0,
+        "block": "right",
+        "row": 50
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Vitmain C peptide WSG05/5ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3125.0,
+        "block": "right",
+        "row": 51
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Whitening Peptide MSG06/5ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 3000.0,
+        "block": "right",
+        "row": 52
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Blue Peptide QSG07/5ml",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 4062.5,
+        "block": "right",
+        "row": 53
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "NABOTA",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1200.0,
+        "block": "right",
+        "row": 54
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "RENTOX",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1200.0,
+        "block": "right",
+        "row": 55
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "BOTOX GAS",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1400.0,
+        "block": "right",
+        "row": 56
+      },
+      {
+        "category": "Skin Boosters (Mesotherapy Injection & MicroNeedling)",
+        "name": "Xeomin (100U)",
+        "size": null,
+        "code": null,
+        "usd": null,
+        "php": 1400.0,
+        "block": "right",
+        "row": 57
+      },
+      {
+        "category": "Topical",
+        "name": "GHK-Cu (Topical)",
+        "size": "1000mg",
+        "code": null,
+        "usd": 69.6,
+        "php": 4350.0,
+        "block": "right",
+        "row": 59
+      }
+    ],
+    "moq": [
+      {
+        "name": "Tirzepatide + CGL 35mg",
+        "php": 9000.0,
+        "note": "1 Kit (10 vials)",
+        "row": 63
+      },
+      {
+        "name": "Bioglutide",
+        "php": 10400.0,
+        "note": "1 Kit (10 vials)",
+        "row": 64
+      }
+    ],
+    "onHand": [
+      {
+        "name": "Tirzepatide",
+        "size": "15.0",
+        "perKitPhp": 5000.0,
+        "perPiecePhp": 550.0,
+        "row": 4
+      },
+      {
+        "name": "Tirzepatide",
+        "size": "30.0",
+        "perKitPhp": 6500.0,
+        "perPiecePhp": 700.0,
+        "row": 5
+      },
+      {
+        "name": "Tirzepatide (Salt Form/Mounjaro)",
+        "size": "10.0",
+        "perKitPhp": 5200.0,
+        "perPiecePhp": 550.0,
+        "row": 7
+      },
+      {
+        "name": "Tirzepatide (Salt Form/Mounjaro)",
+        "size": "20.0",
+        "perKitPhp": 6800.0,
+        "perPiecePhp": 700.0,
+        "row": 8
+      },
+      {
+        "name": "Tirzepatide (Salt Form/Mounjaro)",
+        "size": "10.0",
+        "perKitPhp": 6300.0,
+        "perPiecePhp": 650.0,
+        "row": 10
+      },
+      {
+        "name": "Tirzepatide (Salt Form/Mounjaro)",
+        "size": "20.0",
+        "perKitPhp": 8200.0,
+        "perPiecePhp": 850.0,
+        "row": 11
+      },
+      {
+        "name": "AOD9604 Promax",
+        "size": "5.0",
+        "perKitPhp": 7200.0,
+        "perPiecePhp": 750.0,
+        "row": 13
+      },
+      {
+        "name": "Bacteriostatic Water",
+        "size": "3.0",
+        "perKitPhp": 500.0,
+        "perPiecePhp": 55.0,
+        "row": 15
+      },
+      {
+        "name": "Bacteriostatic Water",
+        "size": "5.0",
+        "perKitPhp": 730.0,
+        "perPiecePhp": 75.0,
+        "row": 16
+      },
+      {
+        "name": "Fuan GTT1500",
+        "size": "1500.0",
+        "perKitPhp": 7000.0,
+        "perPiecePhp": 750.0,
+        "row": 18
+      },
+      {
+        "name": "GHK+KPV 60",
+        "size": "60.0",
+        "perKitPhp": 6200.0,
+        "perPiecePhp": 650.0,
+        "row": 20
+      },
+      {
+        "name": "GHK-Cu",
+        "size": "100.0",
+        "perKitPhp": 4200.0,
+        "perPiecePhp": 450.0,
+        "row": 22
+      }
+    ]
+  },
+  "warnings": [
+    "left row 51: code '322.0' looks malformed",
+    "left row 63: code '322.0' looks malformed",
+    "left row 59: duplicate of left row 47; dropped",
+    "left row 60: duplicate of left row 48; dropped",
+    "left row 61: duplicate of left row 49; dropped",
+    "left row 63: duplicate of left row 51; dropped",
+    "left row 65: duplicate of left row 53; dropped",
+    "left row 67: duplicate of left row 55; dropped",
+    "left row 69: duplicate of left row 57; dropped",
+    "right row 35: duplicate of right row 33; dropped"
+  ]
+}
