@@ -11,6 +11,7 @@ export const CATEGORIES: SeedCategory[] = [
   { name: 'Skin', slug: 'skin', sortOrder: 4 },
   { name: 'Wellness', slug: 'wellness', sortOrder: 5 },
   { name: 'BAC', slug: 'bac', sortOrder: 6 },
+  { name: 'Aesthetics', slug: 'aesthetics', sortOrder: 7 },
 ];
 
 export const CATEGORY_DESC: Record<string, string> = {
@@ -20,15 +21,16 @@ export const CATEGORY_DESC: Record<string, string> = {
   skin: 'Cosmetic-grade peptide for skin research. Lyophilized powder unless marked topical.',
   wellness: 'Research peptide, lyophilized powder in sealed sterile vial. Reconstitute with BAC water.',
   bac: 'Bacteriostatic water (0.9% benzyl alcohol) for reconstituting lyophilized peptides.',
+  aesthetics: 'Ready-to-use aesthetic injectable — skin booster, dermal filler, or toxin. Prefilled and shipped cold; no reconstitution required.',
 };
 
 export type SeedProduct = {
-  code: string;
+  code: string | null;              // null for items with no CAT/Code (e.g. branded fillers)
   name: string;
   spec: string;
   cat: string;             // category slug
   pricePhp: number;
-  priceUsd?: number;
+  priceUsd?: number | null;         // null/omitted for PHP-only items (e.g. aesthetics)
   arrival: 'white_powder' | 'salt_liquid';
   emoji?: string;
   isOnHand?: boolean;
@@ -94,6 +96,37 @@ export const PRODUCTS: SeedProduct[] = [
   { code: 'BBG0000-3ML', name: 'BAC Water', spec: '3ml', cat: 'bac', pricePhp: 475, priceUsd: 7.6, arrival: 'white_powder', emoji: '💦', isOnHand: true, onHandKitPhp: 500, onHandPiecePhp: 55, stock: 200, soldCount: 520 },
   { code: 'BBG0000-5ML', name: 'BAC Water', spec: '5ml', cat: 'bac', pricePhp: 625, priceUsd: 10, arrival: 'white_powder', emoji: '💦', isOnHand: true, onHandKitPhp: 730, onHandPiecePhp: 75, stock: 180, soldCount: 410 },
   { code: 'BBG0000-10ML', name: 'BAC Water', spec: '10ml', cat: 'bac', pricePhp: 875, priceUsd: 14, arrival: 'white_powder', emoji: '💦', stock: 160, soldCount: 360 },
+  // ---- Aesthetics (injectables: skin boosters, dermal fillers, toxins) ----
+  // Imported from bbg Price list.xlsx (right-block, PHP-only). Ready-to-use
+  // liquid => arrival 'salt_liquid'. No USD list price; no reconstitution.
+  { code: null, name: 'Rejuran i', spec: '1 prefilled syringe, 1ml', cat: 'aesthetics', pricePhp: 2300, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Rejuran s', spec: '1 prefilled syringe, 1ml', cat: 'aesthetics', pricePhp: 2300, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Rejuran hb', spec: '1 prefilled syringe, 1ml', cat: 'aesthetics', pricePhp: 2300, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Rejuran Healer', spec: '2x2ml prefilled syringes', cat: 'aesthetics', pricePhp: 3450, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Rejuran Essence', spec: '2x2ml prefilled syringes', cat: 'aesthetics', pricePhp: 3450, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Rejuran Trueskin', spec: 'per piece', cat: 'aesthetics', pricePhp: 3450, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Profhilo', spec: '1x2ml', cat: 'aesthetics', pricePhp: 2300, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Hyaron Skin Booster', spec: '2.5mlx10 prefilled syringes', cat: 'aesthetics', pricePhp: 3250, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'NCTF135HA', spec: '3mlx5 vials', cat: 'aesthetics', pricePhp: 1375, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'NCTF135HA Plus', spec: '3mlx5 vials', cat: 'aesthetics', pricePhp: 1490, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Mesoestetic Mesohyal Organic Silicon', spec: 'per piece', cat: 'aesthetics', pricePhp: 3970, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Kiara Reju', spec: '2.2mlx3 prefilled syringes', cat: 'aesthetics', pricePhp: 2500, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Restylane Skin Booster', spec: '1x1ml prefilled syringe', cat: 'aesthetics', pricePhp: 1400, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'JUVEDERM Ultra 2', spec: '2x1ml prefilled syringes', cat: 'aesthetics', pricePhp: 3970, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'JUVEDERM Ultra 3', spec: '2x1ml prefilled syringes', cat: 'aesthetics', pricePhp: 3970, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'JUVEDERM Ultra 4', spec: '2x1ml prefilled syringes', cat: 'aesthetics', pricePhp: 3970, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'JUVEDERM Voluma', spec: '2x1ml prefilled syringes', cat: 'aesthetics', pricePhp: 3970, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'YSG01', name: 'Periocular Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 3437.5, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'ZSG02', name: 'Recombinant Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 3000, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'FSG03', name: 'Composite Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 2812.5, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'SSG04', name: 'Salmon Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 2500, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'WSG05', name: 'Vitamin C Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 3125, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'MSG06', name: 'Whitening Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 3000, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: 'QSG07', name: 'Blue Peptide', spec: '5ml', cat: 'aesthetics', pricePhp: 4062.5, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Nabota', spec: 'per piece', cat: 'aesthetics', pricePhp: 1200, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Rentox', spec: 'per piece', cat: 'aesthetics', pricePhp: 1200, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Botox Gas', spec: 'per piece', cat: 'aesthetics', pricePhp: 1400, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
+  { code: null, name: 'Xeomin', spec: '100U', cat: 'aesthetics', pricePhp: 1400, priceUsd: null, arrival: 'salt_liquid', emoji: '💉' },
 ];
 
 export type SeedGroupBuy = {
