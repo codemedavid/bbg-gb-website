@@ -82,7 +82,8 @@ export default function CheckoutPage() {
   return (
     <OverlayShell>
       <BackHeader title="Checkout" onBack={() => router.push('/cart')} />
-      <div className="flex flex-col gap-3.5 p-4">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-3.5 p-4 lg:grid lg:max-w-none lg:grid-cols-[1fr_360px] lg:items-start lg:gap-5 lg:p-6">
+        <div className="flex flex-col gap-3.5">
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-2.5 text-[13px] font-bold text-ink">Deliver to</div>
           <input name="shipName" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name"
@@ -155,7 +156,9 @@ export default function CheckoutPage() {
             )}
           </label>
         </div>
+        </div>
 
+        <div className="flex flex-col gap-3.5 lg:sticky lg:top-[72px]">
         <div className="rounded-[14px] bg-white p-4 shadow-card"><OrderSummary /></div>
         <div className="text-[11.5px] leading-relaxed text-ink-muted">
           🛬 Tip: white powder peptides ship first; salt forms, blends &amp; liquids arrive 3–5 days later — place them in separate orders to avoid delays.
@@ -164,6 +167,7 @@ export default function CheckoutPage() {
           className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${canPlace && !submitting ? 'bg-brand-green active:scale-[.99]' : 'bg-[#b9c6b4]'}`}>
           {submitting ? 'Placing…' : proof ? 'Place order' : 'Upload proof to place order'}
         </button>
+        </div>
       </div>
     </OverlayShell>
   );

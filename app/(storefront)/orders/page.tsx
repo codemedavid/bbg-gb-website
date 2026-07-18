@@ -89,7 +89,7 @@ export default function OrdersPage() {
   return (
     <>
       <SectionHeader title="📦 My Orders" sub="Track status · download COA" />
-      <div className="flex flex-col gap-3 p-4">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 p-4 md:p-6">
         {isLoading || loading ? <div className="py-16 text-center text-[13px] text-ink-muted">Loading…</div>
           : orders.length ? orders.map((o) => <OrderCard key={o.id} order={o} />)
           : <div className="py-16 text-center text-[13px] text-ink-muted">No orders yet. Sali sa kahati o mag-shop! 🛒</div>}

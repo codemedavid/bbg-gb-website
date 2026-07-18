@@ -15,7 +15,7 @@ const TABS = [
 export function BottomNav() {
   const pathname = usePathname();
   return (
-    <nav className="fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 grid-cols-6 border-t border-line-mist bg-white pb-4 pt-2">
+    <nav className="fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 grid-cols-6 border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl">
       {TABS.map((t) => {
         const active = t.href === '/' ? pathname === '/' : pathname.startsWith(t.href);
         return (

@@ -3,6 +3,7 @@ export default {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      screens: { xs: '400px' },
       colors: {
         // BBG Peptides brand palette (from imported design)
         brand: {

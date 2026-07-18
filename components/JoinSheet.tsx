@@ -18,8 +18,8 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45" onClick={onClose}>
-      <div className="w-full max-w-app animate-sheetup rounded-t-[20px] bg-white px-4 pb-[26px] pt-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-app animate-sheetup rounded-t-[20px] bg-white px-4 pb-[26px] pt-5 sm:animate-fadein sm:rounded-[20px]" onClick={(e) => e.stopPropagation()}>
         <div className="mb-1 flex items-center justify-between">
           <span className="font-display text-[17px] font-bold text-ink">{g.name}</span>
           <button onClick={onClose} className="px-2 py-1 text-[20px] text-ink-muted">✕</button>

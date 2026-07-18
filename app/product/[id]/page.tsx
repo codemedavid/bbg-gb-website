@@ -36,8 +36,9 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   return (
     <OverlayShell>
       <BackHeader title="Product" />
-      <div className="p-4">
-        <div className="mb-3.5 flex h-[180px] items-center justify-center rounded-[16px] bg-gradient-to-br from-[#eef3fb] to-[#e9f5de] text-[56px]">{p.imageEmoji || '💧'}</div>
+      <div className="p-4 md:grid md:grid-cols-2 md:items-start md:gap-6 md:p-6">
+        <div className="mb-3.5 flex h-[180px] items-center justify-center rounded-[16px] bg-gradient-to-br from-[#eef3fb] to-[#e9f5de] text-[56px] md:sticky md:top-[76px] md:mb-0 md:h-[340px] md:text-[80px]">{p.imageEmoji || '💧'}</div>
+        <div>
         <div className="flex items-baseline justify-between gap-2.5">
           <h1 className="m-0 font-display text-[22px] text-ink">{p.name}</h1>
           <span className="flex-none rounded-md bg-[#e8f5db] px-2.5 py-1 text-[11px] font-bold text-brand-greendark">{p.categoryName}</span>
@@ -62,6 +63,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
             <button onClick={() => setQty((q) => q + 1)} className="flex h-[46px] w-[42px] items-center justify-center text-[18px] font-bold text-ink-body">+</button>
           </div>
           <button onClick={addToCart} className="flex-1 rounded-[12px] bg-brand-green py-3.5 text-center text-[15px] font-bold text-white active:scale-[.99]">Add to cart</button>
+        </div>
         </div>
       </div>
     </OverlayShell>

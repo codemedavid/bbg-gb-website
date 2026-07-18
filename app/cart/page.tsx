@@ -16,7 +16,7 @@ export default function CartPage() {
   return (
     <OverlayShell>
       <BackHeader title={`Cart · ${count}`} />
-      <div className="p-4">
+      <div className="mx-auto w-full max-w-xl p-4">
         {!items.length && (
           <div className="px-5 py-16 text-center text-ink-muted">
             <div className="mb-2.5 text-4xl">🛒</div>

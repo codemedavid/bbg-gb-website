@@ -1,8 +1,13 @@
 import 'dotenv/config';
 
+// Whitespace/newlines are never valid unencoded in a connection URL, but they
+// sneak in when the value is pasted into a dashboard with a line wrap — strip
+// them so a bad paste can't produce ERR_INVALID_URL in production.
+const sanitizeUrl = (value: string | undefined): string => (value || '').replace(/\s+/g, '');
+
 export const env = {
   // Empty => local embedded Postgres (PGlite) for dev/verification.
-  databaseUrl: process.env.DATABASE_URL || '',
+  databaseUrl: sanitizeUrl(process.env.DATABASE_URL),
   // Where PGlite persists when databaseUrl is empty. Tests use 'memory://'.
   pglitePath: process.env.PGLITE_PATH || './.pglite',
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret-change-me',

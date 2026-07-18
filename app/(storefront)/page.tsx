@@ -19,11 +19,11 @@ export default function HomePage() {
   return (
     <>
       <AppHeader greeting={user ? `Hi, ${user.name.split(' ')[0]} 👋` : undefined} />
-      <div className="px-4 pb-1.5 pt-[18px]">
-        <div className="mb-4 rounded-[16px] bg-gradient-to-br from-brand-green to-brand-greendark p-[18px] text-white">
+      <div className="px-4 pb-1.5 pt-[18px] md:px-6">
+        <div className="mb-4 rounded-[16px] bg-gradient-to-br from-brand-green to-brand-greendark p-[18px] text-white md:p-6">
           <div className="mb-1.5 text-[12px] font-bold tracking-wider opacity-85">🤝 KAHATI NG BARKADA</div>
-          <div className="mb-2 font-display text-[22px] font-bold leading-tight">Sali na — kahati tayo!</div>
-          <div className="text-[13px] leading-relaxed opacity-90">
+          <div className="mb-2 font-display text-[22px] font-bold leading-tight md:text-[28px]">Sali na — kahati tayo!</div>
+          <div className="text-[13px] leading-relaxed opacity-90 md:max-w-[560px] md:text-[14px]">
             Commit at least 7 vials, upload your bank transfer proof, and we split, repack &amp; ship straight to you once admins close the kahati.
           </div>
         </div>
@@ -39,7 +39,7 @@ export default function HomePage() {
           <span className="font-display text-[16px] font-bold text-ink">Open kahati</span>
           <button onClick={() => router.push('/kahati')} className="text-[12.5px] font-bold text-brand-blue">See all →</button>
         </div>
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {gbs.slice(0, 3).map((g) => <GroupBuyCard key={g.id} g={g} onJoin={setJoining} />)}
         </div>
 
