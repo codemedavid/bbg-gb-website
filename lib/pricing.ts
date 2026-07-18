@@ -1,9 +1,17 @@
 // Central order/pricing rules for BBG Peptides.
-// Mirrors the imported design: solo orders pay LBC shipping; kahati orders pay a
-// flat repack fee (shipping included). An order can contain both.
+// One packing fee per order, priced by fulfillment mode. The packing fee already
+// includes local shipping (SF) — there is no separate shipping or admin fee.
+// A cart that mixes modes checks out as one order per mode, each carrying its own
+// packing fee, so a mixed-cart total sums one packing fee per mode present.
 
-export const SHIPPING_PHP = 180;      // LBC, PH-wide, applied once when solo/group-buy items present
-export const REPACK_FEE_PHP = 150;    // per kahati participant, shipping included
+// Per-mode packing-fee defaults (PHP, local shipping included). Admin-editable:
+// these are the fallback defaults; a per-listing override on the item wins.
+//   solo      -> On-hand  (pag onhand)
+//   kahati    -> Hatian   (kapag hatian)
+//   group_buy -> Pasabay  (pag pasabay)
+export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300 } as const;
+export type PackingMode = keyof typeof PACKING_FEE_PHP;
+
 export const KAHATI_MIN_VIALS = 7;    // minimum kahati commitment
 export const VIALS_PER_KIT = 10;      // 1 kit = 10 vials
 export const SOLO_MIN_KITS = 10;      // solo buy: 10 kits of any peptide
@@ -11,17 +19,16 @@ export const SOLO_MIN_BAC = 10;       // + 10 BAC water
 export const GROUP_BUY_MIN_KITS = 1;  // group buy (MOQ campaign): default per-customer commitment
 
 // The three purchasing modes carried by a cart item:
-//   'product'      -> Solo Buy   (min 10 kits + 10 BAC, LBC shipping)
-//   'group_buy'    -> Kahati     (shared single-product order, min 7 vials, repack fee)
-//   'moq_campaign' -> Group Buy  (admin-set MOQ; commitments held until MOQ met or approved)
+//   'product'      -> Solo Buy / On-hand (min 10 kits + 10 BAC, ₱200 packing)
+//   'group_buy'    -> Kahati / Hatian    (shared single-product order, min 7 vials, ₱150 packing)
+//   'moq_campaign' -> Group Buy / Pasabay (admin-set MOQ; ₱300 packing)
 export type PriceableItem = {
   kind: 'product' | 'group_buy' | 'moq_campaign';
   unitPricePhp: number;
   qty: number;
-  // Kahati items carry the group buy's own admin-editable repack fee; omitted means REPACK_FEE_PHP.
-  repackFeePhp?: number;
-  // MOQ campaign items may override shipping per campaign terms; omitted means SHIPPING_PHP.
-  shippingPhp?: number;
+  // Admin-editable per-listing packing fee (local shipping included). When omitted,
+  // the item's mode default from PACKING_FEE_PHP applies.
+  packingFeePhp?: number;
 };
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -40,41 +47,44 @@ export function subtotal(items: PriceableItem[]): number {
   return round2(items.reduce((sum, i) => sum + i.unitPricePhp * i.qty, 0));
 }
 
-// LBC shipping applies to solo and group-buy (MOQ) items. Kahati folds shipping
-// into its repack fee. Group-buy campaigns may override the amount per their terms.
-export function shippingFor(items: PriceableItem[]): number {
-  if (hasSolo(items)) return SHIPPING_PHP;
-  const campaignShip = items
-    .filter((i) => i.kind === 'moq_campaign')
-    .map((i) => i.shippingPhp ?? SHIPPING_PHP);
-  return campaignShip.length ? round2(Math.max(...campaignShip)) : 0;
+const MODE_KIND: Record<PackingMode, PriceableItem['kind']> = {
+  solo: 'product',
+  kahati: 'group_buy',
+  group_buy: 'moq_campaign',
+};
+
+// Packing fee for the items of a single mode: the highest per-listing override
+// among them, falling back to the mode default when none override.
+function packingFeeForMode(items: PriceableItem[], mode: PackingMode): number {
+  const modeItems = items.filter((i) => i.kind === MODE_KIND[mode]);
+  if (modeItems.length === 0) return 0;
+  const fees = modeItems.map((i) => i.packingFeePhp ?? PACKING_FEE_PHP[mode]);
+  return round2(Math.max(...fees));
 }
-// One repack fee per order. When a cart joins several kahatis, the highest fee applies.
-export function repackFeeFor(items: PriceableItem[]): number {
-  const fees = items
-    .filter((i) => i.kind === 'group_buy')
-    .map((i) => i.repackFeePhp ?? REPACK_FEE_PHP);
-  return fees.length ? round2(Math.max(...fees)) : 0;
+
+// Total packing fee: one fee per fulfillment mode present. Each mode checks out
+// as its own order, so a mixed cart sums a packing fee per mode. Local shipping
+// is already included in every packing fee; there is no separate shipping or admin fee.
+export function packingFeeFor(items: PriceableItem[]): number {
+  const modes: PackingMode[] = ['solo', 'kahati', 'group_buy'];
+  return round2(modes.reduce((sum, mode) => sum + packingFeeForMode(items, mode), 0));
 }
 
 export type OrderTotals = {
   subtotal: number;
-  shipping: number;
-  repackFee: number;
+  packingFee: number; // one fee per mode present; local shipping included
   total: number;
   buyType: 'solo' | 'kahati' | 'group_buy';
 };
 
 export function computeTotals(items: PriceableItem[]): OrderTotals {
   const sub = subtotal(items);
-  const shipping = shippingFor(items);
-  const repackFee = repackFeeFor(items);
+  const packingFee = packingFeeFor(items);
   return {
     subtotal: sub,
-    shipping,
-    repackFee,
-    total: round2(sub + shipping + repackFee),
-    // Any kahati item dominates record-keeping (repack handling); otherwise a
+    packingFee,
+    total: round2(sub + packingFee),
+    // Any kahati item dominates record-keeping (repack/split handling); otherwise a
     // group-buy campaign; otherwise plain solo. Modes are split before checkout,
     // so a well-formed order segment is single-mode.
     buyType: hasKahati(items) ? 'kahati' : hasGroupBuy(items) ? 'group_buy' : 'solo',

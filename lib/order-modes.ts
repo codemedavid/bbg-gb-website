@@ -2,7 +2,7 @@
 //
 // Per the storefront SRS, the three purchasing modes are never combined in one
 // order: a mixed cart checks out as one distinct order per mode, each with its
-// own fees and lifecycle. This module maps items to modes and performs that split.
+// own packing fee and lifecycle. This module maps items to modes and splits them.
 
 import { computeTotals, type OrderTotals, type PriceableItem } from './pricing';
 
