@@ -142,3 +142,51 @@ schema/migration, and API routes. Storefront/admin UI wiring is a follow-up pass
 - `c49f8ad` lifecycle (RED validated, 10 pass), `8bca64b` union-narrow test fix.
 - `7bbd771` schema + migration + harness (existing 7 integration tests pass).
 - `2299805` API routes (70/70 pass, tsc clean).
+
+---
+
+# Pass 3 — Group Buy integrity fixes (code-review #1, #2)
+
+**Scope:** close the two integrity holes the high-effort review flagged: commit
+required no payment proof, and `committed` was never released on cancellation.
+
+## User journeys
+
+1. As a customer, I must attach a payment proof to commit to a campaign; a commit
+   with no proof is rejected.
+2. As an admin, when I cancel a group-buy order, the campaign's committed count
+   drops by that order's kits, so MOQ progress reflects only live commitments.
+
+## Task report
+
+| Task | Validation command | RED → GREEN |
+|------|--------------------|-------------|
+| Require proof on commit (multipart + `validateAndStoreProof`) | `npx vitest run app/api/campaigns/route.test.ts` | JSON→multipart mismatch failing → 11 pass |
+| Release committed on order cancel (status route, transactional) | `npx vitest run "app/api/admin/orders/[id]/status/route.test.ts"` | decrement missing → 3 pass |
+
+## Test specification (pass 3)
+
+| # | What is guaranteed | Test | Type | Result |
+|---|--------------------|------|------|--------|
+| 1 | Commit stores a payment proof (paymentProofKey set) | `campaigns/route.test.ts:commit ... with proof` | integration | PASS |
+| 2 | Commit with no proof is rejected 400 | `campaigns/route.test.ts:rejects a commitment with no payment proof` | integration | PASS |
+| 3 | Cancelling a group-buy order decrements campaign committed | `status/route.test.ts:decrements ... on cancel` | integration | PASS |
+| 4 | Re-cancelling never double-decrements (clamp at 0) | `status/route.test.ts:does not double-decrement` | integration | PASS |
+| 5 | Non-cancel transitions leave committed untouched | `status/route.test.ts:leaves committed untouched` | integration | PASS |
+| 6 | Existing solo/kahati checkout unchanged after proof extraction | `orders/route.test.ts` (7) | integration | PASS |
+
+## Coverage and known gaps (pass 3)
+
+- Full suite: **78 passed (8 files)** — `npx vitest run`. `npx tsc --noEmit` exit 0.
+- `@vitest/coverage-v8` still not installed; new `lib/proof.ts` is exercised by
+  both the orders and commit suites.
+- Still out of scope (documented follow-ups): whole-campaign cancel does not yet
+  cascade to mark linked orders cancelled/refunded or reset committed; the
+  three-mode `splitCartIntoOrders`/`validateSoloCheckout` engine (review #3, #4)
+  is still not wired into `/api/orders`; admin lifecycle UPDATE non-atomicity
+  (review #5) and admin-login rate limiting (review #6) remain open.
+
+## Merge evidence (pass 3)
+
+- RED `b231326` (7 reproducers failing for the intended reasons).
+- GREEN `0e15ba1` (78/78 pass, tsc clean; proof extraction verified behavior-preserving by the 7 existing orders tests).
