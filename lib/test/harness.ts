@@ -109,4 +109,17 @@ export function checkoutRequest(items: unknown, opts: { withProof?: boolean } = 
   return new Request('http://localhost/api/orders', { method: 'POST', body: form });
 }
 
+// Builds the multipart Request a campaign-commit route handler expects.
+export function commitRequest(qty: number, opts: { withProof?: boolean } = {}): Request {
+  const form = new FormData();
+  form.set('qty', String(qty));
+  form.set('shipName', SHIPPING.shipName);
+  form.set('shipPhone', SHIPPING.shipPhone);
+  form.set('shipAddress', SHIPPING.shipAddress);
+  if (opts.withProof !== false) {
+    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
+  }
+  return new Request('http://localhost/api/campaigns/x/commit', { method: 'POST', body: form });
+}
+
 export { signToken };

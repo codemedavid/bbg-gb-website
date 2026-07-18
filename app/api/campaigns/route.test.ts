@@ -28,7 +28,7 @@ const { GET: LIST, POST: CREATE } = await import('./route');
 const { POST: ACTION } = await import('./[id]/action/route');
 const { POST: COMMIT } = await import('./[id]/commit/route');
 const { getDb, moqCampaigns, orders } = await import('@/lib/db');
-const { resetDb, makeUser, makeMoqCampaign } = await import('@/lib/test/harness');
+const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
   const user = await makeUser({ role });
@@ -100,12 +100,10 @@ describe('POST /api/campaigns/[id]/action (admin lifecycle)', () => {
 });
 
 describe('POST /api/campaigns/[id]/commit (customer)', () => {
-  const ship = { shipName: 'Ana Cruz', shipPhone: '09171234567', shipAddress: '1 Mabini St' };
-
-  it('records a commitment, increments committed, and creates a held group_buy order', async () => {
+  it('records a commitment, increments committed, and creates a held group_buy order with proof', async () => {
     const user = await signIn('customer');
     const c = await makeMoqCampaign({ moq: 10, committed: 0, perCustomerMin: 1, pricePerKitPhp: 10400 });
-    const res = await COMMIT(jsonReq({ qty: 3, ...ship }), ctx(c.id));
+    const res = await COMMIT(commitRequest(3), ctx(c.id));
     const body = await res.json();
     expect(res.status).toBe(201);
     expect(body.data.totals).toMatchObject({ subtotal: 31200, shipping: 180, repackFee: 0, total: 31380 });
@@ -115,25 +113,33 @@ describe('POST /api/campaigns/[id]/commit (customer)', () => {
     const placed = await (await getDb()).select().from(orders).where(eq(orders.userId, user.id));
     expect(placed).toHaveLength(1);
     expect(placed[0].buyType).toBe('group_buy');
+    expect(placed[0].paymentProofKey).toBeTruthy();
+  });
+
+  it('rejects a commitment with no payment proof', async () => {
+    await signIn('customer');
+    const c = await makeMoqCampaign();
+    const res = await COMMIT(commitRequest(2, { withProof: false }), ctx(c.id));
+    expect(res.status).toBe(400);
   });
 
   it('rejects a commitment below the per-customer minimum', async () => {
     await signIn('customer');
     const c = await makeMoqCampaign({ perCustomerMin: 3 });
-    const res = await COMMIT(jsonReq({ qty: 2, ...ship }), ctx(c.id));
+    const res = await COMMIT(commitRequest(2), ctx(c.id));
     expect(res.status).toBe(400);
   });
 
   it('rejects a commitment to a non-open campaign', async () => {
     await signIn('customer');
     const c = await makeMoqCampaign({ status: 'approved' });
-    const res = await COMMIT(jsonReq({ qty: 2, ...ship }), ctx(c.id));
+    const res = await COMMIT(commitRequest(2), ctx(c.id));
     expect(res.status).toBe(400);
   });
 
   it('requires authentication', async () => {
     const c = await makeMoqCampaign();
-    const res = await COMMIT(jsonReq({ qty: 2, ...ship }), ctx(c.id));
+    const res = await COMMIT(commitRequest(2), ctx(c.id));
     expect(res.status).toBe(401);
   });
 });
