@@ -106,7 +106,7 @@ describe('POST /api/campaigns/[id]/commit (customer)', () => {
     const res = await COMMIT(commitRequest(3), ctx(c.id));
     const body = await res.json();
     expect(res.status).toBe(201);
-    expect(body.data.totals).toMatchObject({ subtotal: 31200, shipping: 180, repackFee: 0, total: 31380 });
+    expect(body.data.totals).toMatchObject({ subtotal: 31200, packingFee: 300, total: 31500 });
 
     const [row] = await (await getDb()).select().from(moqCampaigns).where(eq(moqCampaigns.id, c.id));
     expect(row.committed).toBe(3);

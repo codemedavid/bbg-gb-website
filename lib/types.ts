@@ -54,8 +54,9 @@ export type OrderItem = {
   unitPricePhp: string; qty: number; lineTotalPhp: string;
 };
 export type Order = {
-  id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati';
-  subtotalPhp: string; shippingPhp: string; repackFeePhp: string; totalPhp: string;
+  id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy';
+  // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
+  subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
   shipName: string; shipPhone: string; shipAddress: string; trackingNo: string | null;
   createdAt: string; items?: OrderItem[];
 };

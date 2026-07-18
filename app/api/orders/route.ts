@@ -4,6 +4,7 @@ import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, pay
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { computeTotals, perVialPrice, validateKahatiCommit, round2, type PriceableItem } from '@/lib/pricing';
+import { getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
@@ -48,6 +49,9 @@ export const POST = handler(async (req: Request) => {
   const proofKey = await validateAndStoreProof(form.get('proof'));
 
   const db = await getDb();
+  // Global packing-fee defaults; the solo (on-hand) fee has no per-listing home,
+  // kahati items carry their own admin-editable fee (below).
+  const packingFees = await getPackingFees();
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
@@ -65,7 +69,7 @@ export const POST = handler(async (req: Request) => {
       if (it.kind === 'product') {
         const [p] = await tx.select().from(products).where(and(eq(products.id, it.refId), eq(products.isActive, true)));
         if (!p) throw new ApiError(400, `Product not available: ${it.refId}`);
-        priced.push({ kind: 'product', unitPricePhp: Number(p.pricePhp), qty: it.qty, nameSnapshot: `${p.name} ${p.spec}`, specSnapshot: p.spec, productId: p.id });
+        priced.push({ kind: 'product', unitPricePhp: Number(p.pricePhp), qty: it.qty, packingFeePhp: packingFees.solo, nameSnapshot: `${p.name} ${p.spec}`, specSnapshot: p.spec, productId: p.id });
       } else {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
@@ -94,7 +98,7 @@ export const POST = handler(async (req: Request) => {
           kind: 'group_buy',
           unitPricePhp: perVialPrice(Number(g.pricePerKitPhp)),
           qty: it.qty,
-          repackFeePhp: Number(g.repackFeePhp), // admin-editable per group buy
+          packingFeePhp: Number(g.repackFeePhp), // kahati packing fee, admin-editable per group buy
           nameSnapshot: `${g.name} — kahati`,
           specSnapshot: `Kahati · min ${g.minVials} vials`,
           groupBuyId: g.id,
@@ -111,8 +115,8 @@ export const POST = handler(async (req: Request) => {
 
     const [order] = await tx.insert(orders).values({
       orderNo, userId: session.sub, status: 'proof_review', buyType,
-      subtotalPhp: String(totals.subtotal), shippingPhp: String(totals.shipping),
-      repackFeePhp: String(totals.repackFee), totalPhp: String(totals.total),
+      subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
+      totalPhp: String(totals.total),
       shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
       paymentMethod: body.paymentMethod ?? null,
       paymentProofKey: proofKey,

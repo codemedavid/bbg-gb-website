@@ -42,7 +42,7 @@ beforeEach(async () => {
 });
 
 describe('POST /api/orders', () => {
-  it('places a solo order and charges shipping once', async () => {
+  it('places a solo order and charges the on-hand packing fee once', async () => {
     await signIn();
     const product = await makeProduct({ pricePhp: 3200 });
 
@@ -50,7 +50,7 @@ describe('POST /api/orders', () => {
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(body.data.totals).toMatchObject({ subtotal: 6400, shipping: 180, repackFee: 0, total: 6580 });
+    expect(body.data.totals).toMatchObject({ subtotal: 6400, packingFee: 200, total: 6600 });
   });
 
   it('rejects an order with no payment proof', async () => {
@@ -96,13 +96,13 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(400);
   });
 
-  it('charges the group buy repack fee', async () => {
+  it('charges the group buy packing fee (admin-editable per kahati)', async () => {
     await signIn();
     const gb = await makeGroupBuy({ repackFeePhp: 200, pricePerKitPhp: 9000 });
     const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
     const body = await res.json();
     expect(res.status).toBe(201);
-    expect(body.data.totals).toMatchObject({ repackFee: 200, shipping: 0, total: 900 * 7 + 200 });
+    expect(body.data.totals).toMatchObject({ packingFee: 200, total: 900 * 7 + 200 });
   });
 });
 
