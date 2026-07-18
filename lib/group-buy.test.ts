@@ -14,7 +14,7 @@ describe('applyCampaignAction', () => {
   it('refuses to act on an already-approved campaign', () => {
     const r = applyCampaignAction('approved', 'cancel');
     expect(r.ok).toBe(false);
-    expect(r.message).toMatch(/approved/);
+    if (!r.ok) expect(r.message).toMatch(/approved/);
   });
   it('refuses to act on a cancelled campaign', () => {
     expect(applyCampaignAction('cancelled', 'approve').ok).toBe(false);
