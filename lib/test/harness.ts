@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { getDb, users, categories, products, groupBuys } from '@/lib/db';
+import { getDb, users, categories, products, groupBuys, moqCampaigns } from '@/lib/db';
 import { hashPassword, signToken } from '@/lib/auth';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
@@ -13,7 +13,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 // Cleared between tests, children before parents.
 const TABLES = [
   'order_status_history', 'order_items', 'orders',
-  'email_log', 'coa_files', 'group_buys', 'products', 'categories', 'users',
+  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'products', 'categories', 'users',
 ];
 
 let migrated = false;
@@ -21,13 +21,15 @@ let migrated = false;
 export async function migrateOnce(): Promise<void> {
   if (migrated) return;
   const db = await getDb();
-  const file = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()[0];
-  if (!file) throw new Error(`No migration SQL in ${MIGRATIONS_DIR} — run: npm run db:generate`);
-  const statements = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
-    .split('--> statement-breakpoint')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  for (const statement of statements) await db.execute(sql.raw(statement));
+  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+  if (!files.length) throw new Error(`No migration SQL in ${MIGRATIONS_DIR} — run: npm run db:generate`);
+  for (const file of files) {
+    const statements = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const statement of statements) await db.execute(sql.raw(statement));
+  }
   migrated = true;
 }
 
@@ -76,6 +78,20 @@ export async function makeGroupBuy(
     repackFeePhp: String(overrides.repackFeePhp ?? 150), status: 'open',
   }).returning();
   return { id: row.id, totalSlots, minVials };
+}
+
+export async function makeMoqCampaign(
+  overrides: Partial<{ moq: number; committed: number; perCustomerMin: number; pricePerKitPhp: number; status: 'open' | 'approved' | 'cancelled' }> = {},
+): Promise<{ id: string; moq: number; committed: number; perCustomerMin: number }> {
+  const db = await getDb();
+  const moq = overrides.moq ?? 10;
+  const committed = overrides.committed ?? 0;
+  const perCustomerMin = overrides.perCustomerMin ?? 1;
+  const [row] = await db.insert(moqCampaigns).values({
+    name: 'Test Campaign', pricePerKitPhp: String(overrides.pricePerKitPhp ?? 10400),
+    moq, committed, perCustomerMin, status: overrides.status ?? 'open',
+  }).returning();
+  return { id: row.id, moq, committed, perCustomerMin };
 }
 
 export const SHIPPING = { shipName: 'Ana Cruz', shipPhone: '09171234567', shipAddress: '123 Mabini St, Manila' } as const;

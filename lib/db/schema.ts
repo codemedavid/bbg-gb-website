@@ -10,7 +10,9 @@ export const orderNoSeq = pgSequence('order_no_seq', { startWith: 2418 });
 
 // ---- Enums -------------------------------------------------------------
 export const roleEnum = pgEnum('user_role', ['customer', 'admin']);
-export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati']);
+export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati', 'group_buy']);
+// Group Buy (MOQ) campaign lifecycle. 'reached' is derived (committed >= moq), not stored.
+export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['open', 'approved', 'cancelled']);
 export const orderStatusEnum = pgEnum('order_status', [
   'proof_review',      // 0 Proof under review
   'payment_confirmed', // 1 Payment confirmed
@@ -22,7 +24,7 @@ export const orderStatusEnum = pgEnum('order_status', [
 export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 'shipped', 'completed']);
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
-export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy']);
+export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign']);
 
 // ---- Users -------------------------------------------------------------
 export const users = pgTable('users', {
@@ -85,6 +87,26 @@ export const groupBuys = pgTable('group_buys', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---- Group Buy (MOQ) campaigns ----------------------------------------
+// Distinct from group_buys (Kahati). A campaign holds customer commitments until
+// its MOQ (in kits) is reached or the admin approves/extends/cancels it.
+export const moqCampaigns = pgTable('moq_campaigns', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 160 }).notNull(),
+  pricePerKitPhp: numeric('price_per_kit_php', { precision: 12, scale: 2 }).notNull(),
+  moq: integer('moq').notNull().default(10),               // kits target
+  committed: integer('committed').notNull().default(0),    // kits committed so far
+  perCustomerMin: integer('per_customer_min').notNull().default(1),
+  shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('180'),
+  status: moqCampaignStatusEnum('status').notNull().default('open'),
+  deadline: timestamp('deadline', { withTimezone: true }),
+  // Included products with per-product out-of-stock flags: [{ productId, name, outOfStock }]
+  includedProducts: jsonb('included_products').notNull().default(sql`'[]'::jsonb`),
+  arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ---- COA files ---------------------------------------------------------
 export const coaFiles = pgTable('coa_files', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -127,6 +149,7 @@ export const orderItems = pgTable('order_items', {
   kind: orderItemKindEnum('kind').notNull().default('product'),
   productId: uuid('product_id').references(() => products.id),
   groupBuyId: uuid('group_buy_id').references(() => groupBuys.id),
+  moqCampaignId: uuid('moq_campaign_id').references(() => moqCampaigns.id),
   nameSnapshot: varchar('name_snapshot', { length: 200 }).notNull(),
   specSnapshot: varchar('spec_snapshot', { length: 120 }),
   unitPricePhp: numeric('unit_price_php', { precision: 12, scale: 2 }).notNull(),
