@@ -3,9 +3,9 @@
 // table yields the documented defaults (solo 200 / kahati 150 / group_buy 300).
 import { inArray } from 'drizzle-orm';
 import { getDb, settings } from '@/lib/db';
-import { PACKING_FEE_PHP, type PackingMode } from '@/lib/pricing';
+import { PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
 
-export type PackingFees = Record<PackingMode, number>;
+export type { PackingFees };
 
 const KEY: Record<PackingMode, string> = {
   solo: 'packing_fee_solo',

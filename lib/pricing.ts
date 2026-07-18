@@ -11,6 +11,7 @@
 //   group_buy -> Pasabay  (pag pasabay)
 export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300 } as const;
 export type PackingMode = keyof typeof PACKING_FEE_PHP;
+export type PackingFees = Record<PackingMode, number>;
 
 export const KAHATI_MIN_VIALS = 7;    // minimum kahati commitment
 export const VIALS_PER_KIT = 10;      // 1 kit = 10 vials

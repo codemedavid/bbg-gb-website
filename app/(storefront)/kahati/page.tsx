@@ -9,7 +9,7 @@ import type { GroupBuy } from '@/lib/types';
 const STEPS = [
   'Commit your vials — minimum 7 per kahati.',
   'Pay via bank transfer & upload your proof.',
-  'Admins close the kahati → we split, repack & ship direct to you. ₱150 repack fee, shipping included.',
+  'Admins close the kahati → we split, repack & ship direct to you. ₱150 packing fee, local shipping included.',
 ];
 
 export default function KahatiPage() {

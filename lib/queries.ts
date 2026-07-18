@@ -1,7 +1,15 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
+import type { PackingFees } from './pricing';
 import type { Category, CheckoutPaymentMethod, GroupBuy, Order, Product } from './types';
+
+export const usePackingFees = () =>
+  useQuery({
+    queryKey: ['packing-fees'],
+    queryFn: () => apiGet<{ packingFees: PackingFees }>('/settings').then((d) => d.packingFees),
+    staleTime: 5 * 60 * 1000,
+  });
 
 export const useCategories = () =>
   useQuery({ queryKey: ['categories'], queryFn: () => apiGet<Category[]>('/categories') });

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { PACKING_FEE_PHP } from '@/lib/pricing';
 
 export type CartItem = {
   key: string;                    // stable dedupe key (product:id / gb:id)
@@ -10,7 +11,7 @@ export type CartItem = {
   unitPricePhp: number;
   qty: number;
   minQty: number;                 // 1 for products, the group buy's minVials for kahati
-  repackFeePhp?: number;          // kahati only — the group buy's admin-editable fee
+  packingFeePhp?: number;         // kahati only — the group buy's admin-editable packing fee
 };
 
 type CartState = {
@@ -59,13 +60,15 @@ export const useCart = create<CartState>()(
   )
 );
 
-export const SHIPPING_PHP = 180;
-export const REPACK_FEE_PHP = 150;
-export const shippingFor = (hasSolo: boolean) => (hasSolo ? SHIPPING_PHP : 0);
-
-// Mirrors server/src/lib/pricing.ts: one repack fee per order, highest applies
-// across kahati items. Carts persisted before repackFeePhp existed fall back to the default.
-export const repackFor = (items: CartItem[]) => {
-  const fees = items.filter((i) => i.kind === 'group_buy').map((i) => i.repackFeePhp ?? REPACK_FEE_PHP);
-  return fees.length ? Math.max(...fees) : 0;
+// Mirrors lib/pricing.ts packingFeeFor: one packing fee per fulfillment mode
+// present (local shipping included, no admin fee). The cart only ever holds solo
+// (product) and kahati (group_buy) items — MOQ campaigns commit through their own
+// flow. `soloFee` is the admin-editable global on-hand default, fetched at display
+// time; kahati items carry their own admin-editable fee.
+export const packingFeeFor = (items: CartItem[], soloFee: number = PACKING_FEE_PHP.solo): number => {
+  let total = 0;
+  if (items.some((i) => i.kind === 'product')) total += soloFee;
+  const kahatiFees = items.filter((i) => i.kind === 'group_buy').map((i) => i.packingFeePhp ?? PACKING_FEE_PHP.kahati);
+  if (kahatiFees.length) total += Math.max(...kahatiFees);
+  return total;
 };
