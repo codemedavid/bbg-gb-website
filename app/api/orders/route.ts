@@ -12,6 +12,7 @@ import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
+import { captureEvent } from '@/lib/posthog';
 
 const itemSchema = z.object({
   kind: z.enum(['product', 'group_buy']),
@@ -67,7 +68,7 @@ export const POST = handler(async (req: Request) => {
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
-  const { order, orderNo, totals } = await db.transaction(async (tx) => {
+  const { order, orderNo, totals, lineCount } = await db.transaction(async (tx) => {
     // Reject a payment method the customer could not actually have chosen.
     if (body.paymentMethod) {
       const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
@@ -207,11 +208,24 @@ export const POST = handler(async (req: Request) => {
 
     // Inventory was already drawn down as each line was priced — on-hand stock in
     // the guarded UPDATE above, kahati slots in the guarded claim.
-    return { order, orderNo, totals };
+    return { order, orderNo, totals, lineCount: priced.length };
   });
 
-  // Email only after the transaction commits — never notify about a rolled-back order.
+  // Notify only after the transaction commits — never announce a rolled-back order.
   await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp) }), kind: 'order_placed' });
+  await captureEvent({
+    event: 'order_placed',
+    distinctId: session.sub,
+    email: session.email,
+    name: body.shipName,
+    properties: {
+      orderId: order.id, orderNo, status: order.status, buyType: order.buyType,
+      totalPhp: totals.total, subtotalPhp: totals.subtotal, packingFeePhp: totals.packingFee,
+      downpaymentPhp: Number(order.downpaymentPhp),
+      balancePhp: round2(totals.total - Number(order.downpaymentPhp)),
+      itemCount: lineCount, paymentMethod: order.paymentMethod,
+    },
+  });
   return ok({ order, orderNo, totals }, 201);
 });
 

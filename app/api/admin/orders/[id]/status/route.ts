@@ -5,6 +5,8 @@ import { ok, handler } from '@/lib/api-response';
 import { getDb, orders, orderItems, orderStatusHistory, moqCampaigns, users } from '@/lib/db';
 import { ORDER_STATUS_FLOW } from '@/lib/db/schema';
 import { sendEmail, orderStatusEmail } from '@/lib/email';
+import { captureEvent, orderStatusEvent } from '@/lib/posthog';
+import { STATUS_LABEL } from '@/lib/order-status';
 
 const schema = z.object({
   status: z.enum([...ORDER_STATUS_FLOW, 'cancelled'] as [string, ...string[]]),
@@ -59,6 +61,22 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
       to: customer.email,
       ...orderStatusEmail({ name: customer.name, orderNo: order.orderNo, status: b.status, trackingNo: updated.trackingNo }),
       kind: `status_${b.status}`,
+    });
+    // PostHog fires the customer-facing email off this event. It is addressed to
+    // the customer, not the admin who made the change.
+    await captureEvent({
+      event: orderStatusEvent(b.status),
+      distinctId: order.userId,
+      email: customer.email,
+      name: customer.name,
+      properties: {
+        orderId: order.id, orderNo: order.orderNo, status: b.status,
+        statusLabel: STATUS_LABEL[b.status] ?? b.status,
+        previousStatus: order.status,
+        trackingNo: updated.trackingNo, courier: updated.courier,
+        totalPhp: Number(updated.totalPhp), downpaymentPhp: Number(updated.downpaymentPhp),
+        buyType: updated.buyType, note: b.note ?? null,
+      },
     });
   }
   return ok(updated);

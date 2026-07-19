@@ -28,6 +28,10 @@ export const env = {
       (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) && process.env.SUPABASE_SERVICE_KEY
     ),
   }),
+  // PostHog receives an event per order status; a destination there sends the
+  // customer email. Unset = capture is skipped (valid local/dev state).
+  posthogKey: process.env.POSTHOG_KEY || process.env.NEXT_PUBLIC_POSTHOG_KEY || '',
+  posthogHost: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: Number(process.env.SMTP_PORT || 587),
   smtpUser: process.env.SMTP_USER || '',

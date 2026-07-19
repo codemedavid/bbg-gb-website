@@ -13,6 +13,7 @@ import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, use
 import { KAHATI_MIN_VIABLE_VIALS, resolveExpiredKahatiStatus } from './kahati';
 import { VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail } from './email';
+import { captureEvent } from './posthog';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 type GroupBuyRow = typeof groupBuys.$inferSelect;
@@ -24,8 +25,8 @@ export type KahatiSweepResult = {
 };
 
 type CancellationNotice = {
-  name: string; email: string; orderNo: string;
-  kahatiName: string; claimedSlots: number; downpayment: number;
+  userId: string; name: string; email: string; orderId: string; orderNo: string;
+  kahatiId: string; kahatiName: string; claimedSlots: number; downpayment: number;
 };
 
 // Vials an on-hand line drew from stock. The unit is not its own column — the
@@ -67,6 +68,20 @@ export async function sweepExpiredKahatis(db: Db, now: Date = new Date()): Promi
       to: notice.email,
       ...kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS }),
       kind: 'kahati_cancelled',
+    });
+    // Distinct from order_cancelled: this one carries the refund amount and the
+    // hatian that fell through, so PostHog can send the right explanation.
+    await captureEvent({
+      event: 'kahati_cancelled',
+      distinctId: notice.userId,
+      email: notice.email,
+      name: notice.name,
+      properties: {
+        orderId: notice.orderId, orderNo: notice.orderNo, status: 'cancelled',
+        kahatiId: notice.kahatiId, kahatiName: notice.kahatiName,
+        claimedVials: notice.claimedSlots, minVials: KAHATI_MIN_VIABLE_VIALS,
+        refundPhp: notice.downpayment,
+      },
     });
   }
 
@@ -118,8 +133,9 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
       .from(users).where(eq(users.id, order.userId));
     if (customer) {
       notices.push({
-        name: customer.name, email: customer.email, orderNo: order.orderNo,
-        kahatiName: g.name, claimedSlots: g.claimedSlots,
+        userId: order.userId, name: customer.name, email: customer.email,
+        orderId: order.id, orderNo: order.orderNo,
+        kahatiId: g.id, kahatiName: g.name, claimedSlots: g.claimedSlots,
         downpayment: Number(order.downpaymentPhp),
       });
     }
