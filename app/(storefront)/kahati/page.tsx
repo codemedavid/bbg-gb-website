@@ -7,9 +7,10 @@ import { useGroupBuys } from '@/lib/queries';
 import type { GroupBuy } from '@/lib/types';
 
 const STEPS = [
-  'Commit your vials — minimum 7 per kahati.',
-  'Pay via bank transfer & upload your proof.',
-  'Admins close the kahati → we split, repack & ship direct to you. ₱150 packing fee, local shipping included.',
+  'Commit at least 1 vial — each hatian fills one kit (10 vials).',
+  'Pay the downpayment & upload your proof to secure your order.',
+  'Hit 10 vials and the hatian locks — a fresh one opens automatically. Miss it by the deadline and the hatian is cancelled.',
+  'Once the hatian is complete, settle the balance — then we split, repack & ship direct to you. ₱150 packing fee, local shipping included.',
 ];
 
 export default function KahatiPage() {
@@ -34,9 +35,9 @@ export default function KahatiPage() {
           </div>
 
           <div className="rounded-[14px] bg-brand-navy px-4 py-3.5 text-white">
-            <div className="mb-1 text-[13px] font-bold">📦 Solo Buy</div>
+            <div className="mb-1 text-[13px] font-bold">📦 On-hand</div>
             <div className="text-[12.5px] leading-relaxed opacity-90">
-              Minimum 10 kits of any peptide + 10 BAC water. Processed immediately — order straight from the Shop.
+              Ayaw maghintay? Ready stock is in the Shop — buy per piece or per kit, any quantity, shipped within 24h.
             </div>
           </div>
 

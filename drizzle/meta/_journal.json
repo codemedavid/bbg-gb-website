@@ -36,6 +36,20 @@
       "when": 1784388676757,
       "tag": "0004_workable_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784448324572,
+      "tag": "0005_busy_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784448950672,
+      "tag": "0006_bent_harrier",
+      "breakpoints": true
     }
   ]
 }

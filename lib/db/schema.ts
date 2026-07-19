@@ -21,7 +21,9 @@ export const orderStatusEnum = pgEnum('order_status', [
   'delivered',         // 4 Delivered
   'cancelled',
 ]);
-export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 'shipped', 'completed']);
+// 'closed' = full (reached the 10-vial cap) or admin-closed; 'cancelled' = deadline
+// passed before the cap was reached. Both are terminal for accepting new commits.
+export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 'shipped', 'completed', 'cancelled']);
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
 export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign']);
@@ -76,9 +78,11 @@ export const groupBuys = pgTable('group_buys', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 160 }).notNull(),
   pricePerKitPhp: numeric('price_per_kit_php', { precision: 12, scale: 2 }).notNull(), // admin-editable
-  totalSlots: integer('total_slots').notNull().default(100),   // vials in the batch
+  // A hatian counter fills exactly one kit — 10 vials. On reaching this cap it
+  // closes and a fresh sibling auto-opens (see lib/kahati-server.ts).
+  totalSlots: integer('total_slots').notNull().default(10),     // vial cap per hatian (1 kit)
   claimedSlots: integer('claimed_slots').notNull().default(0),
-  minVials: integer('min_vials').notNull().default(7),          // min kahati commitment
+  minVials: integer('min_vials').notNull().default(1),          // min vials one person may commit
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('150'),
   status: groupBuyStatusEnum('status').notNull().default('open'),
   closesAt: timestamp('closes_at', { withTimezone: true }),
@@ -162,9 +166,15 @@ export const orders = pgTable('orders', {
   shipName: varchar('ship_name', { length: 120 }).notNull(),
   shipPhone: varchar('ship_phone', { length: 40 }).notNull(),
   shipAddress: text('ship_address').notNull(),
-  paymentMethod: varchar('payment_method', { length: 40 }), // snapshot of chosen method label
+  paymentMethod: varchar('payment_method', { length: 40 }), // snapshot of chosen method label (Payment column: BDO/GoTyme)
   paymentProofKey: text('payment_proof_key'), // storage key of uploaded proof
   trackingNo: varchar('tracking_no', { length: 80 }),
+  // Weekly-report fulfilment fields (admin-editable). courier = Shipping column,
+  // packedBy = the "Admin" handler column, totalUsd = the report's USD order total
+  // (sum of order_items.unit_price_usd × qty, snapshotted at checkout).
+  courier: varchar('courier', { length: 40 }).notNull().default('J&T'),
+  packedBy: varchar('packed_by', { length: 60 }),
+  totalUsd: numeric('total_usd', { precision: 12, scale: 2 }).notNull().default('0'),
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -184,6 +194,9 @@ export const orderItems = pgTable('order_items', {
   nameSnapshot: varchar('name_snapshot', { length: 200 }).notNull(),
   specSnapshot: varchar('spec_snapshot', { length: 120 }),
   unitPricePhp: numeric('unit_price_php', { precision: 12, scale: 2 }).notNull(),
+  // USD unit price snapshot (from products.price_usd) for the weekly report's
+  // "@ $x.xx" line and USD totals. Null for items with no USD price (e.g. kahati).
+  unitPriceUsd: numeric('unit_price_usd', { precision: 12, scale: 2 }),
   qty: integer('qty').notNull(),
   lineTotalPhp: numeric('line_total_php', { precision: 12, scale: 2 }).notNull(),
 }, (t) => ({

@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'BBG Peptides',
-  description: 'BBG Peptides — research peptides, solo buy & kahati group orders, delivered PH-wide.',
+  description: 'BBG Peptides — research peptides, on-hand ready stock & kahati group orders, delivered PH-wide.',
 };
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, maximumScale: 1 };
 

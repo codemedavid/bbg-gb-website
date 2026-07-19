@@ -24,7 +24,7 @@ export default function HomePage() {
           <div className="mb-1.5 text-[12px] font-bold tracking-wider opacity-85">🤝 KAHATI NG BARKADA</div>
           <div className="mb-2 font-display text-[22px] font-bold leading-tight md:text-[28px]">Sali na — kahati tayo!</div>
           <div className="text-[13px] leading-relaxed opacity-90 md:max-w-[560px] md:text-[14px]">
-            Commit at least 7 vials, upload your bank transfer proof, and we split, repack &amp; ship straight to you once admins close the kahati.
+            Commit at least 1 vial and pay the downpayment para ma-secure ang order mo. Pagkatapos ma-complete ang hatian, saka mo na lang settle ang total amount ng order.
           </div>
         </div>
 

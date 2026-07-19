@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeTotals, subtotal, packingFeeFor, perVialPrice,
-  validateKahatiCommit, soloMoqStatus, hasSolo, hasKahati, hasGroupBuy,
-  validateGroupBuyCommit, groupBuyMoqStatus, validateSoloCheckout,
-  splitKahatiDownpayment,
-  PACKING_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS,
+  validateKahatiCommit, hasOnHand, hasKahati, hasGroupBuy,
+  validateGroupBuyCommit, groupBuyMoqStatus,
+  splitKahatiDownpayment, onHandUnitPrice, vialsFor, validateOnHandQty,
+  PACKING_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS, VIALS_PER_KIT,
   type PriceableItem,
 } from './pricing';
 
@@ -22,7 +22,7 @@ describe('subtotal', () => {
 });
 
 describe('packing fee defaults (incl. local shipping, no admin fee)', () => {
-  it('charges the on-hand fee for a solo-only cart', () => {
+  it('charges the on-hand fee for an on-hand-only cart', () => {
     expect(packingFeeFor([product(3200)])).toBe(PACKING_FEE_PHP.solo); // 200
   });
   it('charges the hatian fee for a kahati-only cart', () => {
@@ -68,13 +68,13 @@ describe('admin-editable packing-fee overrides', () => {
 });
 
 describe('computeTotals', () => {
-  it('labels solo-only carts as solo', () => {
+  it('labels on-hand-only carts as solo', () => {
     expect(computeTotals([product(3200)]).buyType).toBe('solo');
   });
   it('labels any cart containing kahati as kahati', () => {
     expect(computeTotals([product(3200), kahati(900)]).buyType).toBe('kahati');
   });
-  it('computes a solo total with the on-hand packing fee', () => {
+  it('computes an on-hand total with the on-hand packing fee', () => {
     const t = computeTotals([product(3200, 2)]);
     expect(t).toMatchObject({ subtotal: 6400, packingFee: 200, total: 6600, buyType: 'solo' });
   });
@@ -97,7 +97,7 @@ describe('computeTotals', () => {
 
 describe('mode predicates', () => {
   it('detects each mode', () => {
-    expect(hasSolo([product(1)])).toBe(true);
+    expect(hasOnHand([product(1)])).toBe(true);
     expect(hasKahati([kahati(1)])).toBe(true);
     expect(hasGroupBuy([moq(1)])).toBe(true);
   });
@@ -171,27 +171,54 @@ describe('groupBuyMoqStatus', () => {
   });
 });
 
-describe('validateSoloCheckout', () => {
-  it('blocks checkout below 10 kits + 10 BAC', () => {
-    expect(validateSoloCheckout(50, 3).ok).toBe(false);
-    expect(validateSoloCheckout(100, 3).ok).toBe(false);
-    expect(validateSoloCheckout(50, 10).ok).toBe(false);
+describe('onHandUnitPrice', () => {
+  const p = { onHandPiecePhp: '550', onHandKitPhp: '5000' };
+
+  it('prices a piece from onHandPiecePhp', () => {
+    expect(onHandUnitPrice(p, 'piece')).toBe(550);
   });
-  it('allows checkout once both minimums are met', () => {
-    expect(validateSoloCheckout(100, 10).ok).toBe(true);
+  it('prices a kit from onHandKitPhp', () => {
+    expect(onHandUnitPrice(p, 'kit')).toBe(5000);
+  });
+  it('returns null when the unit has no on-hand price set', () => {
+    expect(onHandUnitPrice({ onHandPiecePhp: '550', onHandKitPhp: null }, 'kit')).toBeNull();
+    expect(onHandUnitPrice({ onHandPiecePhp: null, onHandKitPhp: '5000' }, 'piece')).toBeNull();
+  });
+  it('treats a zero price as unset rather than free', () => {
+    expect(onHandUnitPrice({ onHandPiecePhp: '0', onHandKitPhp: '5000' }, 'piece')).toBeNull();
   });
 });
 
-describe('soloMoqStatus', () => {
-  it('flags when 10 kits + 10 BAC are met', () => {
-    const s = soloMoqStatus(100, 10); // 100 vials = 10 kits
-    expect(s.met).toBe(true);
+describe('vialsFor', () => {
+  it('counts one vial per piece', () => {
+    expect(vialsFor('piece', 3)).toBe(3);
   });
-  it('flags when below minimums', () => {
-    const s = soloMoqStatus(50, 3);
-    expect(s.meetsKits).toBe(false);
-    expect(s.meetsBac).toBe(false);
-    expect(s.met).toBe(false);
+  it('counts ten vials per kit', () => {
+    expect(vialsFor('kit', 2)).toBe(2 * VIALS_PER_KIT);
+  });
+});
+
+describe('validateOnHandQty', () => {
+  it('allows a single piece — on-hand has no bulk minimum', () => {
+    expect(validateOnHandQty(1, 'piece', 100).ok).toBe(true);
+  });
+  it('rejects a non-positive or fractional quantity', () => {
+    expect(validateOnHandQty(0, 'piece', 100).ok).toBe(false);
+    expect(validateOnHandQty(1.5, 'piece', 100).ok).toBe(false);
+  });
+  it('rejects ordering more pieces than are in stock', () => {
+    const r = validateOnHandQty(11, 'piece', 10);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('10');
+  });
+  it('counts a kit against stock as ten vials', () => {
+    expect(validateOnHandQty(1, 'kit', 10).ok).toBe(true);
+    expect(validateOnHandQty(2, 'kit', 10).ok).toBe(false);
+  });
+  it('rejects any quantity when stock is zero', () => {
+    const r = validateOnHandQty(1, 'piece', 0);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('Out of stock');
   });
 });
 

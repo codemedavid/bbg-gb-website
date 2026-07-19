@@ -140,10 +140,12 @@ export type SeedGroupBuy = {
   description?: string;
 };
 
+// Each hatian counter is one kit — 10 vials. It locks at 10 and auto-opens a
+// fresh sibling; if the deadline passes short of 10 it is cancelled.
 export const GROUP_BUYS: SeedGroupBuy[] = [
-  { name: 'Tirzepatide + CGL 35mg', pricePerKitPhp: 9000, totalSlots: 100, claimedSlots: 72, minVials: 7, arrival: 'salt_liquid', closesInDays: 2, description: 'MOQ kahati — 1 kit = 10 vials. TR+CGL blend arrives 3–5 days after white powders.' },
-  { name: 'Bioglutide', pricePerKitPhp: 10400, totalSlots: 100, claimedSlots: 58, minVials: 7, arrival: 'salt_liquid', closesInDays: 4, description: 'MOQ kahati — 1 kit = 10 vials. Bioglutide arrives 3–5 days after white powders.' },
-  { name: 'Retatrutide 20mg', pricePerKitPhp: 6875, totalSlots: 100, claimedSlots: 93, minVials: 7, arrival: 'white_powder', closesInDays: 1, description: 'MOQ kahati — 1 kit = 10 vials. White powder, ships first.' },
-  { name: 'Tirzepatide 60mg', pricePerKitPhp: 10625, totalSlots: 100, claimedSlots: 25, minVials: 7, arrival: 'white_powder', closesInDays: 6, description: 'MOQ kahati — 1 kit = 10 vials. White powder, ships first.' },
-  { name: 'KLOW 80mg', pricePerKitPhp: 10625, totalSlots: 100, claimedSlots: 14, minVials: 7, arrival: 'white_powder', closesInDays: 7, description: 'MOQ kahati — 1 kit = 10 vials. White powder, ships first.' },
+  { name: 'Tirzepatide + CGL 35mg', pricePerKitPhp: 9000, totalSlots: 10, claimedSlots: 7, minVials: 1, arrival: 'salt_liquid', closesInDays: 2, description: 'Hatian — 1 kit = 10 vials. TR+CGL blend arrives 3–5 days after white powders.' },
+  { name: 'Bioglutide', pricePerKitPhp: 10400, totalSlots: 10, claimedSlots: 5, minVials: 1, arrival: 'salt_liquid', closesInDays: 4, description: 'Hatian — 1 kit = 10 vials. Bioglutide arrives 3–5 days after white powders.' },
+  { name: 'Retatrutide 20mg', pricePerKitPhp: 6875, totalSlots: 10, claimedSlots: 9, minVials: 1, arrival: 'white_powder', closesInDays: 1, description: 'Hatian — 1 kit = 10 vials. White powder, ships first.' },
+  { name: 'Tirzepatide 60mg', pricePerKitPhp: 10625, totalSlots: 10, claimedSlots: 3, minVials: 1, arrival: 'white_powder', closesInDays: 6, description: 'Hatian — 1 kit = 10 vials. White powder, ships first.' },
+  { name: 'KLOW 80mg', pricePerKitPhp: 10625, totalSlots: 10, claimedSlots: 2, minVials: 1, arrival: 'white_powder', closesInDays: 7, description: 'Hatian — 1 kit = 10 vials. White powder, ships first.' },
 ];

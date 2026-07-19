@@ -9,7 +9,7 @@ const empty = { currentPassword: '', newPassword: '', confirm: '' };
 type PackingFees = { solo: number; kahati: number; group_buy: number };
 const PACKING_FIELDS: { key: keyof PackingFees; label: string; hint: string }[] = [
   { key: 'group_buy', label: 'Pasabay (Group Buy) ₱', hint: 'Rides the batch import' },
-  { key: 'solo', label: 'On-hand (Solo Buy) ₱', hint: 'Ready stock, buy direct' },
+  { key: 'solo', label: 'On-hand ₱', hint: 'Ready stock, buy direct' },
   { key: 'kahati', label: 'Hatian (Kahati) ₱', hint: 'Default for new kahati listings' },
 ];
 

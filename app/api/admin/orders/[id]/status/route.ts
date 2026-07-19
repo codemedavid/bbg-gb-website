@@ -10,6 +10,10 @@ const schema = z.object({
   status: z.enum([...ORDER_STATUS_FLOW, 'cancelled'] as [string, ...string[]]),
   trackingNo: z.string().max(80).optional(),
   note: z.string().max(500).optional(),
+  // Weekly-report fulfilment fields (admin-editable, optional).
+  courier: z.string().max(40).optional(),
+  packedBy: z.string().max(60).optional(),
+  paymentMethod: z.string().max(40).optional(),
 });
 
 export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -24,6 +28,10 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
     const [row] = await tx.update(orders).set({
       status: b.status as never,
       trackingNo: b.trackingNo ?? order.trackingNo,
+      // Weekly-report fulfilment fields — only overwrite when provided.
+      courier: b.courier ?? order.courier,
+      packedBy: b.packedBy ?? order.packedBy,
+      paymentMethod: b.paymentMethod ?? order.paymentMethod,
       updatedAt: new Date(),
     }).where(eq(orders.id, id)).returning();
     await tx.insert(orderStatusHistory).values({ orderId: id, status: b.status as never, note: b.note });

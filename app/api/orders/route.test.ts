@@ -27,7 +27,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
-const { getDb, groupBuys, orders, settings } = await import('@/lib/db');
+const { getDb, groupBuys, orders, products, settings } = await import('@/lib/db');
 const { resetDb, makeUser, makeProduct, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
@@ -42,15 +42,72 @@ beforeEach(async () => {
 });
 
 describe('POST /api/orders', () => {
-  it('places a solo order and charges the on-hand packing fee once', async () => {
+  it('prices an on-hand order per piece and charges the packing fee once', async () => {
     await signIn();
-    const product = await makeProduct({ pricePhp: 3200 });
+    const product = await makeProduct({ onHandPiecePhp: 550 });
 
-    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 2 }]));
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 2, unit: 'piece' }]));
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(body.data.totals).toMatchObject({ subtotal: 6400, packingFee: 200, total: 6600 });
+    expect(body.data.totals).toMatchObject({ subtotal: 1100, packingFee: 200, total: 1300 });
+  });
+
+  it('prices a kit line at the on-hand kit price, not ten pieces', async () => {
+    await signIn();
+    const product = await makeProduct({ onHandPiecePhp: 550, onHandKitPhp: 5000 });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'kit' }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.totals).toMatchObject({ subtotal: 5000, total: 5200 });
+  });
+
+  it('ignores a client-sent price and re-prices from the catalog', async () => {
+    await signIn();
+    const product = await makeProduct({ onHandPiecePhp: 550 });
+
+    const res = await POST(checkoutRequest([
+      { kind: 'product', refId: product.id, qty: 1, unit: 'piece', unitPricePhp: 1 },
+    ]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.totals.subtotal).toBe(550);
+  });
+
+  it('defaults a line with no unit to a piece', async () => {
+    await signIn();
+    const product = await makeProduct({ onHandPiecePhp: 550 });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.totals.subtotal).toBe(550);
+  });
+
+  it('rejects a product that is not flagged on-hand', async () => {
+    await signIn();
+    const product = await makeProduct({ isOnHand: false });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'piece' }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('not available on-hand');
+  });
+
+  it('rejects a unit the product does not offer', async () => {
+    await signIn();
+    const product = await makeProduct({ onHandKitPhp: null });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'kit' }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('not sold by the kit');
   });
 
   it('rejects an order with no payment proof', async () => {
@@ -145,15 +202,150 @@ describe('kahati downpayment at checkout', () => {
     expect(Number(body.data.order.downpaymentPhp)).toBe(70);
   });
 
-  it('records no downpayment on a solo order', async () => {
+  it('records no downpayment on an on-hand order', async () => {
     await signIn();
-    const product = await makeProduct({ pricePhp: 3200 });
+    const product = await makeProduct();
 
     const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }]));
     const body = await res.json();
 
     expect(res.status).toBe(201);
     expect(Number(body.data.order.downpaymentPhp)).toBe(0);
+  });
+});
+
+describe('on-hand stock', () => {
+  const stockOf = async (id: string) => {
+    const db = await getDb();
+    const [row] = await db.select().from(products).where(eq(products.id, id));
+    return { stock: row.stock, soldCount: row.soldCount };
+  };
+
+  it('draws one vial per piece from stock', async () => {
+    await signIn();
+    const product = await makeProduct({ stock: 20 });
+
+    expect((await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 3, unit: 'piece' }]))).status).toBe(201);
+    expect(await stockOf(product.id)).toMatchObject({ stock: 17, soldCount: 3 });
+  });
+
+  it('draws ten vials per kit from stock', async () => {
+    await signIn();
+    const product = await makeProduct({ stock: 20 });
+
+    expect((await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'kit' }]))).status).toBe(201);
+    expect(await stockOf(product.id)).toMatchObject({ stock: 10, soldCount: 10 });
+  });
+
+  it('rejects an order for more pieces than are in stock', async () => {
+    await signIn();
+    const product = await makeProduct({ stock: 2 });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 3, unit: 'piece' }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('2');
+    expect((await stockOf(product.id)).stock).toBe(2); // untouched
+  });
+
+  it('rejects a kit when fewer than ten vials remain', async () => {
+    await signIn();
+    const product = await makeProduct({ stock: 9 });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'kit' }]));
+    expect(res.status).toBe(400);
+    expect((await stockOf(product.id)).stock).toBe(9);
+  });
+
+  it('rejects any purchase once stock is exhausted', async () => {
+    await signIn();
+    const product = await makeProduct({ stock: 0 });
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'piece' }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('Out of stock');
+  });
+
+  it('never oversells stock under concurrent checkouts', async () => {
+    await signIn();
+    // 1 vial left, two racing buyers: exactly one may win.
+    const product = await makeProduct({ stock: 1 });
+    const item = [{ kind: 'product', refId: product.id, qty: 1, unit: 'piece' }];
+
+    const results = await Promise.all([POST(checkoutRequest(item)), POST(checkoutRequest(item))]);
+    const statuses = results.map((r) => r.status).sort();
+
+    expect(statuses).toEqual([201, 400]);
+    expect((await stockOf(product.id)).stock).toBe(0);
+  });
+
+  it('leaves stock untouched when a later line in the same order fails', async () => {
+    await signIn();
+    const good = await makeProduct({ stock: 10, name: 'Good' });
+    const short = await makeProduct({ stock: 1, name: 'Short' });
+
+    const res = await POST(checkoutRequest([
+      { kind: 'product', refId: good.id, qty: 1, unit: 'piece' },
+      { kind: 'product', refId: short.id, qty: 5, unit: 'piece' },
+    ]));
+
+    expect(res.status).toBe(400);
+    // The whole checkout is one transaction — the good line must roll back too.
+    expect((await stockOf(good.id)).stock).toBe(10);
+    expect((await stockOf(short.id)).stock).toBe(1);
+  });
+});
+
+describe('hatian auto-open on fill', () => {
+  it('does not close or clone a hatian that is still under the cap', async () => {
+    await signIn();
+    const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, claimedSlots: 0 });
+
+    const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 6 }]));
+    expect(res.status).toBe(201);
+
+    const db = await getDb();
+    const rows = await db.select().from(groupBuys);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'open', claimedSlots: 6 });
+  });
+
+  it('closes a hatian at the 10-vial cap and auto-opens a fresh sibling', async () => {
+    await signIn();
+    const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, claimedSlots: 0, pricePerKitPhp: 9000, name: 'Reta 20mg' });
+
+    const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 10 }]));
+    expect(res.status).toBe(201);
+
+    const db = await getDb();
+    const [filled] = await db.select().from(groupBuys).where(eq(groupBuys.id, gb.id));
+    expect(filled).toMatchObject({ status: 'closed', claimedSlots: 10 });
+
+    const siblings = (await db.select().from(groupBuys)).filter((g) => g.id !== gb.id);
+    expect(siblings).toHaveLength(1);
+    // The sibling inherits the product, price, cap and min, and starts empty & open.
+    expect(siblings[0]).toMatchObject({
+      name: 'Reta 20mg', pricePerKitPhp: '9000.00', totalSlots: 10,
+      minVials: 1, claimedSlots: 0, status: 'open',
+    });
+  });
+
+  it('fills across two commits, then closes and clones on the one that reaches the cap', async () => {
+    await signIn();
+    const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, claimedSlots: 0 });
+
+    expect((await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 6 }]))).status).toBe(201);
+    const db = await getDb();
+    expect(await db.select().from(groupBuys)).toHaveLength(1); // no clone yet
+
+    expect((await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 4 }]))).status).toBe(201);
+    const rows = await db.select().from(groupBuys);
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((g) => g.status === 'closed')).toHaveLength(1);
+    expect(rows.filter((g) => g.status === 'open' && g.claimedSlots === 0)).toHaveLength(1);
   });
 });
 

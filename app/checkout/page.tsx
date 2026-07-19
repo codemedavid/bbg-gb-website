@@ -57,7 +57,7 @@ export default function CheckoutPage() {
     setSubmitting(true);
     try {
       const fd = new FormData();
-      fd.append('items', JSON.stringify(items.map((i) => ({ kind: i.kind, refId: i.refId, qty: i.qty }))));
+      fd.append('items', JSON.stringify(items.map((i) => ({ kind: i.kind, refId: i.refId, qty: i.qty, unit: i.unit }))));
       fd.append('shipName', name);
       fd.append('shipPhone', phone);
       fd.append('shipAddress', address);

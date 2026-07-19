@@ -7,19 +7,19 @@ import { KAHATI_DOWNPAYMENT_PHP, PACKING_FEE_PHP, splitKahatiDownpayment } from 
 export function useOrderTotals() {
   const items = useCart((s) => s.items);
   const subtotal = useCart((s) => s.subtotal());
-  const hasSolo = useCart((s) => s.hasSolo());
+  const hasOnHand = useCart((s) => s.hasOnHand());
   const hasKahati = useCart((s) => s.hasKahati());
   const { data: fees } = usePackingFees();
   const { data: downpaymentSetting } = useKahatiDownpayment();
-  const soloFee = fees?.solo ?? PACKING_FEE_PHP.solo;
-  const packingFee = packingFeeFor(items, soloFee);
+  const onHandFee = fees?.solo ?? PACKING_FEE_PHP.solo;
+  const packingFee = packingFeeFor(items, onHandFee);
   const total = subtotal + packingFee;
   // Kahati carts reserve slots with a downpayment; the balance is settled after
   // the kahati ends. Mirrors the server split at checkout.
   const { downpayment, balance } = hasKahati
     ? splitKahatiDownpayment(total, downpaymentSetting ?? KAHATI_DOWNPAYMENT_PHP)
     : { downpayment: 0, balance: total };
-  return { subtotal, packingFee, total, hasSolo, hasKahati, downpayment, balance };
+  return { subtotal, packingFee, total, hasOnHand, hasKahati, downpayment, balance };
 }
 
 export function OrderSummary() {

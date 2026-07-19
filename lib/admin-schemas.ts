@@ -24,7 +24,7 @@ export const groupBuySchema = z.object({
   claimedSlots: z.number().int().nonnegative().optional(),
   minVials: z.number().int().positive().optional(),
   repackFeePhp: z.number().nonnegative().optional(),
-  status: z.enum(['open', 'closed', 'shipped', 'completed']).optional(),
+  status: z.enum(['open', 'closed', 'shipped', 'completed', 'cancelled']).optional(),
   closesAt: z.string().datetime().nullable().optional(),
   arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
   description: z.string().max(2000).nullable().optional(),

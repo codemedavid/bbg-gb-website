@@ -53,30 +53,45 @@ export async function makeUser(
 }
 
 export async function makeProduct(
-  overrides: Partial<{ pricePhp: number; stock: number; name: string }> = {},
-): Promise<{ id: string; pricePhp: number }> {
+  overrides: Partial<{
+    pricePhp: number; stock: number; name: string;
+    isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
+  }> = {},
+): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
   const db = await getDb();
   const [cat] = await db.insert(categories).values({
     name: 'Peptides', slug: `peptides-${Math.random().toString(36).slice(2, 8)}`,
   }).returning();
   const pricePhp = overrides.pricePhp ?? 3200;
+  // Products default to on-hand: the shop sells ready stock, so that is the
+  // common case tests care about.
+  const onHandPiecePhp = overrides.onHandPiecePhp !== undefined ? overrides.onHandPiecePhp : 550;
+  const onHandKitPhp = overrides.onHandKitPhp !== undefined ? overrides.onHandKitPhp : 5000;
   const [row] = await db.insert(products).values({
     name: overrides.name ?? 'Test Peptide', spec: '10mg', categoryId: cat.id,
     pricePhp: String(pricePhp), stock: overrides.stock ?? 100, isActive: true,
+    isOnHand: overrides.isOnHand ?? true,
+    onHandPiecePhp: onHandPiecePhp != null ? String(onHandPiecePhp) : null,
+    onHandKitPhp: onHandKitPhp != null ? String(onHandKitPhp) : null,
   }).returning();
-  return { id: row.id, pricePhp };
+  return { id: row.id, pricePhp, onHandPiecePhp, onHandKitPhp };
 }
 
 export async function makeGroupBuy(
-  overrides: Partial<{ totalSlots: number; claimedSlots: number; minVials: number; repackFeePhp: number; pricePerKitPhp: number }> = {},
+  overrides: Partial<{
+    totalSlots: number; claimedSlots: number; minVials: number; repackFeePhp: number;
+    pricePerKitPhp: number; name: string; closesAt: Date | null;
+    status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+  }> = {},
 ): Promise<{ id: string; totalSlots: number; minVials: number }> {
   const db = await getDb();
   const totalSlots = overrides.totalSlots ?? 100;
   const minVials = overrides.minVials ?? 7;
   const [row] = await db.insert(groupBuys).values({
-    name: 'Test Kahati', pricePerKitPhp: String(overrides.pricePerKitPhp ?? 9000),
+    name: overrides.name ?? 'Test Kahati', pricePerKitPhp: String(overrides.pricePerKitPhp ?? 9000),
     totalSlots, claimedSlots: overrides.claimedSlots ?? 0, minVials,
-    repackFeePhp: String(overrides.repackFeePhp ?? 150), status: 'open',
+    repackFeePhp: String(overrides.repackFeePhp ?? 150), status: overrides.status ?? 'open',
+    closesAt: overrides.closesAt ?? null,
   }).returning();
   return { id: row.id, totalSlots, minVials };
 }

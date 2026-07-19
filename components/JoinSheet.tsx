@@ -6,7 +6,7 @@ import { useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
-  const [qty, setQty] = useState(Math.max(g.minVials, 7));
+  const [qty, setQty] = useState(Math.min(g.remaining, Math.max(g.minVials, 1)));
   const add = useCart((s) => s.add);
   const toast = useToast((s) => s.show);
 

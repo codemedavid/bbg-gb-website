@@ -3,8 +3,9 @@ import { useRouter } from 'next/navigation';
 import { OverlayShell } from '@/components/OverlayShell';
 import { BackHeader } from '@/components/headers';
 import { OrderSummary } from '@/components/OrderSummary';
-import { useCart } from '@/lib/store/cart';
+import { useCart, maxQtyFor } from '@/lib/store/cart';
 import { php } from '@/lib/format';
+import { VIALS_PER_KIT } from '@/lib/pricing';
 
 export default function CartPage() {
   const router = useRouter();
@@ -29,12 +30,15 @@ export default function CartPage() {
             <div key={i.key} className="flex items-center gap-3 rounded-[14px] bg-white p-3.5 shadow-card">
               <div className="min-w-0 flex-1">
                 <div className="text-[13.5px] font-bold text-ink">{i.name}</div>
-                <div className="text-[11.5px] text-ink-muted">{i.spec}</div>
+                <div className="text-[11.5px] text-ink-muted">
+                  {i.unit === 'kit' ? `Kit of ${VIALS_PER_KIT}` : i.unit === 'piece' ? 'Per piece' : i.spec}
+                </div>
               </div>
               <div className="flex items-center overflow-hidden rounded-[9px] border border-line">
-                <button onClick={() => dec(i.key)} className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body">−</button>
+                <button onClick={() => dec(i.key)} aria-label={`Remove one ${i.name}`} className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body">−</button>
                 <span className="w-6 text-center text-[13px] font-bold">{i.qty}</span>
-                <button onClick={() => inc(i.key)} className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body">+</button>
+                <button onClick={() => inc(i.key)} disabled={i.qty >= maxQtyFor(i)} aria-label={`Add one ${i.name}`}
+                  className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body disabled:text-ink-faint">+</button>
               </div>
               <strong className="w-[70px] text-right text-[13.5px] text-ink">{php(i.qty * i.unitPricePhp)}</strong>
             </div>

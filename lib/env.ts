@@ -11,7 +11,9 @@ export const env = {
   // Where PGlite persists when databaseUrl is empty. Tests use 'memory://'.
   pglitePath: process.env.PGLITE_PATH || './.pglite',
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret-change-me',
-  supabaseUrl: process.env.SUPABASE_URL || '',
+  // Storage/admin operations reuse the same project URL as the client. Fall back to
+  // NEXT_PUBLIC_SUPABASE_URL so only the (server-only) service key must be set separately.
+  supabaseUrl: sanitizeUrl(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
   supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',
   // ImageKit.io (STORAGE_DRIVER=imagekit). Public key + URL endpoint are safe to
   // expose; the private key is server-only and used for uploads + signed URLs.

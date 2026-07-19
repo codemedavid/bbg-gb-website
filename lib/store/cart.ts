@@ -1,18 +1,36 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PACKING_FEE_PHP } from '@/lib/pricing';
+import { PACKING_FEE_PHP, vialsFor, type OnHandUnit } from '@/lib/pricing';
 
 export type CartItem = {
-  key: string;                    // stable dedupe key (product:id / gb:id)
+  key: string;                    // stable dedupe key (product:id:unit / gb:id)
   kind: 'product' | 'group_buy';
   refId: string;
   name: string;
   spec: string;
   unitPricePhp: number;
   qty: number;
-  minQty: number;                 // 1 for products, the group buy's minVials for kahati
+  minQty: number;                 // 1 for on-hand products, the group buy's minVials for kahati
   packingFeePhp?: number;         // kahati only — the group buy's admin-editable packing fee
+  // On-hand only: which unit is being bought and how many vials are left. Stock
+  // is counted in vials, so a kit line consumes VIALS_PER_KIT per qty.
+  unit?: OnHandUnit;
+  stock?: number;
 };
+
+// Largest qty of this line the remaining stock allows. Kahati lines and any line
+// without a known stock figure are uncapped here — the server is the real gate.
+export const maxQtyFor = (item: CartItem): number => {
+  if (item.kind !== 'product' || item.stock == null) return Infinity;
+  return Math.floor(item.stock / vialsFor(item.unit ?? 'piece', 1));
+};
+
+// Hold a line between its minimum and what stock allows, so the cart can never
+// show a quantity checkout would reject.
+const clampQty = (item: CartItem): CartItem => ({
+  ...item,
+  qty: Math.min(Math.max(item.minQty, item.qty), maxQtyFor(item)),
+});
 
 type CartState = {
   items: CartItem[];
@@ -24,7 +42,7 @@ type CartState = {
   clear: () => void;
   count: () => number;
   subtotal: () => number;
-  hasSolo: () => boolean;
+  hasOnHand: () => boolean;
   hasKahati: () => boolean;
 };
 
@@ -36,14 +54,14 @@ export const useCart = create<CartState>()(
         const existing = s.items.find((i) => i.key === item.key);
         const qty = item.qty ?? item.minQty ?? 1;
         if (existing) {
-          return { items: s.items.map((i) => i.key === item.key ? { ...i, qty: i.qty + qty } : i) };
+          return { items: s.items.map((i) => i.key === item.key ? clampQty({ ...i, qty: i.qty + qty }) : i) };
         }
-        return { items: [...s.items, { ...item, qty }] };
+        return { items: [...s.items, clampQty({ ...item, qty })] };
       }),
       setQty: (key, qty) => set((s) => ({
-        items: s.items.map((i) => i.key === key ? { ...i, qty: Math.max(i.minQty, qty) } : i),
+        items: s.items.map((i) => i.key === key ? clampQty({ ...i, qty }) : i),
       })),
-      inc: (key) => set((s) => ({ items: s.items.map((i) => i.key === key ? { ...i, qty: i.qty + 1 } : i) })),
+      inc: (key) => set((s) => ({ items: s.items.map((i) => i.key === key ? clampQty({ ...i, qty: i.qty + 1 }) : i) })),
       dec: (key) => set((s) => {
         const item = s.items.find((i) => i.key === key);
         if (item && item.qty <= item.minQty) return { items: s.items.filter((i) => i.key !== key) };
@@ -53,7 +71,7 @@ export const useCart = create<CartState>()(
       clear: () => set({ items: [] }),
       count: () => get().items.reduce((a, i) => a + i.qty, 0),
       subtotal: () => get().items.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
-      hasSolo: () => get().items.some((i) => i.kind === 'product'),
+      hasOnHand: () => get().items.some((i) => i.kind === 'product'),
       hasKahati: () => get().items.some((i) => i.kind === 'group_buy'),
     }),
     { name: 'bbg-cart' }
@@ -61,13 +79,13 @@ export const useCart = create<CartState>()(
 );
 
 // Mirrors lib/pricing.ts packingFeeFor: one packing fee per fulfillment mode
-// present (local shipping included, no admin fee). The cart only ever holds solo
-// (product) and kahati (group_buy) items — MOQ campaigns commit through their own
-// flow. `soloFee` is the admin-editable global on-hand default, fetched at display
-// time; kahati items carry their own admin-editable fee.
-export const packingFeeFor = (items: CartItem[], soloFee: number = PACKING_FEE_PHP.solo): number => {
+// present (local shipping included, no admin fee). The cart only ever holds
+// on-hand (product) and kahati (group_buy) items — MOQ campaigns commit through
+// their own flow. `onHandFee` is the admin-editable global on-hand default,
+// fetched at display time; kahati items carry their own admin-editable fee.
+export const packingFeeFor = (items: CartItem[], onHandFee: number = PACKING_FEE_PHP.solo): number => {
   let total = 0;
-  if (items.some((i) => i.kind === 'product')) total += soloFee;
+  if (items.some((i) => i.kind === 'product')) total += onHandFee;
   const kahatiFees = items.filter((i) => i.kind === 'group_buy').map((i) => i.packingFeePhp ?? PACKING_FEE_PHP.kahati);
   if (kahatiFees.length) total += Math.max(...kahatiFees);
   return total;
