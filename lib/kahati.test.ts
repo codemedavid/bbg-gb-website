@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  KAHATI_MAX_VIALS, isKahatiFull, resolveExpiredKahatiStatus, nextKahatiClosesAt,
-  kahatiProgressPercent, kahatiBadge,
+  KAHATI_MAX_VIALS, KAHATI_MIN_VIABLE_VIALS, isKahatiFull, isKahatiViable,
+  resolveExpiredKahatiStatus, nextKahatiClosesAt, kahatiProgressPercent, kahatiBadge,
 } from './kahati';
 
 describe('KAHATI_MAX_VIALS', () => {
@@ -22,12 +22,41 @@ describe('isKahatiFull', () => {
   });
 });
 
+describe('KAHATI_MIN_VIABLE_VIALS', () => {
+  it('makes a hatian viable at 7 vials, below the 10-vial cap', () => {
+    expect(KAHATI_MIN_VIABLE_VIALS).toBe(7);
+    expect(KAHATI_MIN_VIABLE_VIALS).toBeLessThan(KAHATI_MAX_VIALS);
+  });
+});
+
+describe('isKahatiViable', () => {
+  it('is false one vial short of the minimum', () => {
+    expect(isKahatiViable(6)).toBe(false);
+  });
+  it('is true exactly at the minimum — "Good to Go"', () => {
+    expect(isKahatiViable(7)).toBe(true);
+  });
+  it('stays true between the minimum and the cap', () => {
+    expect(isKahatiViable(8)).toBe(true);
+    expect(isKahatiViable(10)).toBe(true);
+  });
+  it('is false on an empty hatian', () => {
+    expect(isKahatiViable(0)).toBe(false);
+  });
+});
+
 describe('resolveExpiredKahatiStatus', () => {
   it('closes a hatian that reached the cap', () => {
-    expect(resolveExpiredKahatiStatus(10, 10)).toBe('closed');
+    expect(resolveExpiredKahatiStatus(10)).toBe('closed');
   });
-  it('cancels a hatian that fell short of the cap', () => {
-    expect(resolveExpiredKahatiStatus(6, 10)).toBe('cancelled');
+  it('closes a hatian that met the 7-vial minimum without filling the kit', () => {
+    // The rule that changed: 7-9 vials at expiry is a success, not a cancellation.
+    expect(resolveExpiredKahatiStatus(7)).toBe('closed');
+    expect(resolveExpiredKahatiStatus(9)).toBe('closed');
+  });
+  it('cancels a hatian that fell short of the minimum', () => {
+    expect(resolveExpiredKahatiStatus(6)).toBe('cancelled');
+    expect(resolveExpiredKahatiStatus(0)).toBe('cancelled');
   });
 });
 
@@ -79,11 +108,16 @@ describe('kahatiBadge', () => {
     // 10-vial cap, so every hatian rendered as "N VIALS LEFT".
     expect(kahatiBadge('open', 0, 10)).toBe('OPEN');
   });
-  it('warns that it is filling fast once half the kit is claimed', () => {
-    expect(kahatiBadge('open', 5, 10)).toBe('FILLING FAST');
+  it('counts down what is still needed to reach the 7-vial minimum', () => {
+    expect(kahatiBadge('open', 0, 10)).toBe('OPEN');
+    expect(kahatiBadge('open', 5, 10)).toBe('2 MORE TO GO');
+    expect(kahatiBadge('open', 6, 10)).toBe('1 MORE TO GO');
   });
-  it('counts down the last few vials', () => {
-    expect(kahatiBadge('open', 8, 10)).toBe('2 VIALS LEFT');
-    expect(kahatiBadge('open', 9, 10)).toBe('1 VIAL LEFT');
+  it('reads GOOD TO GO once the minimum is met but the kit is not full', () => {
+    expect(kahatiBadge('open', 7, 10)).toBe('GOOD TO GO');
+    expect(kahatiBadge('open', 9, 10)).toBe('GOOD TO GO');
+  });
+  it('reads FULL at the cap', () => {
+    expect(kahatiBadge('open', 10, 10)).toBe('FULL');
   });
 });
