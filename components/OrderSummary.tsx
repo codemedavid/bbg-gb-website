@@ -11,8 +11,9 @@ export function useOrderTotals() {
   const hasKahati = useCart((s) => s.hasKahati());
   const { data: fees } = usePackingFees();
   const { data: downpaymentSetting } = useKahatiDownpayment();
-  const onHandFee = fees?.solo ?? PACKING_FEE_PHP.solo;
-  const packingFee = packingFeeFor(items, onHandFee);
+  // Every mode's fee comes from the admin settings; PACKING_FEE_PHP is only the
+  // pre-fetch fallback so the summary never flashes a wrong number.
+  const packingFee = packingFeeFor(items, fees ?? PACKING_FEE_PHP);
   const total = subtotal + packingFee;
   // Kahati carts reserve slots with a downpayment; the balance is settled after
   // the kahati ends. Mirrors the server split at checkout.

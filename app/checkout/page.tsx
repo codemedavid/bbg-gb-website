@@ -81,7 +81,7 @@ export default function CheckoutPage() {
 
   return (
     <OverlayShell>
-      <BackHeader title="Checkout" onBack={() => router.push('/cart')} />
+      <BackHeader title="Checkout" onBack={() => router.push('/cart')} showHome />
       <div className="mx-auto flex w-full max-w-xl flex-col gap-3.5 p-4 lg:grid lg:max-w-none lg:grid-cols-[1fr_360px] lg:items-start lg:gap-5 lg:p-6">
         <div className="flex flex-col gap-3.5">
         <div className="rounded-[14px] bg-white p-4 shadow-card">

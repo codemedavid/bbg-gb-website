@@ -54,13 +54,22 @@ export function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
-export function BackHeader({ title, onBack }: { title: string; onBack?: () => void }) {
+// `showHome` adds an explicit escape hatch to the storefront. Checkout is a
+// dead end otherwise: it sits outside the bottom nav, so back-to-cart was the
+// only way out.
+export function BackHeader({ title, onBack, showHome = false }: { title: string; onBack?: () => void; showHome?: boolean }) {
   const router = useRouter();
   return (
     <header className="sticky top-0 z-[5] flex items-center gap-3 border-b border-line-mist bg-white px-4 py-3 md:px-6">
       <button onClick={onBack ?? (() => router.back())} aria-label="Go back"
         className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line text-[16px] text-ink-body">←</button>
       <span className="text-[15px] font-bold text-ink">{title}</span>
+      {showHome && (
+        <Link href="/" aria-label="Go to homepage"
+          className="ml-auto flex items-center gap-1.5 rounded-[10px] border border-line px-3 py-2 text-[12.5px] font-semibold text-ink-body transition-colors hover:border-brand-green hover:text-brand-greendark">
+          <span aria-hidden>🏠</span> Home
+        </Link>
+      )}
     </header>
   );
 }

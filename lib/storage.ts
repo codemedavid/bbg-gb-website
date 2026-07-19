@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env, BUCKETS } from './env';
+import { describeDriverProblem } from './storage-driver';
+import { ApiError } from './session';
 import { uploadToImageKit, imagekitUrl, provisionImageKitFolders } from './imagekit';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
@@ -49,6 +51,11 @@ async function ensureBucket(client: SupabaseClient, bucket: string): Promise<voi
 export type StoredFile = { key: string };
 
 export async function putFile(bucket: string, key: string, body: Buffer, contentType: string): Promise<StoredFile> {
+  // Catch a misconfigured backend here rather than letting it surface as an
+  // EROFS deep inside fs.writeFile, which reached admins as "Something went wrong".
+  const problem = describeDriverProblem(env.storageDriver, env.isProd);
+  if (problem) throw new ApiError(503, problem);
+
   if (env.storageDriver === 'imagekit') {
     await uploadToImageKit(bucket, key, body, contentType);
     return { key };

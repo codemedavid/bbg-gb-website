@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { resolveStorageDriver } from './storage-driver';
 
 // Whitespace/newlines are never valid unencoded in a connection URL, but they
 // sneak in when the value is pasted into a dashboard with a line wrap — strip
@@ -20,7 +21,13 @@ export const env = {
   imagekitPublicKey: process.env.IMAGEKIT_PUBLIC_KEY || '',
   imagekitPrivateKey: process.env.IMAGEKIT_PRIVATE_KEY || '',
   imagekitUrlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT || '',
-  storageDriver: (process.env.STORAGE_DRIVER || 'local') as 'local' | 'supabase' | 'imagekit',
+  storageDriver: resolveStorageDriver({
+    explicit: process.env.STORAGE_DRIVER,
+    hasImageKit: !!(process.env.IMAGEKIT_PRIVATE_KEY && process.env.IMAGEKIT_URL_ENDPOINT),
+    hasSupabase: !!(
+      (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) && process.env.SUPABASE_SERVICE_KEY
+    ),
+  }),
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: Number(process.env.SMTP_PORT || 587),
   smtpUser: process.env.SMTP_USER || '',

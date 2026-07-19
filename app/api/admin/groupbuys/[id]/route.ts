@@ -3,6 +3,7 @@ import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, groupBuys } from '@/lib/db';
 import { groupBuySchema } from '@/lib/admin-schemas';
+import { isKahatiFull } from '@/lib/kahati';
 
 export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   await requireAdmin();
@@ -18,6 +19,15 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   const db = await getDb();
   const [row] = await db.update(groupBuys).set(patch).where(eq(groupBuys.id, id)).returning();
   if (!row) throw new ApiError(404, 'Group buy not found.');
+
+  // An edit that fills the kit closes the hatian, exactly as reaching the cap at
+  // checkout does — otherwise the board keeps offering a full counter to join.
+  // Skipped when the admin set the status in this same request; that is explicit intent.
+  if (b.status === undefined && row.status === 'open' && isKahatiFull(row.claimedSlots, row.totalSlots)) {
+    const [closed] = await db.update(groupBuys).set({ status: 'closed' })
+      .where(eq(groupBuys.id, id)).returning();
+    return ok(closed);
+  }
   return ok(row);
 });
 

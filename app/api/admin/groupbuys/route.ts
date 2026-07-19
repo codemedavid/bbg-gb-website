@@ -5,6 +5,7 @@ import { getDb, groupBuys } from '@/lib/db';
 import { groupBuySchema } from '@/lib/admin-schemas';
 import { getPackingFees } from '@/lib/settings';
 import { sweepExpiredKahatis } from '@/lib/kahati-server';
+import { KAHATI_MAX_VIALS } from '@/lib/kahati';
 
 export const GET = handler(async () => {
   await requireAdmin();
@@ -22,7 +23,9 @@ export const POST = handler(async (req: Request) => {
   // New kahati listings default to the global hatian packing fee unless overridden.
   const defaultFee = (await getPackingFees()).kahati;
   const [row] = await db.insert(groupBuys).values({
-    name: b.name, pricePerKitPhp: String(b.pricePerKitPhp), totalSlots: b.totalSlots,
+    name: b.name, pricePerKitPhp: String(b.pricePerKitPhp),
+    // A hatian fills one kit, so the cap defaults to — and is capped at — 10 vials.
+    totalSlots: b.totalSlots ?? KAHATI_MAX_VIALS,
     claimedSlots: b.claimedSlots ?? 0, minVials: b.minVials ?? 1,
     repackFeePhp: String(b.repackFeePhp ?? defaultFee), status: b.status ?? 'open',
     closesAt: b.closesAt ? new Date(b.closesAt) : null, arrivalGroup: b.arrivalGroup ?? 'white_powder',

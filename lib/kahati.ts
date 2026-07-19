@@ -23,6 +23,31 @@ export function resolveExpiredKahatiStatus(
   return isKahatiFull(claimedSlots, totalSlots) ? 'closed' : 'cancelled';
 }
 
+// Fill percentage (0-100) for the progress bar. Clamped at both ends and
+// guarded against a zero cap, which would otherwise render as NaN and collapse
+// the bar to an empty element.
+export function kahatiProgressPercent(claimedSlots: number, totalSlots: number): number {
+  if (!(totalSlots > 0)) return 0;
+  const pct = Math.round((claimedSlots / totalSlots) * 100);
+  return Math.min(100, Math.max(0, pct));
+}
+
+export type KahatiStatus = 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+
+// Board badge for a hatian. The thresholds are expressed as fractions of the cap
+// because the cap is one kit (10 vials) — the previous `remaining <= 10` test was
+// always true at that size, so every counter read "N VIALS LEFT".
+export function kahatiBadge(status: KahatiStatus, claimedSlots: number, totalSlots: number): string {
+  if (status !== 'open') return 'CLOSED';
+  const remaining = Math.max(0, totalSlots - claimedSlots);
+  if (remaining === 0) return 'FULL';
+  if (remaining <= Math.max(1, Math.round(totalSlots * 0.25))) {
+    return `${remaining} ${remaining === 1 ? 'VIAL' : 'VIALS'} LEFT`;
+  }
+  if (claimedSlots >= totalSlots / 2) return 'FILLING FAST';
+  return 'OPEN';
+}
+
 // Deadline for an auto-opened sibling: the same window length as its parent,
 // measured from `now`. A parent with no deadline yields a sibling with none.
 // A parent already past its deadline yields a zero-length window (closes at now),

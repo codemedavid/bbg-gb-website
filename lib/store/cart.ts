@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PACKING_FEE_PHP, vialsFor, type OnHandUnit } from '@/lib/pricing';
+import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees } from '@/lib/pricing';
 
 export type CartItem = {
   key: string;                    // stable dedupe key (product:id:unit / gb:id)
@@ -81,12 +81,16 @@ export const useCart = create<CartState>()(
 // Mirrors lib/pricing.ts packingFeeFor: one packing fee per fulfillment mode
 // present (local shipping included, no admin fee). The cart only ever holds
 // on-hand (product) and kahati (group_buy) items — MOQ campaigns commit through
-// their own flow. `onHandFee` is the admin-editable global on-hand default,
-// fetched at display time; kahati items carry their own admin-editable fee.
-export const packingFeeFor = (items: CartItem[], onHandFee: number = PACKING_FEE_PHP.solo): number => {
+// their own flow.
+//
+// `fees` is the admin-editable set fetched at display time. Both legs read from
+// it: the kahati leg previously fell back to the PACKING_FEE_PHP constant, so
+// editing the Hatian packing fee in the admin panel never reached the cart.
+// A per-listing fee on a kahati item still wins over the global default.
+export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE_PHP): number => {
   let total = 0;
-  if (items.some((i) => i.kind === 'product')) total += onHandFee;
-  const kahatiFees = items.filter((i) => i.kind === 'group_buy').map((i) => i.packingFeePhp ?? PACKING_FEE_PHP.kahati);
+  if (items.some((i) => i.kind === 'product')) total += fees.solo;
+  const kahatiFees = items.filter((i) => i.kind === 'group_buy').map((i) => i.packingFeePhp ?? fees.kahati);
   if (kahatiFees.length) total += Math.max(...kahatiFees);
   return total;
 };
