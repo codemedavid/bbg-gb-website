@@ -11,6 +11,13 @@ export const usePackingFees = () =>
     staleTime: 5 * 60 * 1000,
   });
 
+export const useKahatiDownpayment = () =>
+  useQuery({
+    queryKey: ['kahati-downpayment'],
+    queryFn: () => apiGet<{ kahatiDownpayment: number }>('/settings').then((d) => d.kahatiDownpayment),
+    staleTime: 5 * 60 * 1000,
+  });
+
 export const useCategories = () =>
   useQuery({ queryKey: ['categories'], queryFn: () => apiGet<Category[]>('/categories') });
 
@@ -20,8 +27,22 @@ export const useProducts = (p: { category?: string; q?: string; onHand?: boolean
 export const useProduct = (id?: string) =>
   useQuery({ queryKey: ['product', id], queryFn: () => apiGet<Product>(`/products/${id}`), enabled: !!id });
 
+// The hatian board is shared state: other customers claim vials while this page
+// sits open. The global defaults (30s stale, no refocus refetch) left the counter
+// and progress bar frozen until a hard reload, so this query opts into polling.
+export const KAHATI_POLL_MS = 15_000;
+
 export const useGroupBuys = () =>
-  useQuery({ queryKey: ['groupbuys'], queryFn: () => apiGet<GroupBuy[]>('/groupbuys') });
+  useQuery({
+    queryKey: ['groupbuys'],
+    queryFn: () => apiGet<GroupBuy[]>('/groupbuys'),
+    staleTime: 0,
+    refetchInterval: KAHATI_POLL_MS,
+    // Pause polling on a backgrounded tab; the refocus refetch covers the return.
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+  });
 
 export const usePaymentMethods = () =>
   useQuery({ queryKey: ['payment-methods'], queryFn: () => apiGet<CheckoutPaymentMethod[]>('/payment-methods') });

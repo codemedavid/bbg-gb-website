@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env, BUCKETS } from './env';
+import { describeDriverProblem } from './storage-driver';
+import { ApiError } from './session';
 import { uploadToImageKit, imagekitUrl, provisionImageKitFolders } from './imagekit';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
@@ -28,20 +30,40 @@ export async function ensureBuckets(): Promise<void> {
   if (env.storageDriver !== 'supabase') return;
   const client = supabase();
   for (const bucket of [BUCKETS.proofs, BUCKETS.coa, BUCKETS.qr]) {
-    const { data } = await client.storage.getBucket(bucket);
-    if (!data) await client.storage.createBucket(bucket, { public: false });
+    await ensureBucket(client, bucket);
   }
+}
+
+// Lazily create a single private bucket on first use, memoized per process. Startup
+// hooks don't run reliably on serverless, so uploads self-provision their bucket here.
+const ensuredBuckets = new Set<string>();
+async function ensureBucket(client: SupabaseClient, bucket: string): Promise<void> {
+  if (ensuredBuckets.has(bucket)) return;
+  const { data } = await client.storage.getBucket(bucket);
+  if (!data) {
+    const { error } = await client.storage.createBucket(bucket, { public: false });
+    // Tolerate the race where a concurrent request created it first.
+    if (error && !/exist/i.test(error.message)) throw error;
+  }
+  ensuredBuckets.add(bucket);
 }
 
 export type StoredFile = { key: string };
 
 export async function putFile(bucket: string, key: string, body: Buffer, contentType: string): Promise<StoredFile> {
+  // Catch a misconfigured backend here rather than letting it surface as an
+  // EROFS deep inside fs.writeFile, which reached admins as "Something went wrong".
+  const problem = describeDriverProblem(env.storageDriver, env.isProd);
+  if (problem) throw new ApiError(503, problem);
+
   if (env.storageDriver === 'imagekit') {
     await uploadToImageKit(bucket, key, body, contentType);
     return { key };
   }
   if (env.storageDriver === 'supabase') {
-    const { error } = await supabase().storage.from(bucket).upload(key, body, { contentType, upsert: true });
+    const client = supabase();
+    await ensureBucket(client, bucket);
+    const { error } = await client.storage.from(bucket).upload(key, body, { contentType, upsert: true });
     if (error) throw error;
     return { key };
   }

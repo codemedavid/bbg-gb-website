@@ -17,7 +17,10 @@ export default function CheckoutPage() {
   const { user, loading } = useAuth();
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
-  const { total } = useOrderTotals();
+  const { total, hasKahati, downpayment } = useOrderTotals();
+  // Kahati carts pay only the reservation downpayment now; the balance is
+  // collected after the kahati ends.
+  const amountDueNow = hasKahati && downpayment > 0 ? downpayment : total;
   const toast = useToast((s) => s.show);
   const { data: methods = [] } = usePaymentMethods();
 
@@ -54,7 +57,7 @@ export default function CheckoutPage() {
     setSubmitting(true);
     try {
       const fd = new FormData();
-      fd.append('items', JSON.stringify(items.map((i) => ({ kind: i.kind, refId: i.refId, qty: i.qty }))));
+      fd.append('items', JSON.stringify(items.map((i) => ({ kind: i.kind, refId: i.refId, qty: i.qty, unit: i.unit }))));
       fd.append('shipName', name);
       fd.append('shipPhone', phone);
       fd.append('shipAddress', address);
@@ -78,8 +81,9 @@ export default function CheckoutPage() {
 
   return (
     <OverlayShell>
-      <BackHeader title="Checkout" onBack={() => router.push('/cart')} />
-      <div className="flex flex-col gap-3.5 p-4">
+      <BackHeader title="Checkout" onBack={() => router.push('/cart')} showHome />
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-3.5 p-4 lg:grid lg:max-w-none lg:grid-cols-[1fr_360px] lg:items-start lg:gap-5 lg:p-6">
+        <div className="flex flex-col gap-3.5">
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-2.5 text-[13px] font-bold text-ink">Deliver to</div>
           <input name="shipName" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name"
@@ -122,7 +126,9 @@ export default function CheckoutPage() {
               <div className="mb-3 text-[16px] font-bold text-ink">{selectedMethod.accountName}</div>
               <div className="text-[12px] text-ink-muted">Account / number</div>
               <div className="text-[16px] font-bold text-ink">{selectedMethod.accountNumber}</div>
-              <div className="mt-1 text-[12px] text-ink-muted">Amount: <strong className="font-display text-ink-body">{php(total)}</strong></div>
+              <div className="mt-1 text-[12px] text-ink-muted">
+                {hasKahati && downpayment > 0 ? 'Downpayment due now' : 'Amount'}: <strong className="font-display text-ink-body">{php(amountDueNow)}</strong>
+              </div>
               {selectedMethod.qrUrl && (
                 <div className="mt-3 flex justify-center">
                   <img src={selectedMethod.qrUrl} alt={`${selectedMethod.label} QR code`} className="max-h-[260px] max-w-full rounded-xl" />
@@ -150,7 +156,9 @@ export default function CheckoutPage() {
             )}
           </label>
         </div>
+        </div>
 
+        <div className="flex flex-col gap-3.5 lg:sticky lg:top-[72px]">
         <div className="rounded-[14px] bg-white p-4 shadow-card"><OrderSummary /></div>
         <div className="text-[11.5px] leading-relaxed text-ink-muted">
           🛬 Tip: white powder peptides ship first; salt forms, blends &amp; liquids arrive 3–5 days later — place them in separate orders to avoid delays.
@@ -159,6 +167,7 @@ export default function CheckoutPage() {
           className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${canPlace && !submitting ? 'bg-brand-green active:scale-[.99]' : 'bg-[#b9c6b4]'}`}>
           {submitting ? 'Placing…' : proof ? 'Place order' : 'Upload proof to place order'}
         </button>
+        </div>
       </div>
     </OverlayShell>
   );

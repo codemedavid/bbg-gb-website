@@ -1,9 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { useAdminOrders, useAdminOrder, useMutate } from '@/lib/admin-api';
-import { Modal, field, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { Modal, field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { php, shortDate } from '@/lib/format';
 import { STATUS_FLOW, STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
+import { PACKERS, COURIERS } from '@/lib/report/constants';
+import { WeeklyReportButton } from './WeeklyReportButton';
 
 const FILTERS = [['', 'All'], ['proof_review', 'Proof review'], ['payment_confirmed', 'Confirmed'], ['batch_filling', 'Filling'], ['shipped', 'Shipped'], ['delivered', 'Delivered']] as const;
 
@@ -13,12 +15,18 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [status, setStatus] = useState('');
   const [tracking, setTracking] = useState('');
   const [note, setNote] = useState('');
+  const [courier, setCourier] = useState('');
+  const [packedBy, setPackedBy] = useState('');
+  const [payment, setPayment] = useState('');
 
   if (isLoading || !data) return <Modal title="Order" onClose={onClose}><div className="py-6 text-ink-muted">Loading…</div></Modal>;
   const { order, items, customer, proofUrl } = data;
 
   const save = async () => {
-    await setOrderStatus.mutateAsync({ id: order.id, status: status || order.status, trackingNo: tracking || undefined, note: note || undefined });
+    await setOrderStatus.mutateAsync({
+      id: order.id, status: status || order.status, trackingNo: tracking || undefined, note: note || undefined,
+      courier: courier || undefined, packedBy: packedBy || undefined, paymentMethod: payment || undefined,
+    });
     onClose();
   };
 
@@ -51,6 +59,18 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
               : null;
           })()}
           <div className="flex justify-between pt-1 text-[15px] font-bold"><span>Total</span><span className="font-display">{php(order.totalPhp)}</span></div>
+          {(() => {
+            // Kahati orders reserve slots with a downpayment; the balance is collected after the kahati ends.
+            const downpayment = Number(order.downpaymentPhp ?? 0);
+            if (downpayment <= 0) return null;
+            const balance = Number(order.totalPhp) - downpayment;
+            return (
+              <div className="mt-1 rounded-[10px] bg-[#f2f8ec] px-3 py-2 text-[13px]">
+                <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
+                {balance > 0 && <div className="flex justify-between text-ink-body"><span>Balance to collect</span><span>{php(balance)}</span></div>}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="mt-3">
@@ -70,6 +90,28 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <input className={`${field} mt-2`} placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           <div className="mt-1.5 text-[11.5px] text-ink-muted">Customer gets an email notification on status change.</div>
+
+          <div className="mt-3 border-t border-line-soft pt-3">
+            <div className="mb-2 text-[12px] font-bold text-ink">Weekly report fields</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <span className={label}>Shipping</span>
+                <input className={field} list="courier-list" placeholder="J&T" value={courier || order.courier || ''} onChange={(e) => setCourier(e.target.value)} />
+                <datalist id="courier-list">{COURIERS.map((c) => <option key={c} value={c} />)}</datalist>
+              </div>
+              <div>
+                <span className={label}>Admin</span>
+                <select className={field} value={packedBy || order.packedBy || ''} onChange={(e) => setPackedBy(e.target.value)}>
+                  <option value="">—</option>
+                  {PACKERS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <span className={label}>Payment</span>
+                <input className={field} placeholder="BDO / GoTyme" value={payment || order.paymentMethod || ''} onChange={(e) => setPayment(e.target.value)} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div className="mt-4 flex justify-end gap-2">
@@ -87,9 +129,12 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="m-0 font-display text-[24px] font-bold">Orders</h1>
-        <p className="mt-1 text-[13px] text-ink-muted">Verify proofs, update status &amp; add tracking.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="m-0 font-display text-[24px] font-bold">Orders</h1>
+          <p className="mt-1 text-[13px] text-ink-muted">Verify proofs, update status &amp; add tracking.</p>
+        </div>
+        <WeeklyReportButton />
       </div>
       <div className="flex flex-wrap gap-2">
         {FILTERS.map(([val, lbl]) => (

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 export function AuthShell({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-screen max-w-app flex-col bg-surface-mist">
+    <div className="mx-auto flex min-h-screen max-w-app flex-col bg-surface-mist sm:max-w-[480px]">
       <div className="bg-gradient-to-br from-brand-navy to-brand-blue px-6 pb-8 pt-14 text-white">
         <div className="font-display text-[26px] font-bold">BBG<span className="text-brand-green"> Peptides</span></div>
         <div className="mt-1 text-[13px] opacity-85">Kahati tayo — research peptides, delivered PH-wide.</div>

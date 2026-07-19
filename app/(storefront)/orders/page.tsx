@@ -35,6 +35,8 @@ function OrderCard({ order }: { order: Order }) {
   const [open, setOpen] = useState(false);
   const toast = useToast((s) => s.show);
   const first = order.items?.[0];
+  const downpayment = Number(order.downpaymentPhp ?? 0);
+  const balance = Number(order.totalPhp) - downpayment;
   const itemsText = first ? `${first.nameSnapshot}${(order.items?.length || 0) > 1 ? ` +${order.items!.length - 1} more` : ''}` : '';
   return (
     <div className="rounded-[16px] bg-white p-4 shadow-card">
@@ -49,6 +51,12 @@ function OrderCard({ order }: { order: Order }) {
         <div className="mt-3.5 border-t border-line-soft pt-3.5">
           <Timeline order={order} />
           {order.trackingNo && <div className="mt-2 rounded-[10px] bg-surface-mist px-3 py-2.5 text-[12.5px] text-ink-body">🚚 {order.trackingNo} — in transit</div>}
+          {downpayment > 0 && (
+            <div className="mt-2 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5 text-[12.5px] text-ink-body">
+              <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
+              {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between">
             <button onClick={() => toast('COA available on the product page or on request.')}
               className="rounded-[9px] border-[1.5px] border-[#a9c88f] px-3.5 py-2 text-[12px] font-bold text-brand-greendark">📄 Download COA</button>
@@ -81,7 +89,7 @@ export default function OrdersPage() {
   return (
     <>
       <SectionHeader title="📦 My Orders" sub="Track status · download COA" />
-      <div className="flex flex-col gap-3 p-4">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 p-4 md:p-6">
         {isLoading || loading ? <div className="py-16 text-center text-[13px] text-ink-muted">Loading…</div>
           : orders.length ? orders.map((o) => <OrderCard key={o.id} order={o} />)
           : <div className="py-16 text-center text-[13px] text-ink-muted">No orders yet. Sali sa kahati o mag-shop! 🛒</div>}

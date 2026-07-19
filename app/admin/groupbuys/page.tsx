@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { useAdminGroupBuys, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { php } from '@/lib/format';
+import { KAHATI_MAX_VIALS, kahatiProgressPercent } from '@/lib/kahati';
 import type { GroupBuy } from '@/lib/types';
 
-const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSlots: 100, claimedSlots: 0, minVials: 7, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder' });
+// A brand-new hatian starts empty and fills exactly one kit.
+const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSlots: KAHATI_MAX_VIALS, claimedSlots: 0, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder' });
 
 function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClose: () => void }) {
   const { saveGroupBuy } = useMutate();
@@ -25,12 +27,12 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
         <div className="col-span-2"><Labeled label="Name"><input className={field} value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} /></Labeled></div>
         <Labeled label="Price / kit ₱ (editable)"><input className={field} type="number" value={f.pricePerKitPhp as any} onChange={(e) => setF({ ...f, pricePerKitPhp: e.target.value })} /></Labeled>
         <Labeled label="Packing fee ₱ (local shipping incl.)"><input className={field} type="number" value={f.repackFeePhp as any} onChange={(e) => setF({ ...f, repackFeePhp: e.target.value })} /></Labeled>
-        <Labeled label="Total slots (vials)"><input className={field} type="number" value={f.totalSlots ?? 0} onChange={(e) => setF({ ...f, totalSlots: Number(e.target.value) })} /></Labeled>
-        <Labeled label="Claimed slots"><input className={field} type="number" value={f.claimedSlots ?? 0} onChange={(e) => setF({ ...f, claimedSlots: Number(e.target.value) })} /></Labeled>
-        <Labeled label="Min vials / kahati"><input className={field} type="number" value={f.minVials ?? 7} onChange={(e) => setF({ ...f, minVials: Number(e.target.value) })} /></Labeled>
+        <Labeled label={`Vial cap (1 kit = ${KAHATI_MAX_VIALS})`}><input className={field} type="number" min={1} max={KAHATI_MAX_VIALS} value={f.totalSlots ?? KAHATI_MAX_VIALS} onChange={(e) => setF({ ...f, totalSlots: Number(e.target.value) })} /></Labeled>
+        <Labeled label="Claimed vials"><input className={field} type="number" min={0} max={KAHATI_MAX_VIALS} value={f.claimedSlots ?? 0} onChange={(e) => setF({ ...f, claimedSlots: Number(e.target.value) })} /></Labeled>
+        <Labeled label="Min vials / person"><input className={field} type="number" min={1} max={KAHATI_MAX_VIALS} value={f.minVials ?? 1} onChange={(e) => setF({ ...f, minVials: Number(e.target.value) })} /></Labeled>
         <Labeled label="Status">
           <select className={field} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as any })}>
-            {['open', 'closed', 'shipped', 'completed'].map((s) => <option key={s} value={s}>{s}</option>)}
+            {['open', 'closed', 'shipped', 'completed', 'cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </Labeled>
       </div>
@@ -59,15 +61,15 @@ export default function AdminGroupBuysPage() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? <div className="text-ink-muted">Loading…</div> : gbs.map((g) => {
-          const progress = Math.round((g.claimedSlots / g.totalSlots) * 100);
+          const progress = kahatiProgressPercent(g.claimedSlots, g.totalSlots);
           return (
             <div key={g.id} className="rounded-[16px] bg-white p-4 shadow-card">
               <div className="flex items-start justify-between">
                 <div className="font-bold text-ink">{g.name}</div>
-                <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${g.status === 'open' ? 'bg-[#e8f5db] text-brand-greendark' : 'bg-line text-ink-body'}`}>{g.status}</span>
+                <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${g.status === 'open' ? 'bg-[#e8f5db] text-brand-greendark' : g.status === 'cancelled' ? 'bg-[#fbe4e4] text-[#b23b3b]' : 'bg-line text-ink-body'}`}>{g.status}</span>
               </div>
               <div className="mt-1 text-[12px] text-ink-muted">{php(g.pricePerKitPhp)}/kit · ₱{Number(g.pricePerKitPhp) / 10}/vial</div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf2ea]"><div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${Math.min(progress, 100)}%` }} /></div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf2ea]"><div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${progress}%` }} /></div>
               <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{g.claimedSlots}/{g.totalSlots} vials</div>
               <div className="mt-3 flex gap-2">
                 <button onClick={() => setEditing(g)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-brand-blue">Edit</button>

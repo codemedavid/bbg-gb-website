@@ -68,8 +68,8 @@ export default function AccountPage() {
   return (
     <>
       <SectionHeader title="👤 My Account" sub="Profile · shipping address · password" />
-      <div className="flex flex-col gap-3.5 p-4">
-        <div className="flex items-center gap-3 rounded-[16px] bg-gradient-to-br from-brand-navy to-brand-blue p-4 text-white">
+      <div className="grid grid-cols-1 gap-3.5 p-4 md:grid-cols-2 md:items-start md:p-6">
+        <div className="flex items-center gap-3 rounded-[16px] bg-gradient-to-br from-brand-navy to-brand-blue p-4 text-white md:col-span-2">
           <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-white/20 text-[20px] font-bold">
             {user.name.charAt(0).toUpperCase()}
           </div>
@@ -141,7 +141,7 @@ export default function AccountPage() {
         </Card>
 
         <button onClick={async () => { await logout(); router.push('/'); }}
-          className="rounded-[12px] border-[1.5px] border-line bg-white py-3 text-[14px] font-semibold text-ink-body">
+          className="rounded-[12px] border-[1.5px] border-line bg-white py-3 text-[14px] font-semibold text-ink-body md:col-span-2">
           ↪ Log out
         </button>
       </div>

@@ -13,15 +13,23 @@ export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300 } as con
 export type PackingMode = keyof typeof PACKING_FEE_PHP;
 export type PackingFees = Record<PackingMode, number>;
 
-export const KAHATI_MIN_VIALS = 7;    // minimum kahati commitment
+// Default downpayment (PHP) a customer pays at checkout to reserve kahati slots.
+// Deducted from the order total — the balance is collected after the kahati ends.
+// Admin-editable via the `kahati_downpayment` settings key; this is the fallback.
+export const KAHATI_DOWNPAYMENT_PHP = 150;
+
+export const KAHATI_MIN_VIALS = 1;    // min vials one person may commit to a hatian
 export const VIALS_PER_KIT = 10;      // 1 kit = 10 vials
-export const SOLO_MIN_KITS = 10;      // solo buy: 10 kits of any peptide
-export const SOLO_MIN_BAC = 10;       // + 10 BAC water
+export const KAHATI_MAX_VIALS = VIALS_PER_KIT; // a hatian counter caps at one kit
+// Minimum vials a hatian must reach by its deadline to be worth ordering. Below
+// this the batch is not placed and the hatian is cancelled; at or above it the
+// hatian is "Good to Go" even if the kit never filled.
+export const KAHATI_MIN_VIABLE_VIALS = 7;
 export const GROUP_BUY_MIN_KITS = 1;  // group buy (MOQ campaign): default per-customer commitment
 
 // The three purchasing modes carried by a cart item:
-//   'product'      -> Solo Buy / On-hand (min 10 kits + 10 BAC, ₱200 packing)
-//   'group_buy'    -> Kahati / Hatian    (shared single-product order, min 7 vials, ₱150 packing)
+//   'product'      -> On-hand / ready stock (buy any qty, limited by stock, ₱200 packing)
+//   'group_buy'    -> Kahati / Hatian    (shared single-product order, 10-vial cap, min 1 vial, ₱150 packing)
 //   'moq_campaign' -> Group Buy / Pasabay (admin-set MOQ; ₱300 packing)
 export type PriceableItem = {
   kind: 'product' | 'group_buy' | 'moq_campaign';
@@ -34,7 +42,7 @@ export type PriceableItem = {
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-export function hasSolo(items: PriceableItem[]): boolean {
+export function hasOnHand(items: PriceableItem[]): boolean {
   return items.some((i) => i.kind === 'product');
 }
 export function hasKahati(items: PriceableItem[]): boolean {
@@ -97,6 +105,19 @@ export function perVialPrice(pricePerKitPhp: number): number {
   return round2(pricePerKitPhp / VIALS_PER_KIT);
 }
 
+export type KahatiDownpaymentSplit = { downpayment: number; balance: number };
+
+// Split a kahati order total into the downpayment due at checkout and the
+// balance payable after the kahati ends. The downpayment is clamped to
+// [0, total] so a small order never yields a negative balance.
+export function splitKahatiDownpayment(
+  total: number,
+  downpaymentPhp: number = KAHATI_DOWNPAYMENT_PHP,
+): KahatiDownpaymentSplit {
+  const downpayment = round2(Math.min(Math.max(downpaymentPhp, 0), total));
+  return { downpayment, balance: round2(total - downpayment) };
+}
+
 // Validate a kahati commitment against min vials and remaining slots.
 // minVials comes from the group buy (admin-editable); falls back to KAHATI_MIN_VIALS.
 export function validateKahatiCommit(
@@ -113,32 +134,49 @@ export function validateKahatiCommit(
   return { ok: true };
 }
 
-// Solo MOQ status (informational — surfaced to the user). kits counts peptide
-// vials / 10; bac counts BAC water vials.
-export function soloMoqStatus(peptideVials: number, bacVials: number) {
-  const kits = peptideVials / VIALS_PER_KIT;
-  return {
-    kits,
-    bacVials,
-    meetsKits: kits >= SOLO_MIN_KITS,
-    meetsBac: bacVials >= SOLO_MIN_BAC,
-    met: kits >= SOLO_MIN_KITS && bacVials >= SOLO_MIN_BAC,
-  };
+// ---------------------------------------------------------------------------
+// On-hand (ready stock)
+//
+// On-hand items are sold from stock we already hold, so there is no bulk
+// minimum — the only ceiling is what is physically left. A customer buys either
+// single pieces (vials) or whole kits; `stock` is counted in vials, so a kit
+// draws VIALS_PER_KIT from it.
+// ---------------------------------------------------------------------------
+
+export type OnHandUnit = 'piece' | 'kit';
+
+// Vials drawn from stock by `qty` of a given unit.
+export function vialsFor(unit: OnHandUnit, qty: number): number {
+  return unit === 'kit' ? qty * VIALS_PER_KIT : qty;
 }
 
-// Hard gate for solo checkout (SRS V-1): blocked until the cart holds
-// >= 10 peptide kits AND >= 10 BAC water.
-export function validateSoloCheckout(
-  peptideVials: number,
-  bacVials: number,
+type OnHandPrices = { onHandPiecePhp: string | number | null; onHandKitPhp: string | number | null };
+
+// Price for one unit of an on-hand product. Returns null when that unit is not
+// offered — an unset or zero price means "not sold this way", never free.
+export function onHandUnitPrice(p: OnHandPrices, unit: OnHandUnit): number | null {
+  const raw = unit === 'kit' ? p.onHandKitPhp : p.onHandPiecePhp;
+  if (raw == null) return null;
+  const price = Number(raw);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return round2(price);
+}
+
+// Gate an on-hand purchase: whole positive quantities, never beyond stock.
+export function validateOnHandQty(
+  qty: number,
+  unit: OnHandUnit,
+  stock: number,
 ): { ok: boolean; message?: string } {
-  const s = soloMoqStatus(peptideVials, bacVials);
-  if (!s.met) {
-    return {
-      ok: false,
-      message: `Solo buy minimum is ${SOLO_MIN_KITS} kits + ${SOLO_MIN_BAC} BAC water. ` +
-        `You have ${s.kits} kit(s) and ${bacVials} BAC.`,
-    };
+  if (!Number.isInteger(qty) || qty < 1) {
+    return { ok: false, message: 'Quantity must be a whole number of at least 1.' };
+  }
+  if (stock <= 0) return { ok: false, message: 'Out of stock.' };
+  const vials = vialsFor(unit, qty);
+  if (vials > stock) {
+    return unit === 'kit'
+      ? { ok: false, message: `Only ${Math.floor(stock / VIALS_PER_KIT)} kit(s) left in stock (${stock} vials).` }
+      : { ok: false, message: `Only ${stock} left in stock.` };
   }
   return { ok: true };
 }

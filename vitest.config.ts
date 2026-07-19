@@ -6,6 +6,9 @@ const dir = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   // Pin the root so `npm test` collects the same files from any cwd.
   root: dir('.'),
+  // tsconfig sets jsx:"preserve" because Next owns the real transform; vitest
+  // has to compile JSX itself, so opt into the automatic runtime here.
+  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       // Mirrors the "@/*" path mapping in tsconfig.json.
@@ -15,7 +18,11 @@ export default defineConfig({
     },
   },
   test: {
+    // Route/integration tests run in node (they touch PGlite, fs, Request).
+    // Component tests opt into a DOM via the .tsx glob below.
     environment: 'node',
+    environmentMatchGlobs: [['**/*.test.tsx', 'jsdom']],
+    setupFiles: ['./lib/test/setup-dom.ts'],
     globals: true,
     include: ['{app,lib,components}/**/*.test.{ts,tsx}'],
     // Isolated in-memory Postgres per test file; never touch the dev ./.pglite or a real DB.

@@ -14,7 +14,7 @@ export type CoaFile = { id: string; productId: string; batch: string | null; fil
 
 export type GroupBuy = {
   id: string; name: string; pricePerKitPhp: string; totalSlots: number; claimedSlots: number;
-  minVials: number; repackFeePhp: string; status: 'open' | 'closed' | 'shipped' | 'completed';
+  minVials: number; repackFeePhp: string; status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
   closesAt: string | null; arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
   perVialPhp: number; remaining: number; progress: number;
 };
@@ -51,13 +51,17 @@ export type CheckoutPaymentMethod = Pick<PaymentMethod, 'id' | 'label' | 'accoun
 
 export type OrderItem = {
   id: string; kind: 'product' | 'group_buy'; nameSnapshot: string; specSnapshot: string | null;
-  unitPricePhp: string; qty: number; lineTotalPhp: string;
+  unitPricePhp: string; unitPriceUsd?: string | null; qty: number; lineTotalPhp: string;
 };
 export type Order = {
   id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy';
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
+  // Kahati reservation downpayment paid at checkout; balance = total - downpayment. 0 for solo.
+  downpaymentPhp?: string;
   shipName: string; shipPhone: string; shipAddress: string; trackingNo: string | null;
+  // Weekly-report fulfilment fields (admin-editable). paymentMethod drives the Payment column.
+  paymentMethod?: string | null; courier?: string | null; packedBy?: string | null; totalUsd?: string;
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };

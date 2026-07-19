@@ -28,7 +28,7 @@ export default function CalcPage() {
   return (
     <>
       <SectionHeader title="🧮 Recon Calculator" sub="BAC water → units on a U-100 insulin syringe" />
-      <div className="p-4">
+      <div className="mx-auto w-full max-w-2xl p-4 md:p-6">
         <div className="mb-3.5 flex flex-wrap gap-2">
           {PRESETS.map(([label, v, b, d]) => (
             <button key={label} onClick={() => { setVial(v); setBac(b); setDose(d); }}

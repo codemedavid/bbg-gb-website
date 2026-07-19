@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { KAHATI_MAX_VIALS } from './pricing';
 
 export const productSchema = z.object({
   code: z.string().max(40).optional(),
@@ -17,14 +18,21 @@ export const productSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+// A hatian fills exactly one kit, so its vial cap and per-person minimum can
+// never exceed KAHATI_MAX_VIALS (10). Enforced here so the rule holds for every
+// caller, not just the admin form.
 export const groupBuySchema = z.object({
   name: z.string().min(2).max(160),
   pricePerKitPhp: z.number().nonnegative(),
-  totalSlots: z.number().int().positive(),
+  totalSlots: z.number().int().positive()
+    .max(KAHATI_MAX_VIALS, `A hatian fills one kit — the vial cap cannot exceed ${KAHATI_MAX_VIALS}.`)
+    .optional(),
   claimedSlots: z.number().int().nonnegative().optional(),
-  minVials: z.number().int().positive().optional(),
+  minVials: z.number().int().positive()
+    .max(KAHATI_MAX_VIALS, `A person cannot commit more than ${KAHATI_MAX_VIALS} vials — that is the whole kit.`)
+    .optional(),
   repackFeePhp: z.number().nonnegative().optional(),
-  status: z.enum(['open', 'closed', 'shipped', 'completed']).optional(),
+  status: z.enum(['open', 'closed', 'shipped', 'completed', 'cancelled']).optional(),
   closesAt: z.string().datetime().nullable().optional(),
   arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
   description: z.string().max(2000).nullable().optional(),

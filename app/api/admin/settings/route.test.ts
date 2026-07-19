@@ -1,4 +1,4 @@
-// Integration tests for the admin packing-fee settings (GET + PATCH).
+// Integration tests for the admin settings (GET + PATCH): packing fees + kahati downpayment.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const session = { current: null as { sub: string; role: 'customer' | 'admin'; email: string } | null };
@@ -82,5 +82,41 @@ describe('PATCH /api/admin/settings', () => {
     await signIn('customer');
     const res = await PATCH(patchReq({ packingFees: { solo: 250 } }));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('kahati downpayment setting', () => {
+  it('returns the code-default downpayment (150) when unset', async () => {
+    await signIn('admin');
+    const res = await GET();
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.kahatiDownpayment).toBe(150);
+  });
+
+  it('updates the downpayment and persists it', async () => {
+    await signIn('admin');
+    const res = await PATCH(patchReq({ kahatiDownpayment: 300 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.kahatiDownpayment).toBe(300);
+
+    const after = await GET();
+    expect((await after.json()).data.kahatiDownpayment).toBe(300);
+  });
+
+  it('leaves the downpayment untouched when only packing fees are patched', async () => {
+    await signIn('admin');
+    await PATCH(patchReq({ kahatiDownpayment: 300 }));
+    const res = await PATCH(patchReq({ packingFees: { solo: 250 } }));
+    const body = await res.json();
+    expect(body.data.kahatiDownpayment).toBe(300);
+    expect(body.data.packingFees.solo).toBe(250);
+  });
+
+  it('rejects a negative downpayment', async () => {
+    await signIn('admin');
+    const res = await PATCH(patchReq({ kahatiDownpayment: -1 }));
+    expect(res.status).toBe(400);
   });
 });
