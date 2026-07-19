@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   KAHATI_MAX_VIALS, isKahatiFull, resolveExpiredKahatiStatus, nextKahatiClosesAt,
+  kahatiProgressPercent, kahatiBadge,
 } from './kahati';
 
 describe('KAHATI_MAX_VIALS', () => {
@@ -46,5 +47,43 @@ describe('nextKahatiClosesAt', () => {
     const closesAt = new Date('2026-01-01T00:00:00Z'); // closes before created (degenerate)
     const now = new Date('2026-01-10T00:00:00Z');
     expect(nextKahatiClosesAt(createdAt, closesAt, now)).toEqual(now);
+  });
+});
+
+describe('kahatiProgressPercent', () => {
+  it('reports 0% on a brand-new hatian (default 0 vials claimed)', () => {
+    expect(kahatiProgressPercent(0, 10)).toBe(0);
+  });
+  it('scales linearly up to the cap', () => {
+    expect(kahatiProgressPercent(3, 10)).toBe(30);
+    expect(kahatiProgressPercent(10, 10)).toBe(100);
+  });
+  it('clamps past the cap so the bar never overflows', () => {
+    expect(kahatiProgressPercent(12, 10)).toBe(100);
+  });
+  it('returns 0 — never NaN — when the cap is zero', () => {
+    expect(kahatiProgressPercent(0, 0)).toBe(0);
+  });
+  it('never goes negative on a degenerate claimed count', () => {
+    expect(kahatiProgressPercent(-5, 10)).toBe(0);
+  });
+});
+
+describe('kahatiBadge', () => {
+  it('marks a closed hatian regardless of its counts', () => {
+    expect(kahatiBadge('closed', 4, 10)).toBe('CLOSED');
+    expect(kahatiBadge('cancelled', 0, 10)).toBe('CLOSED');
+  });
+  it('shows OPEN on a fresh hatian rather than "10 VIALS LEFT"', () => {
+    // Regression: the old `remaining <= 10` threshold was always true at a
+    // 10-vial cap, so every hatian rendered as "N VIALS LEFT".
+    expect(kahatiBadge('open', 0, 10)).toBe('OPEN');
+  });
+  it('warns that it is filling fast once half the kit is claimed', () => {
+    expect(kahatiBadge('open', 5, 10)).toBe('FILLING FAST');
+  });
+  it('counts down the last few vials', () => {
+    expect(kahatiBadge('open', 8, 10)).toBe('2 VIALS LEFT');
+    expect(kahatiBadge('open', 9, 10)).toBe('1 VIAL LEFT');
   });
 });
