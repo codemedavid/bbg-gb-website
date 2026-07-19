@@ -5,7 +5,7 @@
 **Checkpoints:** `26fab4e` (RED) → `3d62e96` (GREEN) → `f31d80f` (extra guard).
 
 Baseline before any change: **17 test files, 171 tests passing.**
-After: **21 test files, 215 tests passing.** `tsc --noEmit` clean, `next build` compiled successfully.
+After: **25 test files, 237 tests passing.** `tsc --noEmit` clean, `next build` compiled successfully.
 
 ---
 
@@ -91,21 +91,52 @@ Commands: `npm test` · `npx vitest run --coverage` · `npx tsc --noEmit` · `np
 
 ---
 
+## DOM test setup (follow-up)
+
+The three gaps below were originally unverifiable because the repo had no component-test capability.
+That has since been added:
+
+- `jsdom`, `@testing-library/react` v16 (React 19 line), `@testing-library/jest-dom`,
+  `@testing-library/dom`, `@testing-library/user-event` as devDependencies.
+- `vitest.config.ts`: `environmentMatchGlobs` routes `**/*.test.tsx` to jsdom while route/integration
+  tests stay on node; `esbuild: { jsx: 'automatic' }` because tsconfig uses `jsx: "preserve"` (Next
+  owns the real transform); `setupFiles: ['./lib/test/setup-dom.ts']` registers the jest-dom matchers.
+
+| # | What is guaranteed | Test | Type | Result |
+|---|--------------------|------|------|--------|
+| 23 | Checkout renders a Home link to `/` | `app/checkout/page.test.tsx` | component | PASS |
+| 24 | A successful order empties the cart | `app/checkout/page.test.tsx` | component | PASS |
+| 25 | A successful order routes to `/success/<orderNo>` | `app/checkout/page.test.tsx` | component | PASS |
+| 26 | A **failed** order leaves the cart intact | `app/checkout/page.test.tsx` | component | PASS |
+| 27 | `useGroupBuys` refetches on an interval | `lib/queries.test.tsx` | hook | PASS |
+| 28 | Polling continues for as long as the board is open | `lib/queries.test.tsx` | hook | PASS |
+| 29 | A newer vial count replaces the old one on the next poll | `lib/queries.test.tsx` | hook | PASS |
+| 30 | Other queries are **not** turned into pollers | `lib/queries.test.tsx` | hook | PASS |
+| 31 | A fresh hatian card badges OPEN, not "10 VIALS LEFT" | `components/GroupBuyCard.test.tsx` | component | PASS |
+| 32 | The progress bar width tracks claimed vials, clamped 0–100% | `components/GroupBuyCard.test.tsx` | component | PASS |
+| 33 | A zero cap renders 0% width, never `NaN` | `components/GroupBuyCard.test.tsx` | component | PASS |
+| 34 | A closed hatian's Join button is disabled | `components/GroupBuyCard.test.tsx` | component | PASS |
+| 35 | `BackHeader` hides Home unless `showHome` is set | `components/headers.test.tsx` | component | PASS |
+
+**Mutation-checked.** Each new test was verified to fail against the pre-fix source: removing
+`refetchInterval`, restoring the `remaining <= 10` badge threshold, dropping the `showHome` block, and
+deleting `clear()` from checkout each produced failures (8 and 2 respectively), and all passed again
+once reverted. These are regression tests, not vacuous assertions.
+
 ## Coverage and known gaps
 
-`npx vitest run --coverage`: **all files 26.83% lines**, `lib` **51.88%**. Touched logic:
-`lib/kahati.ts` 100%, `lib/admin-schemas.ts` 100%, `lib/store/cart.ts` 82.97%, `lib/storage.ts` 28.35%
-(the supabase/imagekit branches need live credentials).
+`npx vitest run --coverage`: **all files 32.87% lines** (was 26.83% before the DOM setup).
+Touched surfaces: `app/checkout` 96.26%, `components/GroupBuyCard.tsx` 100%, `lib/kahati.ts` 100%
+(branches 100%), `lib/admin-schemas.ts` 100%, `lib/store/cart.ts` 82.97%, `lib/queries.ts` 58.82%,
+`components/headers.tsx` 33.33%, `lib/storage.ts` 28.35%.
 
-**The 80% project-wide target is not met, and this change does not close that gap.** The shortfall is
-entirely untested `.tsx` — every page and component reports 0%. `vitest.config.ts` sets
-`environment: 'node'` and the repo has no `jsdom` / `@testing-library/react` dependency, so there is
-no component-test capability to write against. Adding it is a separate piece of work.
+**The 80% project-wide target is still not met.** The remaining shortfall is the admin and storefront
+pages (`app/admin/**`, `app/(storefront)/**`), which are at 0% — the DOM harness now exists to test
+them, but writing those tests was out of scope here. `headers.tsx` and `queries.ts` are partial for
+the same reason: only `BackHeader` and `useGroupBuys` (the changed symbols) are covered.
 
-Consequently these are verified by reading, not by an automated test:
-- The Home button rendering on `/checkout`.
-- `useGroupBuys` actually polling in a browser.
-- The admin form's `max={10}` inputs (the API rule behind them *is* tested).
+`lib/storage.ts` stays low because the supabase/imagekit upload branches need live credentials; the
+driver-selection logic in front of them is fully unit-tested instead.
 
 ## Required configuration (not code — must be set by the operator)
 
