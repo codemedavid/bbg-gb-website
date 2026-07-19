@@ -151,3 +151,84 @@ IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/your_id
 
 Until then production uploads return a 503 that names the missing variable. **No database migration is
 required** — `settings`, `payment_methods.qr_key` and the group-buy columns all already exist.
+
+---
+
+# Follow-up — Hatian 7-vial minimum (2026-07-19)
+
+**Requirement.** A hatian only succeeds if it reaches at least 7 vials before closing. 7-10 vials is
+"Good to Go" and proceeds normally. Under 7 at expiry it is cancelled, participants are notified, and
+nothing is fulfilled.
+
+**Checkpoints:** `<RED>` reproducers → `<GREEN>` implementation.
+
+## What changed and why
+
+The old rule made the **cap** the success condition: `resolveExpiredKahatiStatus` returned `'closed'`
+only when `claimedSlots >= totalSlots`, so a hatian expiring at 7-9 vials was wrongly cancelled. That
+function also turned out to be **dead code** — `sweepExpiredKahatis` duplicated the rule in raw SQL.
+The sweep now calls the pure helper, so there is one source of truth.
+
+- `lib/pricing.ts` — new `KAHATI_MIN_VIABLE_VIALS = 7`.
+- `lib/kahati.ts` — `isKahatiViable(claimed)`; `resolveExpiredKahatiStatus(claimed)` drops its unused
+  `totalSlots` argument and keys off the minimum; `kahatiBadge` gains `GOOD TO GO` and counts toward
+  the minimum (`"2 MORE TO GO"`) rather than the cap.
+- `lib/kahati-server.ts` — `sweepExpiredKahatis` returns `{ closed, cancelled, ordersCancelled }` and,
+  for each failed hatian, cancels every live participant order, writes a status-history entry naming
+  the hatian and its shortfall, returns on-hand vials to stock, and emails each participant.
+- `lib/email.ts` — `kahatiCancelledEmail`, stating the refund.
+- UI — `GroupBuyCard` shows a minimum marker on the progress bar, a green "Good to go" line once
+  viable and an "N more vials" line before that; `JoinSheet` states the refund condition at the point
+  of commitment; the Kahati page steps explain the 7-vial rule.
+
+**Decisions taken with the client:** failed hatians auto-cancel participant orders and email them
+(rather than leaving it to the admin); a mixed order (hatian + on-hand) is cancelled whole with its
+on-hand vials restocked.
+
+## Test specification
+
+| # | What is guaranteed | Test | Type | Result |
+|---|--------------------|------|------|--------|
+| 36 | The minimum is 7 and sits below the 10-vial cap | `lib/kahati.test.ts` | unit | PASS |
+| 37 | `isKahatiViable` flips at exactly 7 | `lib/kahati.test.ts` | unit | PASS |
+| 38 | Expiring at 7 or 9 vials **closes** (was: cancelled) | `lib/kahati.test.ts` | unit | PASS |
+| 39 | Expiring at 6 or 0 vials cancels | `lib/kahati.test.ts` | unit | PASS |
+| 40 | Badge reads GOOD TO GO at 7-9, FULL at 10 | `lib/kahati.test.ts` | unit | PASS |
+| 41 | Badge counts down to the minimum ("2 MORE TO GO") | `lib/kahati.test.ts` | unit | PASS |
+| 42 | Sweep closes an expired hatian that met the minimum | `lib/kahati-server.test.ts` | integration | PASS |
+| 43 | Sweep cancels one that is a single vial short | `lib/kahati-server.test.ts` | integration | PASS |
+| 44 | A future deadline is left untouched | `lib/kahati-server.test.ts` | integration | PASS |
+| 45 | Sweep reports which hatians it closed and cancelled | `lib/kahati-server.test.ts` | integration | PASS |
+| 46 | Every participant's order is cancelled on failure | `lib/kahati-server.test.ts` | integration | PASS |
+| 47 | Status history records the hatian and its shortfall | `lib/kahati-server.test.ts` | integration | PASS |
+| 48 | Every participant is emailed (`kahati_cancelled`) | `lib/kahati-server.test.ts` | integration | PASS |
+| 49 | On-hand vials in a mixed order return to stock | `lib/kahati-server.test.ts` | integration | PASS |
+| 50 | A **successful** hatian leaves its orders alone | `lib/kahati-server.test.ts` | integration | PASS |
+| 51 | A repeat sweep does not re-cancel, double-restock or re-email | `lib/kahati-server.test.ts` | integration | PASS |
+| 52 | Orders on an unrelated hatian are untouched | `lib/kahati-server.test.ts` | integration | PASS |
+| 53 | Line items survive cancellation for the customer's records | `lib/kahati-server.test.ts` | integration | PASS |
+| 54 | Card spells out how many vials are still needed | `components/GroupBuyCard.test.tsx` | component | PASS |
+| 55 | Card confirms a viable hatian is good to go | `components/GroupBuyCard.test.tsx` | component | PASS |
+| 56 | Joining is still allowed after the minimum, up to the cap | `components/GroupBuyCard.test.tsx` | component | PASS |
+
+**Mutation-checked.** Reverting `isKahatiViable` to the 10-vial cap and removing the participant
+release produced 14 failures; both passed again once restored.
+
+## Edge cases covered
+
+Exactly 7 (the boundary), 6 (one short), 0 (empty), 9 (viable but unfilled), 10 (full — still closes
+early and opens a sibling), repeat sweeps, mixed hatian + on-hand orders, orders already cancelled,
+unrelated hatians in the same sweep, and a cap below the minimum (badge falls back to the cap).
+
+## Notes and limits
+
+- **Refunds are recorded, not executed.** There is no payment gateway — payments arrive as uploaded
+  proofs — so the flow cancels the order, promises the refund by email and leaves the admin to send
+  the money. Any real refund automation would need a payment integration first.
+- **The sweep is lazy, not scheduled.** It runs when the board is read (public or admin). A failed
+  hatian is therefore cancelled on the next board view, not the instant its deadline passes. A cron
+  would make this prompt; that is a separate change.
+- **No migration required** — `group_buys.status` already has `cancelled`, and `orders.status` already
+  has `cancelled`.
+
+Totals after this change: **26 test files, 260 tests passing.** `tsc --noEmit` clean, `next build` compiles.

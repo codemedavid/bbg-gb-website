@@ -71,3 +71,22 @@ export function orderStatusEmail(o: { name: string; orderNo: string; status: str
   const track = o.trackingNo ? `<p style="background:#e8f5db;padding:10px 12px;border-radius:8px">Tracking: <strong>${o.trackingNo}</strong></p>` : '';
   return { subject: `Order ${o.orderNo} - ${c.title}`, html: wrap(c.title, `<p>Hi ${o.name},</p><p>${c.line}</p>${track}<p>Order: <strong>${o.orderNo}</strong></p>`) };
 }
+
+// A hatian that expired under the 7-vial minimum. The batch is never ordered, so
+// the order is cancelled outright and the downpayment goes back. Refunds are
+// manual (GCash/bank transfer) — this email is what tells the customer to expect one.
+export function kahatiCancelledEmail(o: {
+  name: string; orderNo: string; kahatiName: string; claimedSlots: number; minVials: number;
+  downpayment: number;
+}) {
+  const refundLine = o.downpayment > 0
+    ? `<p>Your <strong>${php(o.downpayment)}</strong> downpayment will be refunded to the account you paid from. Please allow 1-3 banking days.</p>`
+    : '<p>No payment was collected for this order, so there is nothing to refund.</p>';
+  return {
+    subject: `Order ${o.orderNo} cancelled - "${o.kahatiName}" did not reach ${o.minVials} vials`,
+    html: wrap(`Sorry, ${o.name} 😔`, `
+      <p>The hatian <strong>${o.kahatiName}</strong> closed with only <strong>${o.claimedSlots} of ${o.minVials}</strong> vials needed, so we could not place the batch order.</p>
+      <p>Order <strong>${o.orderNo}</strong> has been cancelled and nothing will be shipped.</p>${refundLine}
+      <p>Salamat sa pag-intindi — sali ka ulit sa susunod na hatian!</p>`),
+  };
+}

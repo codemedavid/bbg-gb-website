@@ -21,6 +21,10 @@ export const KAHATI_DOWNPAYMENT_PHP = 150;
 export const KAHATI_MIN_VIALS = 1;    // min vials one person may commit to a hatian
 export const VIALS_PER_KIT = 10;      // 1 kit = 10 vials
 export const KAHATI_MAX_VIALS = VIALS_PER_KIT; // a hatian counter caps at one kit
+// Minimum vials a hatian must reach by its deadline to be worth ordering. Below
+// this the batch is not placed and the hatian is cancelled; at or above it the
+// hatian is "Good to Go" even if the kit never filled.
+export const KAHATI_MIN_VIABLE_VIALS = 7;
 export const GROUP_BUY_MIN_KITS = 1;  // group buy (MOQ campaign): default per-customer commitment
 
 // The three purchasing modes carried by a cart item:

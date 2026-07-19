@@ -4,12 +4,14 @@ import { SectionHeader } from '@/components/headers';
 import { GroupBuyCard } from '@/components/GroupBuyCard';
 import { JoinSheet } from '@/components/JoinSheet';
 import { useGroupBuys } from '@/lib/queries';
+import { KAHATI_MIN_VIABLE_VIALS } from '@/lib/kahati';
 import type { GroupBuy } from '@/lib/types';
 
 const STEPS = [
   'Commit at least 1 vial — each hatian fills one kit (10 vials).',
   'Pay the downpayment & upload your proof to secure your order.',
-  'Hit 10 vials and the hatian locks — a fresh one opens automatically. Miss it by the deadline and the hatian is cancelled.',
+  `A hatian pushes through once it reaches ${KAHATI_MIN_VIABLE_VIALS} vials — "Good to Go". Under ${KAHATI_MIN_VIABLE_VIALS} by the deadline and it is cancelled, with your downpayment refunded.`,
+  'Hit 10 vials and the hatian locks early — a fresh one opens automatically.',
   'Once the hatian is complete, settle the balance — then we split, repack & ship direct to you. ₱150 packing fee, local shipping included.',
 ];
 
@@ -19,7 +21,7 @@ export default function KahatiPage() {
 
   return (
     <>
-      <SectionHeader title="🤝 Kahati Board" sub="Shared orders · admins close & we repack" />
+      <SectionHeader title="🤝 Kahati Board" sub={`Shared orders · ${KAHATI_MIN_VIABLE_VIALS} vials minimum · we split & repack`} />
       <div className="p-4 md:p-6">
         <div className="mb-3.5 grid grid-cols-1 gap-3.5 lg:grid-cols-3">
           <div className="rounded-[14px] bg-white px-4 py-3.5 shadow-card">
