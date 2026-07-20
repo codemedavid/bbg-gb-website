@@ -26,14 +26,20 @@ const STEPS = [
 
 export default function GroupBuyPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { data: campaigns = [], isLoading } = useCampaigns();
   const [committing, setCommitting] = useState<MoqCampaign | null>(null);
   const toast = useToast((s) => s.show);
 
   // Committing places a real order, so an anonymous visitor is sent to log in
   // rather than filling a form that cannot succeed.
+  //
+  // `authLoading` has to be checked first: between first paint and /auth/me
+  // returning, a signed-in customer still looks anonymous, and redirecting on
+  // that would throw them onto the login screen mid-session. Swallow the click
+  // instead — auth settles in milliseconds and the tap can be repeated.
   const startCommit = (c: MoqCampaign) => {
+    if (authLoading) return;
     if (!user) { router.push('/login'); return; }
     setCommitting(c);
   };
