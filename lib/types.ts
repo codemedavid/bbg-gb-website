@@ -63,11 +63,14 @@ export type PaymentMethod = {
 export type CheckoutPaymentMethod = Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl'>;
 
 export type OrderItem = {
-  id: string; kind: 'product' | 'group_buy'; nameSnapshot: string; specSnapshot: string | null;
+  // Mirrors the order_item_kind enum — see lib/types-order-modes.test.ts.
+  id: string; kind: 'product' | 'group_buy' | 'moq_campaign' | 'moq_product';
+  nameSnapshot: string; specSnapshot: string | null;
   unitPricePhp: string; unitPriceUsd?: string | null; qty: number; lineTotalPhp: string;
 };
 export type Order = {
-  id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy';
+  // Mirrors the buy_type enum — see lib/types-order-modes.test.ts.
+  id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy' | 'moq';
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
   // Kahati reservation downpayment paid at checkout; balance = total - downpayment. 0 for solo.
