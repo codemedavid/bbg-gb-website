@@ -27,6 +27,11 @@ export function BottomNav() {
   // then disappears — and never points at a route that 404s.
   const { data: moqEnabled } = useMoqPageEnabled();
   const tabs = moqEnabled ? [...TABS, MOQ_TAB] : TABS;
+  // At 320px six tabs get 53px each and the widest label ("Group Buy", 47px)
+  // fits on one line. A seventh drops that to 46px and the label wraps below
+  // the bar, so the seven-tab state tightens the type scale. The six-tab bar
+  // keeps its original size.
+  const labelSize = moqEnabled ? 'text-[9.5px]' : 'text-[10.5px]';
   return (
     <nav className={`fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl ${
       moqEnabled ? 'grid-cols-7' : 'grid-cols-6'}`}>
@@ -34,7 +39,7 @@ export function BottomNav() {
         const active = t.href === '/' ? pathname === '/' : pathname.startsWith(t.href);
         return (
           <Link key={t.href} href={t.href}
-            className={`text-center text-[10.5px] font-semibold ${active ? 'text-brand-greendark' : 'text-ink-faint'}`}>
+            className={`text-center font-semibold ${labelSize} ${active ? 'text-brand-greendark' : 'text-ink-faint'}`}>
             <div className="mb-0.5 text-[19px] leading-none">{t.icon}</div>
             {t.label}
           </Link>

@@ -61,3 +61,35 @@ describe('BottomNav MOQ tab', () => {
     }
   });
 });
+
+// Fitting seven tabs into 320px.
+//
+// At six tabs each slot is 53px and the widest label ("Group Buy") renders at
+// 47px, so it fits on one line. The seventh tab drops slots to 46px and that
+// label wraps, spilling below the bar — verified in Chrome at a true 320px
+// viewport, which jsdom cannot measure. The nav therefore tightens its label
+// type scale only in the seven-tab state, leaving the six-tab bar untouched.
+describe('BottomNav seven-tab typography', () => {
+  const labelClassOf = (name: RegExp) =>
+    screen.getByRole('link', { name }).className;
+
+  it('uses the compact label size when the MOQ tab is present', () => {
+    moqEnabled = { data: true };
+    render(<BottomNav />);
+    expect(labelClassOf(/Group Buy/i)).toContain('text-[9.5px]');
+  });
+
+  it('keeps the roomier label size when only six tabs render', () => {
+    moqEnabled = { data: false };
+    render(<BottomNav />);
+    expect(labelClassOf(/Group Buy/i)).toContain('text-[10.5px]');
+  });
+
+  it('applies one consistent label size across all seven tabs', () => {
+    moqEnabled = { data: true };
+    render(<BottomNav />);
+    const sizes = screen.getAllByRole('link')
+      .map((a) => (a.className.match(/text-\[[\d.]+px\]/) ?? [''])[0]);
+    expect(new Set(sizes).size).toBe(1);
+  });
+});
