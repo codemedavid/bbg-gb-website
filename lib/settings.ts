@@ -43,6 +43,27 @@ export async function setKahatiDownpayment(value: number): Promise<number> {
   return getKahatiDownpayment();
 }
 
+const MOQ_PAGE_KEY = 'moq_page_enabled';
+
+// Whether the MOQ storefront page is live. This one flag gates the route, the
+// public product API and the nav tab, so it fails closed: an absent or corrupt
+// value reads as OFF. Only the exact string 'true' turns the page on, which
+// means a half-configured deploy hides the page rather than exposing it.
+export async function getMoqPageEnabled(): Promise<boolean> {
+  const db = await getDb();
+  const [row] = await db.select().from(settings).where(eq(settings.key, MOQ_PAGE_KEY));
+  return row?.value === 'true';
+}
+
+export async function setMoqPageEnabled(enabled: boolean): Promise<boolean> {
+  const db = await getDb();
+  const value = String(enabled);
+  await db.insert(settings)
+    .values({ key: MOQ_PAGE_KEY, value })
+    .onConflictDoUpdate({ target: settings.key, set: { value } });
+  return getMoqPageEnabled();
+}
+
 // Upserts only the provided modes; returns the full resolved fee set.
 export async function setPackingFees(patch: Partial<PackingFees>): Promise<PackingFees> {
   const db = await getDb();
