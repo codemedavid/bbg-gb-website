@@ -126,6 +126,31 @@ Added `PACKING_FEE_PHP.moq`, `hasMoq`, `validateMoqQty`, and the `moq` mode in
 
 - GREEN: 4 seed tests + 8 `MoqBoard` tests. Full suite **477/477**.
 
+### 9. Admin page coverage (`c1793d3`)
+
+Closed the gap flagged below: `app/admin/moq-products/page.tsx` went from 0% to
+**100% statements / 76% branches**. Full suite **502/502**.
+
+These 25 tests were written against already-working code, so they passed on the
+first run — there was no RED phase to report. Passing immediately is exactly what
+a vacuous test also does, so the suite was mutation-tested instead. Three
+mutations were injected into the implementation and each was caught by exactly
+one test:
+
+| Mutation | Test that failed |
+|---|---|
+| Always send `packingFeePhp` | `omits a blank packing fee so the global MOQ default applies` |
+| Drop the id on save (edit becomes create) | `updates the existing product rather than creating a new one` |
+| Ignore the `confirm()` result | `does not delete when the admin backs out` |
+
+Command: `npx vitest run app/admin/moq-products/page.test.tsx` → `Tests 1 failed | 24 passed (25)` for each mutation; `25 passed (25)` once restored.
+
+One accessibility defect surfaced while writing them: the form's nine field
+captions were floating `<span>`s with no association to their controls, so screen
+readers never announced them and the inputs had no accessible name. They are now
+real `<label>` elements wrapping their inputs — which is also what lets the tests
+query by label rather than by test id.
+
 ---
 
 ## Test specification
@@ -166,8 +191,16 @@ Added `PACKING_FEE_PHP.moq`, `hasMoq`, `validateMoqQty`, and the `moq` mode in
 | 32 | Nav shows 6 tabs when off, 7 when on; unresolved setting counts as off | `components/BottomNav.test.tsx` | unit | PASS |
 | 33 | The admin switch reflects the server, never an optimistic guess, and surfaces save failures | `app/admin/settings/MoqPageCard.test.tsx` | unit | PASS |
 | 34 | The seed lists exactly the three named products, blends marked salt/liquid | `lib/db/data/moq-seed.test.ts` | unit | PASS |
+| 35 | Admin add sends every typed field; a new product defaults to visible, min qty 1 | `app/admin/moq-products/page.test.tsx` | unit | PASS |
+| 36 | A blank packing fee is omitted, not sent as 0 (0 would mean genuinely free) | same | unit | PASS |
+| 37 | Edit prefills from the product and carries its id, so it updates rather than creates | same | unit | PASS |
+| 38 | Unticking visibility archives the product | same | unit | PASS |
+| 39 | A chosen image is attached; omitting it keeps the existing image | same | unit | PASS |
+| 40 | A failed save keeps the form open, shows the error and preserves typing | same | unit | PASS |
+| 41 | Delete needs confirmation, names the product, and targets the clicked card | same | unit | PASS |
+| 42 | Archived products are badged; loading and empty shelves are explained | same | unit | PASS |
 
-**Command:** `npm test` → **`Test Files 49 passed (49)`, `Tests 477 passed (477)`**
+**Command:** `npm test` → **`Test Files 50 passed (50)`, `Tests 502 passed (502)`**
 **Types:** `npx tsc --noEmit` → clean
 **Build:** `npm run build` → succeeds; `/moq` listed as ƒ (dynamic), 121 kB first-load JS
 
@@ -202,18 +235,21 @@ products with `moq_page_enabled` absent — which the getter reads as OFF.
 | `lib/settings.ts` | 100 | 94.73 |
 | `lib/store/cart.ts` | 94.23 | 95.55 |
 | `components/BottomNav.tsx` | 76.31 | 100 |
+| `app/admin/moq-products/page.tsx` | 100 | 76.47 |
+| `app/api/moq-products/route.ts` | 100 | 100 |
+| `app/api/admin/moq-products/route.ts` | 100 | 94.44 |
+| `app/(storefront)/moq/` | 100 | 100 |
 
-Repository-wide statement coverage is 42.88%, well under the 80% target. That
+Repository-wide statement coverage is 47.14%, still under the 80% target. That
 figure is dominated by pre-existing untested `page.tsx` files across the admin
 and storefront and is **not** a regression introduced here — every module added
-by this work is at or near 100% on the logic layers.
+by this work is at or near 100%.
 
 ## Known gaps
 
-- **`app/admin/moq-products/page.tsx` is at 0% line coverage.** The admin CRUD
-  screen is a large form component; its server contract is covered thoroughly by
-  the 24 API tests, but the form itself has no component test. This is the main
-  outstanding gap and the first thing worth adding.
+- ~~`app/admin/moq-products/page.tsx` is at 0% line coverage.~~ **Closed** in
+  `c1793d3` — 25 component tests, 100% statements / 76% branches, mutation-tested
+  (see cycle 9).
 - **No browser-level verification.** The Chrome DevTools MCP profile was locked
   by another running instance, so the storefront was verified by HTTP status,
   API payload and server-rendered HTML rather than a real page render. Client
