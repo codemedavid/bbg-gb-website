@@ -207,6 +207,45 @@ harness-only checks could not do:
 | MOQ stock after cancellation | **40 restored** |
 | Cancelling a second time | still **40** — no double-restock |
 
+### 11. Completion audit
+
+Asked whether the work was complete, the two things I had asserted but never
+verified were audited rather than assumed.
+
+**A. The other untested client→API seam turned out to be sound.**
+
+The admin form built its multipart body inline while the route parsed it, with
+both sides tested only against their own restatement — the same shape as the
+checkout bug. `moqProductFormData`/`moqDraftFrom` moved into
+`lib/moq-product-form.ts` and the contract test now posts the exact body the
+screen sends. Result: `Tests 33 passed (33)`. No defect; now guarded.
+
+**B. The seventh nav tab was a real 320px regression.**
+
+At six tabs each slot is 53px and the widest label ("Group Buy") renders at 47px.
+The MOQ tab drops slots to 46px, so the label wrapped and spilled below the bar.
+The seven-tab state now uses a 9.5px label; the six-tab bar is untouched.
+
+This was nearly missed twice. The first browser attempt reported a 320px window
+but `document.documentElement.clientWidth` was **500** — Chrome on macOS enforces
+a minimum window width, so window resizing never reaches 320. Device-viewport
+emulation is required, and the earlier "responsive" check would have been a false
+pass.
+
+Measured at a true 320px viewport, after the fix:
+
+| Breakpoint | Tabs | Wrapped labels | Horizontal overflow | Card columns |
+|---|---|---|---|---|
+| 320 | 7 | 0 | none | 1 |
+| 768 | 7 | 0 | none | 2 |
+| 1440 | 7 | 0 | none | 3 |
+
+Widest label at 320px: "Group Buy" 47px → **42.6px** in a 46px slot.
+
+Also confirmed visually for the first time: `/moq` hydrates and paints all three
+products, and `/admin/moq-products` renders the shelf beside the relabelled
+"Group Buy Campaigns" sidebar entry.
+
 ---
 
 ## Test specification
@@ -260,8 +299,12 @@ harness-only checks could not do:
 | 45 | A non-cancellation status change leaves stock alone | same | integration | PASS |
 | 46 | An archived MOQ product is still restocked — the units exist | same | integration | PASS |
 | 47 | Client order types admit every buy_type and order_item_kind value | `lib/types-order-modes.test.ts` | typecheck | PASS |
+| 48 | The admin form's multipart body round-trips through the API unchanged | `app/api/admin/moq-products/form-contract.test.ts` | integration | PASS |
+| 49 | A blank packing fee stores null, not 0 | same | integration | PASS |
+| 50 | An edit preserves untouched fields and keeps the existing image | same | integration | PASS |
+| 51 | The nav tightens its label size only in the seven-tab state | `components/BottomNav.test.tsx` | unit | PASS |
 
-**Command:** `npm test` → **`Test Files 53 passed (53)`, `Tests 513 passed (513)`**
+**Command:** `npm test` → **`Test Files 54 passed (54)`, `Tests 525 passed (525)`**
 **Types:** `npx tsc --noEmit` → clean
 **Build:** `npm run build` → succeeds; `/moq` listed as ƒ (dynamic), 121 kB first-load JS
 
@@ -311,18 +354,19 @@ by this work is at or near 100%.
 - ~~`app/admin/moq-products/page.tsx` is at 0% line coverage.~~ **Closed** in
   `c1793d3` — 25 component tests, 100% statements / 76% branches, mutation-tested
   (see cycle 9).
-- **The cart→checkout seam was untested until round 10**, which let a
-  shipping-breaking bug pass two green suites. Other client→API seams in this
-  repo (the campaign commit payload, the admin product forms) still have no
-  equivalent contract test and could hide the same class of defect.
-- **No browser-level verification.** The Chrome DevTools MCP profile was locked
-  by another running instance, so the storefront was verified by HTTP status,
-  API payload and server-rendered HTML rather than a real page render. Client
-  hydration of the product grid and the seventh nav tab is covered by unit tests
-  only — both are client-fetched and so are absent from the SSR HTML by design.
-- **No visual-regression or responsive screenshots** at 320/768/1024/1440, which
-  the web testing rules call for. The card and grid use the same Tailwind
-  breakpoints as the existing boards, but this has not been visually confirmed.
+- ~~The cart→checkout seam was untested~~ and ~~the admin form seam was
+  untested~~ — both now have contract tests (rounds 10 and 11). **The campaign
+  commit payload still has none**, and it predates this work; it could hide the
+  same class of defect.
+- ~~No browser-level verification.~~ **Closed** in round 11: `/moq` and
+  `/admin/moq-products` were confirmed to hydrate and paint in Chrome.
+- ~~No responsive screenshots.~~ **Closed** in round 11 at 320/768/1440, which
+  found and fixed a real wrapping regression. 1024 was not measured separately —
+  it sits between two verified points with no breakpoint change between 768 and
+  1024 in this layout.
+- **No automated visual-regression baseline.** The responsive checks were
+  one-off measurements, not stored screenshots, so a future layout regression
+  would not be caught by CI.
 - **MOQ product images are served through `signedUrl`.** Under the production
   drivers (ImageKit/Supabase) these are public URLs. Under the local dev storage
   driver they route through `/api/files/...`, which requires a session — so an
