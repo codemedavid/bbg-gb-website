@@ -151,6 +151,62 @@ readers never announced them and the inputs had no accessible name. They are now
 real `<label>` elements wrapping their inputs — which is also what lets the tests
 query by label rather than by test id.
 
+### 10. Post-review defect round (`(RED)` → `(GREEN)`)
+
+Three defects found by auditing the places that switch on the two enums the MOQ
+work widened. The first was shipping-breaking.
+
+**A. The cart→checkout contract was broken — every MOQ checkout returned 400.**
+
+The cart stored `kind: 'moq'`; `app/checkout/page.tsx` forwards `i.kind`
+verbatim; `POST /api/orders` accepted `'moq_product'`. So no customer could ever
+buy an MOQ item.
+
+Both sides were already covered and both suites passed — the cart tests spoke the
+cart's vocabulary, the route tests spoke the route's, and **nothing crossed the
+seam**. That is the whole lesson of this round: unit tests on either side of an
+interface cannot detect that the interface disagrees.
+
+- RED: `npx vitest run app/api/orders/cart-contract.test.ts` →
+  `Tests 2 failed | 2 passed (4)`, MOQ line `expected 400 to be 201`, while the
+  on-hand and kahati lines both reached 201 — so the failure was the MOQ
+  vocabulary, not broken setup.
+- GREEN: cart now uses `'moq_product'`; `moqCartLine()` moved into
+  `lib/store/cart.ts` so the contract test exercises the exact line the
+  storefront builds instead of restating it.
+
+**B. Cancelling an MOQ order permanently lost its stock.**
+
+The cancellation path released group-buy campaign commitments but was never
+taught about MOQ lines. Unlike a commitment, this is real inventory that checkout
+deducted — nothing errors, the shelf just under-sells forever after.
+
+- RED: `Tests 4 failed | 1 passed (5)` — `expected 42 to be 50`. The passing case
+  was the non-cancellation control, confirming the setup was sound.
+- GREEN: 15/15 (5 new plus the 10 existing cancellation tests).
+
+**C. The client order types denied values the API really returns.**
+
+`Order['buyType']` lacked `'moq'` and `OrderItem['kind']` lacked both
+`'moq_product'` and `'moq_campaign'` — the latter a **pre-existing** gap, since
+the campaign-commit route has always written that kind.
+
+- RED: `npx tsc --noEmit` → 3 errors in `lib/types-order-modes.test.ts`. Vitest
+  does not typecheck, so the RED signal here is tsc, which covers test files.
+- GREEN: both unions pinned to their enum values; narrowing either now fails the
+  typecheck.
+
+**Live verification** against a running dev server, which is what the earlier
+harness-only checks could not do:
+
+| Step | Result |
+|---|---|
+| `POST /api/orders` with an MOQ line | **201**, `buyType=moq`, total ₱22,800 |
+| MOQ stock after purchase | 40 → **35** |
+| Admin `PATCH .../status` `cancelled` | order status `cancelled` |
+| MOQ stock after cancellation | **40 restored** |
+| Cancelling a second time | still **40** — no double-restock |
+
 ---
 
 ## Test specification
@@ -199,8 +255,13 @@ query by label rather than by test id.
 | 40 | A failed save keeps the form open, shows the error and preserves typing | same | unit | PASS |
 | 41 | Delete needs confirmation, names the product, and targets the clicked card | same | unit | PASS |
 | 42 | Archived products are badged; loading and empty shelves are explained | same | unit | PASS |
+| 43 | Every cart line kind is accepted by checkout (on-hand, kahati, MOQ, mixed) | `app/api/orders/cart-contract.test.ts` | integration | PASS |
+| 44 | Cancelling an MOQ order returns its units to stock, once only | `app/api/admin/orders/[id]/status/moq-restock.test.ts` | integration | PASS |
+| 45 | A non-cancellation status change leaves stock alone | same | integration | PASS |
+| 46 | An archived MOQ product is still restocked — the units exist | same | integration | PASS |
+| 47 | Client order types admit every buy_type and order_item_kind value | `lib/types-order-modes.test.ts` | typecheck | PASS |
 
-**Command:** `npm test` → **`Test Files 50 passed (50)`, `Tests 502 passed (502)`**
+**Command:** `npm test` → **`Test Files 53 passed (53)`, `Tests 513 passed (513)`**
 **Types:** `npx tsc --noEmit` → clean
 **Build:** `npm run build` → succeeds; `/moq` listed as ƒ (dynamic), 121 kB first-load JS
 
@@ -250,6 +311,10 @@ by this work is at or near 100%.
 - ~~`app/admin/moq-products/page.tsx` is at 0% line coverage.~~ **Closed** in
   `c1793d3` — 25 component tests, 100% statements / 76% branches, mutation-tested
   (see cycle 9).
+- **The cart→checkout seam was untested until round 10**, which let a
+  shipping-breaking bug pass two green suites. Other client→API seams in this
+  repo (the campaign commit payload, the admin product forms) still have no
+  equivalent contract test and could hide the same class of defect.
 - **No browser-level verification.** The Chrome DevTools MCP profile was locked
   by another running instance, so the storefront was verified by HTTP status,
   API payload and server-rendered HTML rather than a real page render. Client
