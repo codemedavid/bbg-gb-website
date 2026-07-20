@@ -3,12 +3,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCart } from '@/lib/store/cart';
 
+// Group Buy earns a tab as its own feature. A seventh would leave ~45px per tab
+// at 320px, so Calc gives up its slot — it is still reachable from the Home card
+// that already links to it, whereas a group buy has no other entry point.
 const TABS = [
   { href: '/', icon: '🏠', label: 'Home' },
   { href: '/kahati', icon: '🤝', label: 'Kahati' },
+  { href: '/groupbuy', icon: '🧺', label: 'Group Buy' },
   { href: '/shop', icon: '📦', label: 'On-hand' },
-  { href: '/calc', icon: '🧮', label: 'Calc' },
-  { href: '/orders', icon: '📦', label: 'Orders' },
+  { href: '/orders', icon: '🧾', label: 'Orders' },
   { href: '/account', icon: '👤', label: 'Account' },
 ];
 

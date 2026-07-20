@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
-import type { Category, CheckoutPaymentMethod, GroupBuy, Order, Product } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, MoqCampaign, Order, Product } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -39,6 +39,20 @@ export const useGroupBuys = () =>
     staleTime: 0,
     refetchInterval: KAHATI_POLL_MS,
     // Pause polling on a backgrounded tab; the refocus refetch covers the return.
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+  });
+
+// Group Buy (MOQ) campaigns are shared state in the same way the hatian board is
+// — other customers commit kits while this page sits open — so the MOQ counter
+// polls on the same cadence rather than freezing until a reload.
+export const useCampaigns = () =>
+  useQuery({
+    queryKey: ['campaigns'],
+    queryFn: () => apiGet<MoqCampaign[]>('/campaigns'),
+    staleTime: 0,
+    refetchInterval: KAHATI_POLL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',
