@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCart } from '@/lib/store/cart';
+import { useMoqPageEnabled } from '@/lib/queries';
 
 // Group Buy earns a tab as its own feature. A seventh would leave ~45px per tab
 // at 320px, so Calc gives up its slot — it is still reachable from the Home card
@@ -15,11 +16,21 @@ const TABS = [
   { href: '/account', icon: '👤', label: 'Account' },
 ];
 
+// The MOQ tab is conditional, so it is defined apart from the fixed six. Its
+// label is deliberately the shortest in the bar: at 320px seven tabs leave only
+// ~45px each, and "MOQ" is the one label that still fits comfortably there.
+const MOQ_TAB = { href: '/moq', icon: '🏷️', label: 'MOQ' };
+
 export function BottomNav() {
   const pathname = usePathname();
+  // Undefined (still loading) is treated as off, so a tab never flashes in and
+  // then disappears — and never points at a route that 404s.
+  const { data: moqEnabled } = useMoqPageEnabled();
+  const tabs = moqEnabled ? [...TABS, MOQ_TAB] : TABS;
   return (
-    <nav className="fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 grid-cols-6 border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl">
-      {TABS.map((t) => {
+    <nav className={`fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl ${
+      moqEnabled ? 'grid-cols-7' : 'grid-cols-6'}`}>
+      {tabs.map((t) => {
         const active = t.href === '/' ? pathname === '/' : pathname.startsWith(t.href);
         return (
           <Link key={t.href} href={t.href}

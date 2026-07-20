@@ -74,7 +74,7 @@ describe('MoqProductCard', () => {
     render(<MoqProductCard p={product({ stock: 0, inStock: false })} onAdd={onAdd} />);
 
     expect(screen.getByText(/out of stock/i)).toBeInTheDocument();
-    const btn = screen.getByRole('button', { name: /out of stock|add/i });
+    const btn = screen.getByRole('button', { name: /add|unavailable/i });
     expect(btn).toBeDisabled();
 
     await userEvent.click(btn);
@@ -86,7 +86,7 @@ describe('MoqProductCard', () => {
     // 3 units left but the minimum order is 5 — nobody can legally buy this.
     render(<MoqProductCard p={product({ stock: 3, minOrderQty: 5, inStock: false })} onAdd={onAdd} />);
 
-    await userEvent.click(screen.getByRole('button', { name: /out of stock|add/i }));
+    await userEvent.click(screen.getByRole('button', { name: /add|unavailable/i }));
     expect(onAdd).not.toHaveBeenCalled();
   });
 });

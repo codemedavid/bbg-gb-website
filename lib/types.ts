@@ -19,6 +19,19 @@ export type GroupBuy = {
   perVialPhp: number; remaining: number; progress: number;
 };
 
+// A product on the MOQ shelf — its own surface, distinct from both the Kahati
+// board (GroupBuy) and the Group Buy campaign board (MoqCampaign).
+export type MoqProduct = {
+  id: string; name: string; spec: string; description: string | null;
+  imageUrl: string | null; imageEmoji: string | null;
+  pricePhp: string; priceUsd: string | null;
+  stock: number; minOrderQty: number; packingFeePhp: string | null;
+  arrivalGroup: 'white_powder' | 'salt_liquid';
+  isActive: boolean; sortOrder: number;
+  // Derived server-side: in stock AND holding at least one whole minimum order.
+  inStock: boolean;
+};
+
 export type IncludedProduct = { productId: string; name: string; outOfStock?: boolean };
 
 export type MoqCampaign = {
