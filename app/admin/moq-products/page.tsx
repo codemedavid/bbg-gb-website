@@ -143,57 +143,57 @@ export default function AdminMoqProductsPage() {
             </h2>
 
             <div className="flex flex-col gap-3">
-              <div>
+              <label className="block">
                 <span className={label}>Name</span>
                 <input required minLength={2} className={field} value={draft.name} onChange={set('name')} />
-              </div>
-              <div>
+              </label>
+              <label className="block">
                 <span className={label}>Spec</span>
                 <input className={field} value={draft.spec} onChange={set('spec')} placeholder="e.g. 1500mg" />
-              </div>
-              <div>
+              </label>
+              <label className="block">
                 <span className={label}>Description</span>
                 <textarea rows={3} className={field} value={draft.description} onChange={set('description')} />
-              </div>
+              </label>
 
               <div className="grid grid-cols-3 gap-3">
-                <div>
+                <label className="block">
                   <span className={label}>Price ₱</span>
                   <input type="number" min={0} step="0.01" required className={field} value={draft.pricePhp} onChange={set('pricePhp')} />
-                </div>
-                <div>
+                </label>
+                <label className="block">
                   <span className={label}>Stock</span>
                   <input type="number" min={0} step="1" className={field} value={draft.stock} onChange={set('stock')} />
-                </div>
-                <div>
+                </label>
+                <label className="block">
                   <span className={label}>Min order qty</span>
                   <input type="number" min={1} step="1" className={field} value={draft.minOrderQty} onChange={set('minOrderQty')} />
-                </div>
+                </label>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
-                <div>
+                <label className="block">
                   <span className={label}>Packing fee ₱</span>
                   <input type="number" min={0} step="1" className={field} value={draft.packingFeePhp} onChange={set('packingFeePhp')} placeholder="default" />
-                </div>
-                <div>
+                </label>
+                <label className="block">
                   <span className={label}>Emoji</span>
                   <input maxLength={8} className={field} value={draft.imageEmoji} onChange={set('imageEmoji')} />
-                </div>
-                <div>
+                </label>
+                <label className="block">
                   <span className={label}>Sort order</span>
                   <input type="number" min={0} step="1" className={field} value={draft.sortOrder} onChange={set('sortOrder')} />
-                </div>
+                </label>
               </div>
 
-              <div>
+              <label className="block">
                 <span className={label}>Image</span>
                 <input type="file" accept="image/*" className={field}
                   onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
                 <span className="mt-0.5 block text-[12px] text-ink-muted">
                   Optional. Leave empty to keep the current image; the emoji is used when there is none.
                 </span>
-              </div>
+              </label>
 
               <label className="flex items-center gap-2 text-[13px] font-semibold text-ink-body">
                 <input type="checkbox" checked={draft.isActive}
