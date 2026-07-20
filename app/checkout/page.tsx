@@ -69,7 +69,13 @@ export default function CheckoutPage() {
       clear();
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });
-      router.replace(`/success/${json.data.orderNo}`);
+
+      // A mixed cart becomes one order per mode. Carry the siblings through so
+      // the success screen names every order, not just the first.
+      const placed: string[] = (json.data.orders ?? []).map((o: { orderNo: string }) => o.orderNo);
+      const [first = json.data.orderNo, ...rest] = placed;
+      const more = rest.length ? `?more=${encodeURIComponent(rest.join(','))}` : '';
+      router.replace(`/success/${first}${more}`);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not place order. Please try again.');
       setSubmitting(false);

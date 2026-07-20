@@ -26,7 +26,9 @@ describe('week math', () => {
 
   it('builds dropdown label and filename', () => {
     expect(weekOptionLabel('2026-05-25')).toBe('Week 22 · Mon May 25 – Sun May 31');
-    expect(weekFilename('2026-05-25')).toBe('BBG-Week-2026-05-25.pdf');
+    // The report exports as .xlsx now, so the stem carries no extension and each
+    // exporter appends its own.
+    expect(weekFilename('2026-05-25')).toBe('BBG-Week-2026-05-25');
   });
 
   it('bounds a week as a half-open +08:00 interval', () => {

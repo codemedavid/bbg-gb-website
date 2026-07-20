@@ -90,6 +90,7 @@ export function weekOptionLabel(mondayYmd: string): string {
 }
 
 /** Download filename, e.g. "BBG-Week-2026-05-25.pdf". */
+// Filename stem, without extension — each exporter appends its own.
 export function weekFilename(mondayYmd: string): string {
-  return `BBG-Week-${mondayYmd}.pdf`;
+  return `BBG-Week-${mondayYmd}`;
 }

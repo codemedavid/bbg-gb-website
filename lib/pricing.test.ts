@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeTotals, subtotal, packingFeeFor, perVialPrice,
   validateKahatiCommit, hasOnHand, hasKahati, hasGroupBuy,
-  validateGroupBuyCommit, groupBuyMoqStatus,
+  validateGroupBuyCommit, groupBuyMoqStatus, hasMoq, validateMoqQty,
   splitKahatiDownpayment, onHandUnitPrice, vialsFor, validateOnHandQty,
   PACKING_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS, VIALS_PER_KIT,
   type PriceableItem,
@@ -237,5 +237,77 @@ describe('kahati downpayment split', () => {
   });
   it('rounds to centavos', () => {
     expect(splitKahatiDownpayment(1000.505, 150.004)).toEqual({ downpayment: 150, balance: 850.51 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MOQ (Minimum Order Quantity) — the fourth purchasing mode.
+//
+// MOQ products are a curated, admin-managed shelf sold on their own page with a
+// per-product minimum order quantity. They never share an order with on-hand,
+// kahati or group-buy items, so they carry their own packing fee.
+// ---------------------------------------------------------------------------
+describe('MOQ mode pricing', () => {
+  const moqItem = (price: number, qty = 1): PriceableItem => ({ kind: 'moq_product', unitPricePhp: price, qty });
+
+  it('exposes a dedicated MOQ packing-fee default', () => {
+    expect(PACKING_FEE_PHP.moq).toBe(300);
+  });
+
+  it('charges the MOQ fee for an MOQ-only cart', () => {
+    expect(packingFeeFor([moqItem(4500)])).toBe(PACKING_FEE_PHP.moq);
+  });
+
+  it('detects MOQ items with hasMoq and does not confuse them with group buys', () => {
+    expect(hasMoq([moqItem(4500)])).toBe(true);
+    expect(hasMoq([moq(10400)])).toBe(false);
+    expect(hasGroupBuy([moqItem(4500)])).toBe(false);
+  });
+
+  it('adds a fourth packing fee when an MOQ item joins an all-modes cart', () => {
+    expect(packingFeeFor([product(3200), kahati(900, 7), moq(10400), moqItem(4500)])).toBe(
+      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati + PACKING_FEE_PHP.group_buy + PACKING_FEE_PHP.moq,
+    );
+  });
+
+  it('honours a per-listing packing-fee override on an MOQ item', () => {
+    expect(packingFeeFor([{ kind: 'moq_product', unitPricePhp: 4500, qty: 2, packingFeePhp: 450 }])).toBe(450);
+  });
+
+  it('reports buyType "moq" for an MOQ-only order segment', () => {
+    expect(computeTotals([moqItem(4500, 3)])).toEqual({
+      subtotal: 13500,
+      packingFee: PACKING_FEE_PHP.moq,
+      total: 13500 + PACKING_FEE_PHP.moq,
+      buyType: 'moq',
+    });
+  });
+});
+
+describe('validateMoqQty', () => {
+  it('accepts a quantity at the product minimum', () => {
+    expect(validateMoqQty(5, 5, 100)).toEqual({ ok: true });
+  });
+
+  it('rejects a quantity below the minimum order quantity', () => {
+    const r = validateMoqQty(4, 5, 100);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('5');
+  });
+
+  it('rejects a fractional quantity', () => {
+    expect(validateMoqQty(5.5, 1, 100).ok).toBe(false);
+  });
+
+  it('rejects a quantity beyond available stock', () => {
+    const r = validateMoqQty(20, 1, 12);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('12');
+  });
+
+  it('rejects any purchase when the product is out of stock', () => {
+    const r = validateMoqQty(1, 1, 0);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/out of stock/i);
   });
 });

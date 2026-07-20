@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
-import type { Category, CheckoutPaymentMethod, GroupBuy, Order, Product } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, MoqCampaign, MoqProduct, Order, Product } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -16,6 +16,25 @@ export const useKahatiDownpayment = () =>
     queryKey: ['kahati-downpayment'],
     queryFn: () => apiGet<{ kahatiDownpayment: number }>('/settings').then((d) => d.kahatiDownpayment),
     staleTime: 5 * 60 * 1000,
+  });
+
+// Whether the MOQ page is live. The nav reads this to decide if the MOQ tab
+// exists at all, so it must not advertise a route that 404s.
+export const useMoqPageEnabled = () =>
+  useQuery({
+    queryKey: ['moq-page-enabled'],
+    queryFn: () => apiGet<{ moqPageEnabled: boolean }>('/settings').then((d) => d.moqPageEnabled),
+    staleTime: 5 * 60 * 1000,
+  });
+
+// The MOQ shelf. Unlike the kahati and campaign boards this is not shared,
+// racing state — stock moves, but there is no counter filling up in real time —
+// so it uses the global defaults rather than polling.
+export const useMoqProducts = (enabled = true) =>
+  useQuery({
+    queryKey: ['moq-products'],
+    queryFn: () => apiGet<MoqProduct[]>('/moq-products'),
+    enabled,
   });
 
 export const useCategories = () =>
@@ -39,6 +58,20 @@ export const useGroupBuys = () =>
     staleTime: 0,
     refetchInterval: KAHATI_POLL_MS,
     // Pause polling on a backgrounded tab; the refocus refetch covers the return.
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+  });
+
+// Group Buy (MOQ) campaigns are shared state in the same way the hatian board is
+// — other customers commit kits while this page sits open — so the MOQ counter
+// polls on the same cadence rather than freezing until a reload.
+export const useCampaigns = () =>
+  useQuery({
+    queryKey: ['campaigns'],
+    queryFn: () => apiGet<MoqCampaign[]>('/campaigns'),
+    staleTime: 0,
+    refetchInterval: KAHATI_POLL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',

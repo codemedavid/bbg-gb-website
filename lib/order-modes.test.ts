@@ -74,3 +74,34 @@ describe('splitCartIntoOrders', () => {
     expect(orders.map((o) => o.mode)).toEqual(['solo', 'kahati', 'group_buy']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// MOQ is the fourth mode. It has its own storefront page, its own admin shelf
+// and its own packing fee, so it must never be merged into another order.
+// ---------------------------------------------------------------------------
+describe('MOQ mode segmentation', () => {
+  const moqProduct = (price: number, qty = 1): PriceableItem => ({ kind: 'moq_product', unitPricePhp: price, qty });
+
+  it('maps an moq_product item to the moq mode', () => {
+    expect(modeOf(moqProduct(4500))).toBe('moq');
+  });
+
+  it('keeps moq items out of the group_buy segment', () => {
+    const seg = segmentByMode([moqProduct(4500), moq(10400)]);
+    expect(seg.moq).toHaveLength(1);
+    expect(seg.group_buy).toHaveLength(1);
+  });
+
+  it('splits a cart holding all four modes into four separate orders', () => {
+    const orders = splitCartIntoOrders([solo(3200), kahati(900, 7), moq(10400), moqProduct(4500, 2)]);
+    expect(orders).toHaveLength(4);
+    const moqOrder = orders.find((o) => o.mode === 'moq')!;
+    expect(moqOrder.totals.packingFee).toBe(PACKING_FEE_PHP.moq);
+    expect(moqOrder.totals.total).toBe(9000 + PACKING_FEE_PHP.moq);
+  });
+
+  it('emits moq last in the stable mode order', () => {
+    const orders = splitCartIntoOrders([moqProduct(4500), moq(10400), kahati(900, 7), solo(3200)]);
+    expect(orders.map((o) => o.mode)).toEqual(['solo', 'kahati', 'group_buy', 'moq']);
+  });
+});

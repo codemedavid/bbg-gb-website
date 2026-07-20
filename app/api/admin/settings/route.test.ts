@@ -43,12 +43,12 @@ beforeEach(async () => {
 });
 
 describe('GET /api/admin/settings', () => {
-  it('returns the code-default packing fees when unset (200/150/300)', async () => {
+  it('returns the code-default packing fees when unset (200/150/300/300)', async () => {
     await signIn('admin');
     const res = await GET();
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.data.packingFees).toEqual({ solo: 200, kahati: 150, group_buy: 300 });
+    expect(body.data.packingFees).toEqual({ solo: 200, kahati: 150, group_buy: 300, moq: 300 });
   });
 
   it('requires admin', async () => {

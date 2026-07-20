@@ -14,7 +14,7 @@ describe('GET /api/settings', () => {
     const res = await GET();
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.data.packingFees).toEqual({ solo: 200, kahati: 150, group_buy: 300 });
+    expect(body.data.packingFees).toEqual({ solo: 200, kahati: 150, group_buy: 300, moq: 300 });
     expect(body.data.kahatiDownpayment).toBe(150);
   });
 });

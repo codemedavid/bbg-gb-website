@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, paymentMethods } from '@/lib/db';
+import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqProducts, paymentMethods } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
   computeTotals, perVialPrice, splitKahatiDownpayment, validateKahatiCommit, round2,
-  onHandUnitPrice, validateOnHandQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
+  onHandUnitPrice, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
 import { isKahatiFull, nextKahatiClosesAt } from '@/lib/kahati';
+import { splitCartIntoOrders } from '@/lib/order-modes';
 import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
@@ -15,7 +16,7 @@ import { nextOrderNo } from '@/lib/order-number';
 import { captureEvent } from '@/lib/posthog';
 
 const itemSchema = z.object({
-  kind: z.enum(['product', 'group_buy']),
+  kind: z.enum(['product', 'group_buy', 'moq_product']),
   refId: z.string().uuid(),
   qty: z.number().int().positive().max(9999),
   // On-hand lines only: 'piece' (single vial) or 'kit' (VIALS_PER_KIT vials).
@@ -30,17 +31,19 @@ const checkoutSchema = z.object({
   paymentMethod: z.string().min(1).max(40).optional(),
 });
 
-// Persistence layer supports only on-hand ('product') and kahati ('group_buy') line
-// items today; the Group Buy (MOQ) mode is not yet wired into checkout, so Priced
-// narrows PriceableItem's kind to the order_item_kind enum's current values.
+// Checkout persists on-hand ('product'), kahati ('group_buy') and MOQ-shelf
+// ('moq_product') lines. The Group Buy (MOQ campaign) mode still commits through
+// /api/campaigns/:id/commit, so Priced narrows PriceableItem's kind to the line
+// kinds this route can actually write.
 type Priced = Omit<PriceableItem, 'kind'> & {
-  kind: 'product' | 'group_buy';
+  kind: 'product' | 'group_buy' | 'moq_product';
   nameSnapshot: string;
   specSnapshot: string;
   // USD unit price snapshot for the weekly report; null when the line has no USD price.
   unitPriceUsd?: number | null;
   productId?: string;
   groupBuyId?: string;
+  moqProductId?: string;
 };
 
 export const POST = handler(async (req: Request) => {
@@ -68,7 +71,7 @@ export const POST = handler(async (req: Request) => {
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
-  const { order, orderNo, totals, lineCount } = await db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     // Reject a payment method the customer could not actually have chosen.
     if (body.paymentMethod) {
       const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
@@ -125,6 +128,43 @@ export const POST = handler(async (req: Request) => {
           specSnapshot: unit === 'kit' ? `On-hand · kit of ${VIALS_PER_KIT}` : 'On-hand · per piece',
           productId: p.id,
         });
+      } else if (it.kind === 'moq_product') {
+        const [m] = await tx.select().from(moqProducts)
+          .where(and(eq(moqProducts.id, it.refId), eq(moqProducts.isActive, true)));
+        if (!m) throw new ApiError(400, `MOQ product not available: ${it.refId}`);
+
+        // Re-check the admin-set minimum here: the client enforces it for the
+        // sake of the UI, but only the server decides what may be bought.
+        const check = validateMoqQty(it.qty, m.minOrderQty, m.stock);
+        if (!check.ok) throw new ApiError(400, `${m.name}: ${check.message}`);
+
+        // Guard lives in the WHERE clause so two concurrent checkouts cannot
+        // both pass a stale stock read and oversell the shelf.
+        const [drawn] = await tx.update(moqProducts)
+          .set({ stock: sql`${moqProducts.stock} - ${it.qty}` })
+          .where(and(
+            eq(moqProducts.id, m.id),
+            eq(moqProducts.isActive, true),
+            sql`${moqProducts.stock} >= ${it.qty}`,
+          ))
+          .returning({ stock: moqProducts.stock });
+        if (!drawn) {
+          const [fresh] = await tx.select({ stock: moqProducts.stock })
+            .from(moqProducts).where(eq(moqProducts.id, m.id));
+          throw new ApiError(400, `Only ${Math.max(fresh?.stock ?? 0, 0)} left in stock for ${m.name}.`);
+        }
+
+        priced.push({
+          kind: 'moq_product',
+          unitPricePhp: round2(Number(m.pricePhp)),
+          unitPriceUsd: m.priceUsd != null ? round2(Number(m.priceUsd)) : null,
+          qty: it.qty,
+          // Per-listing packing fee wins over the global MOQ default.
+          packingFeePhp: m.packingFeePhp != null ? Number(m.packingFeePhp) : packingFees.moq,
+          nameSnapshot: m.spec ? `${m.name} ${m.spec}` : m.name,
+          specSnapshot: `MOQ · min ${m.minOrderQty}`,
+          moqProductId: m.id,
+        });
       } else {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
@@ -175,58 +215,90 @@ export const POST = handler(async (req: Request) => {
       }
     }
 
-    const totals = computeTotals(priced);
-    // USD order total for the weekly report — sum of USD-priced lines only.
-    const totalUsd = round2(priced.reduce((s, p) => s + (p.unitPriceUsd ?? 0) * p.qty, 0));
-    const orderNo = await nextOrderNo(tx);
+    // The three purchase modes never share an order: each has its own packing
+    // fee and its own lifecycle (on-hand ships now, a hatian waits on its batch),
+    // so a mixed cart becomes one order per mode. Splitting here rather than at
+    // the call site keeps it inside the transaction — a failure in any mode rolls
+    // back every order and every stock draw.
+    const drafts = splitCartIntoOrders(priced);
 
-    // priced holds only 'product'/'group_buy' items (see Priced), so computeTotals
-    // never yields 'group_buy' here — narrow to the buy_type enum's current values.
-    const buyType = totals.buyType as 'solo' | 'kahati';
+    const created = [];
+    for (const draft of drafts) {
+      // splitCartIntoOrders preserves item identity, so each draft's items are the
+      // same Priced objects and carry their snapshots through.
+      const lines = draft.items as Priced[];
+      const totals = draft.totals;
+      // USD order total for the weekly report — sum of USD-priced lines only.
+      const totalUsd = round2(lines.reduce((s, p) => s + (p.unitPriceUsd ?? 0) * p.qty, 0));
+      const orderNo = await nextOrderNo(tx);
 
-    // Only kahati orders carry a reservation downpayment; on-hand orders pay in full.
-    const downpayment = buyType === 'kahati'
-      ? splitKahatiDownpayment(totals.total, kahatiDownpaymentSetting).downpayment
-      : 0;
+      // Checkout persists on-hand, kahati and MOQ-shelf orders; the Group Buy
+      // (MOQ campaign) mode commits through /api/campaigns/:id/commit instead.
+      const buyType = draft.mode as 'solo' | 'kahati' | 'moq';
 
-    const [order] = await tx.insert(orders).values({
-      orderNo, userId: session.sub, status: 'proof_review', buyType,
-      subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
-      totalPhp: String(totals.total), downpaymentPhp: String(downpayment), totalUsd: String(totalUsd),
-      shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
-      paymentMethod: body.paymentMethod ?? null,
-      paymentProofKey: proofKey,
-    }).returning();
+      // Only kahati orders carry a reservation downpayment; on-hand pays in full.
+      const downpayment = buyType === 'kahati'
+        ? splitKahatiDownpayment(totals.total, kahatiDownpaymentSetting).downpayment
+        : 0;
 
-    await tx.insert(orderItems).values(priced.map((p) => ({
-      orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,
-      nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,
-      unitPricePhp: String(p.unitPricePhp), unitPriceUsd: p.unitPriceUsd != null ? String(p.unitPriceUsd) : null,
-      qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),
-    })));
-    await tx.insert(orderStatusHistory).values({ orderId: order.id, status: 'proof_review', note: 'Order placed' });
+      const [order] = await tx.insert(orders).values({
+        orderNo, userId: session.sub, status: 'proof_review', buyType,
+        subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
+        totalPhp: String(totals.total), downpaymentPhp: String(downpayment), totalUsd: String(totalUsd),
+        shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
+        paymentMethod: body.paymentMethod ?? null,
+        // Each split order references the same proof — one payment covers the cart.
+        paymentProofKey: proofKey,
+      }).returning();
+
+      await tx.insert(orderItems).values(lines.map((p) => ({
+        orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,
+        moqProductId: p.moqProductId ?? null,
+        nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,
+        unitPricePhp: String(p.unitPricePhp), unitPriceUsd: p.unitPriceUsd != null ? String(p.unitPriceUsd) : null,
+        qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),
+      })));
+      await tx.insert(orderStatusHistory).values({ orderId: order.id, status: 'proof_review', note: 'Order placed' });
+
+      created.push({ order, orderNo, totals, lineCount: lines.length });
+    }
 
     // Inventory was already drawn down as each line was priced — on-hand stock in
     // the guarded UPDATE above, kahati slots in the guarded claim.
-    return { order, orderNo, totals, lineCount: priced.length };
+    return created;
   });
 
   // Notify only after the transaction commits — never announce a rolled-back order.
-  await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp) }), kind: 'order_placed' });
-  await captureEvent({
-    event: 'order_placed',
-    distinctId: session.sub,
-    email: session.email,
-    name: body.shipName,
-    properties: {
-      orderId: order.id, orderNo, status: order.status, buyType: order.buyType,
-      totalPhp: totals.total, subtotalPhp: totals.subtotal, packingFeePhp: totals.packingFee,
-      downpaymentPhp: Number(order.downpaymentPhp),
-      balancePhp: round2(totals.total - Number(order.downpaymentPhp)),
-      itemCount: lineCount, paymentMethod: order.paymentMethod,
-    },
-  });
-  return ok({ order, orderNo, totals }, 201);
+  // One email and one event per order: a split cart produces orders with different
+  // totals, downpayments and delivery timelines, so a single combined notice would
+  // misstate what the customer owes on each.
+  for (const { order, orderNo, totals, lineCount } of created) {
+    await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp) }), kind: 'order_placed' });
+    await captureEvent({
+      event: 'order_placed',
+      distinctId: session.sub,
+      email: session.email,
+      name: body.shipName,
+      properties: {
+        orderId: order.id, orderNo, status: order.status, buyType: order.buyType,
+        totalPhp: totals.total, subtotalPhp: totals.subtotal, packingFeePhp: totals.packingFee,
+        downpaymentPhp: Number(order.downpaymentPhp),
+        balancePhp: round2(totals.total - Number(order.downpaymentPhp)),
+        itemCount: lineCount, paymentMethod: order.paymentMethod,
+      },
+    });
+  }
+
+  // `orders` carries every order created. The single-order fields alongside it
+  // describe the first one, so the existing client redirect to /success/{orderNo}
+  // keeps working while callers that care about a split can read the array.
+  const [first] = created;
+  return ok({
+    orders: created,
+    order: first.order,
+    orderNo: first.orderNo,
+    totals: first.totals,
+  }, 201);
 });
 
 export const GET = handler(async () => {

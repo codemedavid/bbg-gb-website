@@ -11,6 +11,7 @@ const KEY: Record<PackingMode, string> = {
   solo: 'packing_fee_solo',
   kahati: 'packing_fee_kahati',
   group_buy: 'packing_fee_group_buy',
+  moq: 'packing_fee_moq',
 };
 
 export async function getPackingFees(): Promise<PackingFees> {
@@ -21,7 +22,7 @@ export async function getPackingFees(): Promise<PackingFees> {
     const v = byKey.get(KEY[mode]);
     return v != null && Number.isFinite(v) && v >= 0 ? v : PACKING_FEE_PHP[mode];
   };
-  return { solo: read('solo'), kahati: read('kahati'), group_buy: read('group_buy') };
+  return { solo: read('solo'), kahati: read('kahati'), group_buy: read('group_buy'), moq: read('moq') };
 }
 
 const DOWNPAYMENT_KEY = 'kahati_downpayment';
@@ -40,6 +41,27 @@ export async function setKahatiDownpayment(value: number): Promise<number> {
     .values({ key: DOWNPAYMENT_KEY, value: String(value) })
     .onConflictDoUpdate({ target: settings.key, set: { value: String(value) } });
   return getKahatiDownpayment();
+}
+
+const MOQ_PAGE_KEY = 'moq_page_enabled';
+
+// Whether the MOQ storefront page is live. This one flag gates the route, the
+// public product API and the nav tab, so it fails closed: an absent or corrupt
+// value reads as OFF. Only the exact string 'true' turns the page on, which
+// means a half-configured deploy hides the page rather than exposing it.
+export async function getMoqPageEnabled(): Promise<boolean> {
+  const db = await getDb();
+  const [row] = await db.select().from(settings).where(eq(settings.key, MOQ_PAGE_KEY));
+  return row?.value === 'true';
+}
+
+export async function setMoqPageEnabled(enabled: boolean): Promise<boolean> {
+  const db = await getDb();
+  const value = String(enabled);
+  await db.insert(settings)
+    .values({ key: MOQ_PAGE_KEY, value })
+    .onConflictDoUpdate({ target: settings.key, set: { value } });
+  return getMoqPageEnabled();
 }
 
 // Upserts only the provided modes; returns the full resolved fee set.

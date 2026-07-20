@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { apiGet, apiSend } from '@/lib/api-client';
 import { useAuth } from '@/lib/useAuth';
 import { field, label, btnPrimary } from '@/components/admin-ui';
+import { MoqPageCard } from './MoqPageCard';
 
 const empty = { currentPassword: '', newPassword: '', confirm: '' };
 
@@ -202,6 +203,7 @@ export default function AdminSettingsPage() {
 
       <PackingFeesCard />
       <DownpaymentCard />
+      <MoqPageCard />
     </div>
   );
 }

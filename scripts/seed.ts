@@ -3,7 +3,7 @@
 import { getDb, closeDb } from '../lib/db';
 import * as s from '../lib/db/schema';
 import { hashPassword } from '../lib/auth';
-import { CATEGORIES, CATEGORY_DESC, PRODUCTS, GROUP_BUYS } from '../lib/db/data/catalog';
+import { CATEGORIES, CATEGORY_DESC, PRODUCTS, GROUP_BUYS, MOQ_PRODUCTS } from '../lib/db/data/catalog';
 
 async function clearAll(db: any) {
   await db.delete(s.orderStatusHistory);
@@ -13,6 +13,7 @@ async function clearAll(db: any) {
   await db.delete(s.products);
   await db.delete(s.categories);
   await db.delete(s.groupBuys);
+  await db.delete(s.moqProducts);
   await db.delete(s.paymentMethods);
   await db.delete(s.emailLog);
   await db.delete(s.users);
@@ -64,6 +65,19 @@ async function main() {
     }))
   );
   console.log(`  ${GROUP_BUYS.length} group buys`);
+
+  // The MOQ shelf. Price/stock stay at 0 and minOrderQty at 1 so nothing invented
+  // reaches a customer; the admin fills in the real figures, then switches the
+  // page on in Settings (moq_page_enabled defaults to off).
+  await db.insert(s.moqProducts).values(
+    MOQ_PRODUCTS.map((m) => ({
+      name: m.name, spec: m.spec, description: m.description,
+      pricePhp: '0', stock: 0, minOrderQty: 1,
+      imageEmoji: m.imageEmoji, arrivalGroup: m.arrival,
+      sortOrder: m.sortOrder, isActive: true,
+    }))
+  );
+  console.log(`  ${MOQ_PRODUCTS.length} MOQ products (price/stock 0 — set them in admin)`);
 
   // Placeholder payment methods — admin fills in real account details + uploads QR.
   await db.insert(s.paymentMethods).values([

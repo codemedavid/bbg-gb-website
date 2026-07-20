@@ -19,6 +19,19 @@ export type GroupBuy = {
   perVialPhp: number; remaining: number; progress: number;
 };
 
+// A product on the MOQ shelf — its own surface, distinct from both the Kahati
+// board (GroupBuy) and the Group Buy campaign board (MoqCampaign).
+export type MoqProduct = {
+  id: string; name: string; spec: string; description: string | null;
+  imageUrl: string | null; imageEmoji: string | null;
+  pricePhp: string; priceUsd: string | null;
+  stock: number; minOrderQty: number; packingFeePhp: string | null;
+  arrivalGroup: 'white_powder' | 'salt_liquid';
+  isActive: boolean; sortOrder: number;
+  // Derived server-side: in stock AND holding at least one whole minimum order.
+  inStock: boolean;
+};
+
 export type IncludedProduct = { productId: string; name: string; outOfStock?: boolean };
 
 export type MoqCampaign = {
@@ -50,11 +63,14 @@ export type PaymentMethod = {
 export type CheckoutPaymentMethod = Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl'>;
 
 export type OrderItem = {
-  id: string; kind: 'product' | 'group_buy'; nameSnapshot: string; specSnapshot: string | null;
+  // Mirrors the order_item_kind enum — see lib/types-order-modes.test.ts.
+  id: string; kind: 'product' | 'group_buy' | 'moq_campaign' | 'moq_product';
+  nameSnapshot: string; specSnapshot: string | null;
   unitPricePhp: string; unitPriceUsd?: string | null; qty: number; lineTotalPhp: string;
 };
 export type Order = {
-  id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy';
+  // Mirrors the buy_type enum — see lib/types-order-modes.test.ts.
+  id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy' | 'moq';
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
   // Kahati reservation downpayment paid at checkout; balance = total - downpayment. 0 for solo.

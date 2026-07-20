@@ -24,26 +24,26 @@ describe('packingFeeFor', () => {
   });
 
   it('uses the admin on-hand fee for an on-hand cart', () => {
-    expect(packingFeeFor([onHand()], { solo: 275, kahati: 150, group_buy: 300 })).toBe(275);
+    expect(packingFeeFor([onHand()], { solo: 275, kahati: 150, group_buy: 300, moq: 300 })).toBe(275);
   });
 
   it('uses the admin hatian fee when the listing carries no override', () => {
     // Regression: the kahati leg ignored the admin settings entirely.
-    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300 })).toBe(99);
+    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(99);
   });
 
   it('lets a per-listing kahati fee override the admin default', () => {
-    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300 })).toBe(180);
+    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(180);
   });
 
   it('charges one fee per mode present in a mixed cart', () => {
-    const fees = { solo: 200, kahati: 150, group_buy: 300 };
+    const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
     expect(packingFeeFor([onHand(), kahati()], fees)).toBe(350);
   });
 
   it('takes the highest fee among several kahati listings', () => {
     const items = [kahati({ key: 'gb:a', packingFeePhp: 120 }), kahati({ key: 'gb:b', packingFeePhp: 210 })];
-    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300 })).toBe(210);
+    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(210);
   });
 
   it('charges nothing for an empty cart', () => {
@@ -74,5 +74,57 @@ describe('cart clearing after checkout', () => {
     const persisted = globalThis.localStorage?.getItem('bbg-cart');
     if (persisted) expect(JSON.parse(persisted).state.items).toEqual([]);
     expect(useCart.getState().items).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MOQ lines in the cart.
+//
+// An MOQ product carries an admin-set minimum order quantity. The cart must
+// respect it the same way it respects a kahati minimum — decrementing past the
+// minimum removes the line rather than dropping below a quantity checkout would
+// reject — and MOQ must add its own packing fee leg.
+// ---------------------------------------------------------------------------
+const moqItem = (o: Partial<CartItem> = {}): CartItem => ({
+  key: 'moq:m1', kind: 'moq_product', refId: 'm1', name: 'FUAN GTT1500',
+  spec: 'MOQ · min 5', unitPricePhp: 4500, qty: 5, minQty: 5, stock: 50, ...o,
+});
+
+describe('MOQ cart lines', () => {
+  beforeEach(() => useCart.getState().clear());
+
+  it('charges the admin MOQ packing fee for an MOQ-only cart', () => {
+    expect(packingFeeFor([moqItem()], { solo: 200, kahati: 150, group_buy: 300, moq: 275 })).toBe(275);
+  });
+
+  it('lets a per-listing MOQ fee override the admin default', () => {
+    expect(packingFeeFor([moqItem({ packingFeePhp: 450 })], { solo: 200, kahati: 150, group_buy: 300, moq: 275 })).toBe(450);
+  });
+
+  it('adds an MOQ fee leg on top of the on-hand fee in a mixed cart', () => {
+    const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
+    expect(packingFeeFor([onHand(), moqItem()], fees)).toBe(500);
+  });
+
+  it('falls back to the code default when no admin fees are supplied', () => {
+    expect(packingFeeFor([moqItem()])).toBe(PACKING_FEE_PHP.moq);
+  });
+
+  it('removes the line rather than dropping below the minimum order quantity', () => {
+    useCart.getState().add(moqItem());
+    useCart.getState().dec('moq:m1');
+    expect(useCart.getState().items).toHaveLength(0);
+  });
+
+  it('clamps an MOQ line to the stock on hand', () => {
+    useCart.getState().add(moqItem({ qty: 5, stock: 8 }));
+    useCart.getState().setQty('moq:m1', 99);
+    expect(useCart.getState().items[0].qty).toBe(8);
+  });
+
+  it('counts MOQ units toward the cart badge and subtotal', () => {
+    useCart.getState().add(moqItem({ qty: 5 }));
+    expect(useCart.getState().count()).toBe(5);
+    expect(useCart.getState().subtotal()).toBe(22500);
   });
 });

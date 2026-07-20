@@ -149,3 +149,41 @@ export const GROUP_BUYS: SeedGroupBuy[] = [
   { name: 'Tirzepatide 60mg', pricePerKitPhp: 10625, totalSlots: 10, claimedSlots: 3, minVials: 1, arrival: 'white_powder', closesInDays: 6, description: 'Hatian — 1 kit = 10 vials. White powder, ships first.' },
   { name: 'KLOW 80mg', pricePerKitPhp: 10625, totalSlots: 10, claimedSlots: 2, minVials: 1, arrival: 'white_powder', closesInDays: 7, description: 'Hatian — 1 kit = 10 vials. White powder, ships first.' },
 ];
+
+// ---------------------------------------------------------------------------
+// MOQ shelf seed.
+//
+// The three products the client named for the MOQ page. Prices and stock are
+// deliberately placeholders (0) rather than guesses: the two blends are not
+// priced as blends anywhere in data/pricelist.json, and shipping an invented
+// price as if it were real is worse than shipping an obvious blank. The admin
+// sets the real figures in /admin/moq-products before switching the page on.
+// ---------------------------------------------------------------------------
+export type SeedMoqProduct = {
+  name: string;
+  spec: string;
+  arrival: 'white_powder' | 'salt_liquid';
+  imageEmoji: string;
+  sortOrder: number;
+  description: string;
+};
+
+export const MOQ_PRODUCTS: SeedMoqProduct[] = [
+  {
+    name: 'FUAN GTT1500', spec: 'GTT1500', arrival: 'white_powder',
+    imageEmoji: '🧪', sortOrder: 1,
+    description: 'Bulk MOQ item. Set the price, stock and minimum order quantity in the admin panel.',
+  },
+  {
+    // Blends arrive 3–5 days after white powders — see the arrival notes on the
+    // Kahati board, which already calls out TR+CGL and TR+RT specifically.
+    name: 'TR30 + CGL5 Blends', spec: 'TR30 + CGL5', arrival: 'salt_liquid',
+    imageEmoji: '💧', sortOrder: 2,
+    description: 'Tirzepatide 30mg + Cagrilintide 5mg blend. Salt/liquid — arrives 3–5 days after white powders.',
+  },
+  {
+    name: 'TR20 + RT20 Blends', spec: 'TR20 + RT20', arrival: 'salt_liquid',
+    imageEmoji: '💧', sortOrder: 3,
+    description: 'Tirzepatide 20mg + Retatrutide 20mg blend. Salt/liquid — arrives 3–5 days after white powders.',
+  },
+];

@@ -33,3 +33,16 @@ export const REPORT_STATUS_LABEL: Record<string, string> = {
 // Which raw statuses roll up into the header's paid / pending / cancelled counts.
 export const PAID_STATUSES = new Set(['payment_confirmed', 'batch_filling', 'shipped', 'delivered']);
 export const PENDING_STATUSES = new Set(['proof_review']);
+
+// The report exports payment state and fulfilment state as separate columns.
+// One order status implies both: 'shipped' means the money cleared *and* the
+// parcel left, and collapsing that into a single cell (as the PDF did) loses the
+// question the team actually asks the sheet — who still owes us money.
+export const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  proof_review: 'Pending',
+  payment_confirmed: 'Paid',
+  batch_filling: 'Paid',
+  shipped: 'Paid',
+  delivered: 'Paid',
+  cancelled: 'Refunded',
+};

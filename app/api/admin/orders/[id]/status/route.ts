@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, orderItems, orderStatusHistory, moqCampaigns, users } from '@/lib/db';
+import { getDb, orders, orderItems, orderStatusHistory, moqCampaigns, moqProducts, users } from '@/lib/db';
 import { ORDER_STATUS_FLOW } from '@/lib/db/schema';
 import { sendEmail, orderStatusEmail } from '@/lib/email';
 import { captureEvent, orderStatusEvent } from '@/lib/posthog';
@@ -38,17 +38,33 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
     }).where(eq(orders.id, id)).returning();
     await tx.insert(orderStatusHistory).values({ orderId: id, status: b.status as never, note: b.note });
 
-    // Releasing a group-buy order returns its kits to the campaign so committed
-    // reflects only live commitments. Guard on the transition into 'cancelled'
-    // so re-cancelling never double-decrements; clamp at 0.
+    // Cancelling releases whatever the order was holding. Guard on the
+    // transition into 'cancelled' so re-cancelling never releases twice.
     if (order.status !== 'cancelled' && b.status === 'cancelled') {
-      const lines = await tx.select().from(orderItems)
+      // Group-buy kits go back to the campaign so committed reflects only live
+      // commitments; clamp at 0.
+      const campaignLines = await tx.select().from(orderItems)
         .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'moq_campaign')));
-      for (const line of lines) {
+      for (const line of campaignLines) {
         if (line.moqCampaignId) {
           await tx.update(moqCampaigns)
             .set({ committed: sql`GREATEST(${moqCampaigns.committed} - ${line.qty}, 0)` })
             .where(eq(moqCampaigns.id, line.moqCampaignId));
+        }
+      }
+
+      // MOQ units go back on the shelf. Unlike a campaign commitment this is
+      // real inventory that checkout deducted, so skipping it silently loses
+      // stock — nothing errors, the shelf just under-sells from then on. The
+      // product is updated by id without an isActive filter: an archived
+      // product's units still physically exist and must still come back.
+      const moqLines = await tx.select().from(orderItems)
+        .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'moq_product')));
+      for (const line of moqLines) {
+        if (line.moqProductId) {
+          await tx.update(moqProducts)
+            .set({ stock: sql`${moqProducts.stock} + ${line.qty}` })
+            .where(eq(moqProducts.id, line.moqProductId));
         }
       }
     }

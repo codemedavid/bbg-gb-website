@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { CampaignPayload, Category, GroupBuy, MoqCampaign, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
+import type { CampaignPayload, Category, GroupBuy, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -23,6 +23,9 @@ export const useAdminProducts = () => useQuery({ queryKey: ['admin', 'products']
 export const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], queryFn: () => apiGet<Category[]>('/admin/categories') });
 export const useAdminGroupBuys = () => useQuery({ queryKey: ['admin', 'groupbuys'], queryFn: () => apiGet<GroupBuy[]>('/admin/groupbuys') });
 export const useAdminPaymentMethods = () => useQuery({ queryKey: ['admin', 'payment-methods'], queryFn: () => apiGet<PaymentMethod[]>('/admin/payment-methods') });
+// The MOQ shelf, admin view — includes archived rows, unlike the public list.
+export const useAdminMoqProducts = () =>
+  useQuery({ queryKey: ['admin', 'moq-products'], queryFn: () => apiGet<MoqProduct[]>('/admin/moq-products') });
 export const useCampaigns = () => useQuery({ queryKey: ['admin', 'campaigns'], queryFn: () => apiGet<MoqCampaign[]>('/campaigns') });
 export const useAdminOrders = (status?: string) =>
   useQuery({ queryKey: ['admin', 'orders', status], queryFn: () => apiGet<(Order & { customerEmail: string })[]>(`/admin/orders${qs({ status })}`) });
@@ -44,6 +47,9 @@ export function useMutate() {
     setOrderStatus: useMutation({ mutationFn: (v: { id: string; status: string; trackingNo?: string; note?: string; courier?: string; packedBy?: string; paymentMethod?: string }) => apiSend(`/admin/orders/${v.id}/status`, 'PATCH', v), onSuccess: invalidate }),
     savePaymentMethod: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/payment-methods/${v.id}`, 'PATCH', v.body) : apiSend('/admin/payment-methods', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save payment method.') }),
     deletePaymentMethod: useMutation({ mutationFn: (id: string) => apiSend(`/admin/payment-methods/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete payment method.') }),
+    // Multipart so the product image rides along with the fields.
+    saveMoqProduct: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/moq-products/${v.id}`, 'PATCH', v.body) : apiSend('/admin/moq-products', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save MOQ product.') }),
+    deleteMoqProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/moq-products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete MOQ product.') }),
     saveCampaign: useMutation({ mutationFn: (c: CampaignPayload) => c.id ? apiSend(`/campaigns/${c.id}`, 'PATCH', c) : apiSend('/campaigns', 'POST', c), onSuccess: invalidate }),
     deleteCampaign: useMutation({ mutationFn: (id: string) => apiSend(`/campaigns/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete campaign.') }),
     campaignAction: useMutation({ mutationFn: (v: { id: string; action: 'approve' | 'extend' | 'cancel'; deadline?: string | null }) => apiSend(`/campaigns/${v.id}/action`, 'POST', v), onSuccess: invalidate, onError: toastError('Could not update campaign.') }),
