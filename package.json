@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild": "npm run db:check",
     "start": "next start",
     "lint": "next lint",
     "db:push": "drizzle-kit push",

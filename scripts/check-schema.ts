@@ -7,6 +7,7 @@ import 'dotenv/config';
 import postgres from 'postgres';
 import { diffSchema, formatDrift, type SchemaShape } from '../lib/db/drift';
 import { declaredShape } from '../lib/db/schema-shape';
+import { decideCheckOutcome } from '../lib/db/check-outcome';
 
 async function liveShape(sql: postgres.Sql): Promise<SchemaShape> {
   const columns = await sql<{ table_name: string; column_name: string }[]>`
@@ -28,23 +29,46 @@ async function liveShape(sql: postgres.Sql): Promise<SchemaShape> {
   return shape;
 }
 
-async function main() {
+async function main(): Promise<number> {
   const url = process.env.DATABASE_URL;
+
+  // No database configured: report the skip loudly and let the build through.
+  // See decideCheckOutcome for why this is not treated as a clean check.
   if (!url) {
-    console.error('DATABASE_URL is not set — cannot check schema drift.');
-    process.exit(2);
+    const outcome = decideCheckOutcome({ hasDatabaseUrl: false, hasDrift: false });
+    console.warn(outcome.message);
+    return outcome.exitCode;
   }
+
   const sql = postgres(url, { max: 1 });
   try {
-    const drift = diffSchema(declaredShape(), await liveShape(sql));
-    console.log(formatDrift(drift));
-    if (drift.hasDrift) process.exit(1);
+    let drift;
+    try {
+      drift = diffSchema(declaredShape(), await liveShape(sql));
+    } catch (err) {
+      const outcome = decideCheckOutcome({ hasDatabaseUrl: true, hasDrift: false, connectionFailed: true });
+      console.error(outcome.message);
+      console.error(err instanceof Error ? err.message : err);
+      return outcome.exitCode;
+    }
+
+    const outcome = decideCheckOutcome({ hasDatabaseUrl: true, hasDrift: drift.hasDrift });
+    if (drift.hasDrift) {
+      console.error(outcome.message);
+      console.error(formatDrift(drift));
+    } else {
+      console.log(outcome.message);
+    }
+    return outcome.exitCode;
   } finally {
+    // Close the pool before exiting, rather than letting process.exit strand it.
     await sql.end();
   }
 }
 
-main().catch((err) => {
-  console.error('Schema check failed:', err instanceof Error ? err.message : err);
-  process.exit(2);
-});
+main()
+  .then((code) => { process.exitCode = code; })
+  .catch((err) => {
+    console.error('Schema check failed:', err instanceof Error ? err.message : err);
+    process.exitCode = 2;
+  });
