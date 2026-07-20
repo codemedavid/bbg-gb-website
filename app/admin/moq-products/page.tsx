@@ -4,6 +4,7 @@ import { useAdminMoqProducts, useMutate } from '@/lib/admin-api';
 import { field, label, btnPrimary } from '@/components/admin-ui';
 import { php } from '@/lib/format';
 import type { MoqProduct } from '@/lib/types';
+import { emptyMoqDraft, moqDraftFrom, moqProductFormData, type MoqDraft } from '@/lib/moq-product-form';
 
 // Admin management for the MOQ shelf.
 //
@@ -11,38 +12,18 @@ import type { MoqProduct } from '@/lib/types';
 // main catalog cannot be edited from here. Saving posts multipart because the
 // product image travels with the fields.
 
-type Draft = {
-  id?: string;
-  name: string; spec: string; description: string;
-  pricePhp: string; stock: string; minOrderQty: string;
-  packingFeePhp: string; imageEmoji: string; sortOrder: string;
-  isActive: boolean;
-};
-
-const emptyDraft: Draft = {
-  name: '', spec: '', description: '', pricePhp: '0', stock: '0', minOrderQty: '1',
-  packingFeePhp: '', imageEmoji: '📦', sortOrder: '0', isActive: true,
-};
-
-const toDraft = (p: MoqProduct): Draft => ({
-  id: p.id, name: p.name, spec: p.spec, description: p.description ?? '',
-  pricePhp: p.pricePhp, stock: String(p.stock), minOrderQty: String(p.minOrderQty),
-  packingFeePhp: p.packingFeePhp ?? '', imageEmoji: p.imageEmoji ?? '📦',
-  sortOrder: String(p.sortOrder), isActive: p.isActive,
-});
-
 export default function AdminMoqProductsPage() {
   const { data: items = [], isLoading } = useAdminMoqProducts();
   const { saveMoqProduct, deleteMoqProduct } = useMutate();
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<MoqDraft | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof MoqDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setDraft((d) => (d ? { ...d, [k]: e.target.value } : d));
 
-  const startNew = () => { setDraft(emptyDraft); setImage(null); setError(null); };
-  const startEdit = (p: MoqProduct) => { setDraft(toDraft(p)); setImage(null); setError(null); };
+  const startNew = () => { setDraft(emptyMoqDraft); setImage(null); setError(null); };
+  const startEdit = (p: MoqProduct) => { setDraft(moqDraftFrom(p)); setImage(null); setError(null); };
   const close = () => { setDraft(null); setImage(null); setError(null); };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -50,19 +31,7 @@ export default function AdminMoqProductsPage() {
     if (!draft) return;
     setError(null);
 
-    const body = new FormData();
-    body.set('name', draft.name);
-    body.set('spec', draft.spec);
-    body.set('description', draft.description);
-    body.set('pricePhp', draft.pricePhp || '0');
-    body.set('stock', draft.stock || '0');
-    body.set('minOrderQty', draft.minOrderQty || '1');
-    // Blank means "use the global MOQ packing fee", so the field is omitted.
-    if (draft.packingFeePhp !== '') body.set('packingFeePhp', draft.packingFeePhp);
-    body.set('imageEmoji', draft.imageEmoji);
-    body.set('sortOrder', draft.sortOrder || '0');
-    body.set('isActive', String(draft.isActive));
-    if (image) body.set('image', image);
+    const body = moqProductFormData(draft, image);
 
     try {
       await saveMoqProduct.mutateAsync({ id: draft.id, body });
