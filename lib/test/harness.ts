@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { getDb, users, categories, products, groupBuys, moqCampaigns, paymentMethods } from '@/lib/db';
+import { getDb, users, categories, products, groupBuys, moqCampaigns, moqProducts, paymentMethods } from '@/lib/db';
 import { hashPassword, signToken } from '@/lib/auth';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
@@ -13,7 +13,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 // Cleared between tests, children before parents.
 const TABLES = [
   'order_status_history', 'order_items', 'orders',
-  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'payment_methods', 'products', 'categories', 'users',
+  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories', 'users',
   'settings',
 ];
 
@@ -108,6 +108,29 @@ export async function makeMoqCampaign(
     moq, committed, perCustomerMin, status: overrides.status ?? 'open',
   }).returning();
   return { id: row.id, moq, committed, perCustomerMin };
+}
+
+export async function makeMoqProduct(
+  overrides: Partial<{
+    name: string; spec: string; pricePhp: number; priceUsd: number | null; stock: number;
+    minOrderQty: number; packingFeePhp: number | null; imageKey: string | null;
+    isActive: boolean; sortOrder: number;
+  }> = {},
+): Promise<{ id: string; name: string; pricePhp: number; stock: number; minOrderQty: number }> {
+  const db = await getDb();
+  const pricePhp = overrides.pricePhp ?? 4500;
+  const stock = overrides.stock ?? 50;
+  const minOrderQty = overrides.minOrderQty ?? 1;
+  const name = overrides.name ?? 'Test MOQ Product';
+  const [row] = await db.insert(moqProducts).values({
+    name, spec: overrides.spec ?? '1500mg', pricePhp: String(pricePhp),
+    priceUsd: overrides.priceUsd != null ? String(overrides.priceUsd) : null,
+    stock, minOrderQty,
+    packingFeePhp: overrides.packingFeePhp != null ? String(overrides.packingFeePhp) : null,
+    imageKey: overrides.imageKey ?? null,
+    isActive: overrides.isActive ?? true, sortOrder: overrides.sortOrder ?? 0,
+  }).returning();
+  return { id: row.id, name, pricePhp, stock, minOrderQty };
 }
 
 export const SHIPPING = { shipName: 'Ana Cruz', shipPhone: '09171234567', shipAddress: '123 Mabini St, Manila' } as const;

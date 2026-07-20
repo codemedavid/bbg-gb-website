@@ -10,7 +10,7 @@ export const orderNoSeq = pgSequence('order_no_seq', { startWith: 2418 });
 
 // ---- Enums -------------------------------------------------------------
 export const roleEnum = pgEnum('user_role', ['customer', 'admin']);
-export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati', 'group_buy']);
+export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati', 'group_buy', 'moq']);
 // Group Buy (MOQ) campaign lifecycle. 'reached' is derived (committed >= moq), not stored.
 export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['open', 'approved', 'cancelled']);
 export const orderStatusEnum = pgEnum('order_status', [
@@ -26,7 +26,7 @@ export const orderStatusEnum = pgEnum('order_status', [
 export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 'shipped', 'completed', 'cancelled']);
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
-export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign']);
+export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign', 'moq_product']);
 
 // ---- Users -------------------------------------------------------------
 export const users = pgTable('users', {
@@ -112,6 +112,36 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---- MOQ products ------------------------------------------------------
+// The MOQ shelf: a small, curated set of bulk items sold on their own page with
+// a per-product minimum order quantity. Deliberately its own table rather than a
+// flag on `products` — the admin screen for this shelf must not reach the main
+// catalog, and blends like "TR30 + CGL5" are first-class rows here instead of
+// synthetic catalog entries that could leak into the shop.
+export const moqProducts = pgTable('moq_products', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 160 }).notNull(),
+  spec: varchar('spec', { length: 120 }).notNull().default(''),
+  description: text('description'),
+  // Uploaded image (storage key in the `moq-images` bucket). The emoji is the
+  // fallback the card renders when no image has been uploaded yet.
+  imageKey: text('image_key'),
+  imageEmoji: varchar('image_emoji', { length: 8 }).default('📦'),
+  pricePhp: numeric('price_php', { precision: 12, scale: 2 }).notNull(),
+  priceUsd: numeric('price_usd', { precision: 12, scale: 2 }),
+  stock: integer('stock').notNull().default(0),
+  // Minimum units a customer must order — the "MOQ" this page is named for.
+  minOrderQty: integer('min_order_qty').notNull().default(1),
+  // Per-listing packing fee override; falls back to the global packing_fee_moq.
+  packingFeePhp: numeric('packing_fee_php', { precision: 12, scale: 2 }),
+  arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  activeIdx: index('moq_products_active_idx').on(t.isActive),
+}));
+
 // ---- Settings (global key/value config) --------------------------------
 // Small key/value store for admin-editable global defaults (e.g. packing fees).
 // Absent keys fall back to code constants, so an empty table is a valid state.
@@ -191,6 +221,7 @@ export const orderItems = pgTable('order_items', {
   productId: uuid('product_id').references(() => products.id),
   groupBuyId: uuid('group_buy_id').references(() => groupBuys.id),
   moqCampaignId: uuid('moq_campaign_id').references(() => moqCampaigns.id),
+  moqProductId: uuid('moq_product_id').references(() => moqProducts.id),
   nameSnapshot: varchar('name_snapshot', { length: 200 }).notNull(),
   specSnapshot: varchar('spec_snapshot', { length: 120 }),
   unitPricePhp: numeric('unit_price_php', { precision: 12, scale: 2 }).notNull(),

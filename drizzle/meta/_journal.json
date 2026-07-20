@@ -50,6 +50,13 @@
       "when": 1784448950672,
       "tag": "0006_bent_harrier",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784529675777,
+      "tag": "0007_kind_tarantula",
+      "breakpoints": true
     }
   ]
 }
