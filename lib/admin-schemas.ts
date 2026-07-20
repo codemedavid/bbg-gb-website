@@ -48,4 +48,56 @@ export const paymentMethodSchema = z.object({
   sortOrder: z.number().int().nonnegative().optional(),
 });
 
+// Text fields of an MOQ product. The image arrives as a separate multipart File
+// part, validated by lib/uploads, so it is not part of this schema.
+export const moqProductSchema = z.object({
+  name: z.string().min(2).max(160),
+  spec: z.string().max(120).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  pricePhp: z.number().nonnegative(),
+  priceUsd: z.number().nonnegative().nullable().optional(),
+  stock: z.number().int().nonnegative().optional(),
+  // The "MOQ" the page is named for: a customer must order at least this many.
+  minOrderQty: z.number().int().positive().optional(),
+  packingFeePhp: z.number().nonnegative().nullable().optional(),
+  arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
+  imageEmoji: z.string().max(8).optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+});
+
+export type MoqProductInput = z.infer<typeof moqProductSchema>;
+
+// Multipart fields arrive as strings. Absent fields stay absent so a PATCH only
+// touches what the admin actually edited; empty strings clear nullable fields.
+//
+// Overloaded so the create path keeps `name`/`pricePhp` required — a single
+// union return type would make every required field look optional to callers.
+export function parseMoqProductForm(form: FormData, partial: false): MoqProductInput;
+export function parseMoqProductForm(form: FormData, partial: true): Partial<MoqProductInput>;
+export function parseMoqProductForm(form: FormData, partial: boolean): MoqProductInput | Partial<MoqProductInput>;
+export function parseMoqProductForm(form: FormData, partial: boolean) {
+  const str = (k: string) => (form.get(k) == null ? undefined : String(form.get(k)));
+  const num = (k: string) => {
+    const v = form.get(k);
+    return v == null || v === '' ? undefined : Number(v);
+  };
+  const bool = (k: string) => (form.get(k) == null ? undefined : String(form.get(k)) === 'true');
+  const nullableStr = (k: string) => {
+    const v = form.get(k);
+    if (v == null) return undefined;
+    return String(v) === '' ? null : String(v);
+  };
+
+  const raw = {
+    name: str('name'), spec: str('spec'), description: nullableStr('description'),
+    pricePhp: num('pricePhp'), priceUsd: num('priceUsd'), stock: num('stock'),
+    minOrderQty: num('minOrderQty'), packingFeePhp: num('packingFeePhp'),
+    arrivalGroup: str('arrivalGroup'), imageEmoji: str('imageEmoji'),
+    isActive: bool('isActive'), sortOrder: num('sortOrder'),
+  };
+  const defined = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined));
+  return partial ? moqProductSchema.partial().parse(defined) : moqProductSchema.parse(defined);
+}
+
 export const numToStr = (n: number | null | undefined) => (n == null ? null : String(n));
