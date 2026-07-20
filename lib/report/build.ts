@@ -1,6 +1,6 @@
 // Pure builder that turns a week's orders into the weekly-report structure the PDF
 // renders. No I/O, no clock — fully testable.
-import { PAID_STATUSES, PENDING_STATUSES, REPORT_STATUS_LABEL } from './constants';
+import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LABEL } from './constants';
 import { formatRange, isoWeekNumber } from './week';
 
 export type ReportItem = {
@@ -31,12 +31,20 @@ export type ReportRow = {
   invoice: string;
   date: string;
   customer: string;
+  /** Kept for the legacy single-cell layout; spreadsheets use phone/email. */
   contact: string;
+  phone: string;
+  email: string;
   address: string;
   products: string[]; // one line per item, e.g. "Tirzepatide TR15 x5 @ $6.80"
   courier: string;
   packedBy: string;
   payment: string;
+  /** Whether the money cleared: Pending / Paid / Refunded. */
+  paymentStatus: string;
+  /** Where the order sits in fulfilment: Payment Verification / Shipped / ... */
+  orderStatus: string;
+  /** @deprecated Use orderStatus — kept so older callers keep compiling. */
   status: string;
   usd: number;
   php: number;
@@ -75,11 +83,15 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     date: manilaDate(o.createdAt),
     customer: o.shipName,
     contact: [o.shipPhone, o.customerEmail].filter(Boolean).join('\n'),
+    phone: o.shipPhone,
+    email: o.customerEmail ?? '',
     address: o.shipAddress,
     products: o.items.map(usdLine),
     courier: o.courier || '',
     packedBy: o.packedBy || '',
     payment: o.paymentMethod || '',
+    paymentStatus: PAYMENT_STATUS_LABEL[o.status] ?? o.status,
+    orderStatus: REPORT_STATUS_LABEL[o.status] ?? o.status,
     status: REPORT_STATUS_LABEL[o.status] ?? o.status,
     usd: num(o.totalUsd),
     php: num(o.totalPhp),
