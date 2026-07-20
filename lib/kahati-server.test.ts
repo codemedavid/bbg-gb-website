@@ -30,13 +30,21 @@ const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await 
 const DAY = 24 * 60 * 60 * 1000;
 const past = () => new Date(Date.now() - DAY);
 
+type PlacedOrder = { id: string; orderNo: string; buyType: string };
+
+// Checkout splits a mixed cart into one order per mode, so a join that also buys
+// on-hand stock yields two orders. `order` is the kahati one — the subject of
+// every sweep assertion — and `soloOrder` is the separate on-hand one, if any.
 async function joinKahati(groupBuyId: string, qty: number, extra: unknown[] = []) {
   const user = await makeUser();
   session.current = { sub: user.id, role: 'customer', email: user.email };
   const res = await placeOrder(checkoutRequest([{ kind: 'group_buy', refId: groupBuyId, qty }, ...extra]));
   const body = await res.json();
   if (res.status !== 201) throw new Error(`join failed: ${body.error}`);
-  return { user, order: body.data.order as { id: string; orderNo: string } };
+  const placed = (body.data.orders as { order: PlacedOrder }[]).map((o) => o.order);
+  const order = placed.find((o) => o.buyType === 'kahati');
+  if (!order) throw new Error('join produced no kahati order');
+  return { user, order, soloOrder: placed.find((o) => o.buyType === 'solo') };
 }
 
 async function statusOf(id: string): Promise<string> {
@@ -145,17 +153,56 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     expect(sent.map((e) => e.toEmail).sort()).toEqual([a.user.email, b.user.email].sort());
   });
 
-  it('returns on-hand vials in a mixed order back to stock', async () => {
+  it('leaves the customer’s separate on-hand order alone when the hatian fails', async () => {
+    // Checkout splits these into two orders, so the failed hatian cancels only
+    // its own. The ready stock the customer also bought ships regardless — before
+    // the split this cancelled their on-hand purchase too and clawed the vials
+    // back, which was never the intent.
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
     const product = await makeProduct({ stock: 50 });
-    await joinKahati(gb.id, 2, [{ kind: 'product', refId: product.id, qty: 4, unit: 'piece' }]);
+    const { soloOrder } = await joinKahati(gb.id, 2, [{ kind: 'product', refId: product.id, qty: 4, unit: 'piece' }]);
     await expire(gb.id);
     const db = await getDb();
 
     await sweepExpiredKahatis(db);
 
     const [row] = await db.select().from(products).where(eq(products.id, product.id));
-    expect(row.stock).toBe(50); // 50 - 4 drawn at checkout, then returned
+    expect(row.stock).toBe(46); // the 4 drawn at checkout stay drawn
+    expect(await orderStatus(soloOrder!.id)).toBe('proof_review');
+  });
+
+  it('still restocks on-hand lines inside a legacy pre-split mixed order', async () => {
+    // Orders placed before checkout split by mode can hold both kinds on one
+    // record, and those still exist in the database — so the restock path in
+    // releaseKahatiOrders has to keep working for them.
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const product = await makeProduct({ stock: 46 });
+    const user = await makeUser();
+    const db = await getDb();
+
+    const [legacy] = await db.insert(orders).values({
+      orderNo: 'BBG-LEGACY', userId: user.id, status: 'proof_review', buyType: 'kahati',
+      subtotalPhp: '1000', packingFeePhp: '150', totalPhp: '1150', downpaymentPhp: '150',
+      shipName: 'Legacy Buyer', shipPhone: '09171234567', shipAddress: 'Somewhere',
+      paymentProofKey: 'legacy-proof',
+    }).returning();
+    await db.insert(orderItems).values([
+      {
+        orderId: legacy.id, kind: 'group_buy', groupBuyId: gb.id, nameSnapshot: 'Hatian vial',
+        specSnapshot: 'Kahati · min 1 vials', unitPricePhp: '900', qty: 1, lineTotalPhp: '900',
+      },
+      {
+        orderId: legacy.id, kind: 'product', productId: product.id, nameSnapshot: 'On-hand vial',
+        specSnapshot: 'On-hand · per piece', unitPricePhp: '550', qty: 4, lineTotalPhp: '2200',
+      },
+    ]);
+    await expire(gb.id);
+
+    await sweepExpiredKahatis(db);
+
+    const [row] = await db.select().from(products).where(eq(products.id, product.id));
+    expect(row.stock).toBe(50); // 46 + the 4 returned by the cancellation
+    expect(await orderStatus(legacy.id)).toBe('cancelled');
   });
 
   it('does not touch a hatian that succeeded', async () => {
@@ -181,7 +228,9 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await sweepExpiredKahatis(db);
 
     const [row] = await db.select().from(products).where(eq(products.id, product.id));
-    expect(row.stock).toBe(50);                       // not 54
+    // The on-hand lines now live on their own order, which the sweep never
+    // touches — so stock is untouched by one sweep or by two.
+    expect(row.stock).toBe(46);
     const history = await db.select().from(orderStatusHistory)
       .where(and(eq(orderStatusHistory.orderId, order.id), eq(orderStatusHistory.status, 'cancelled')));
     expect(history).toHaveLength(1);                  // not 2
