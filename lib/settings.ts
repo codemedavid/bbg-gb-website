@@ -11,6 +11,7 @@ const KEY: Record<PackingMode, string> = {
   solo: 'packing_fee_solo',
   kahati: 'packing_fee_kahati',
   group_buy: 'packing_fee_group_buy',
+  moq: 'packing_fee_moq',
 };
 
 export async function getPackingFees(): Promise<PackingFees> {
@@ -21,7 +22,7 @@ export async function getPackingFees(): Promise<PackingFees> {
     const v = byKey.get(KEY[mode]);
     return v != null && Number.isFinite(v) && v >= 0 ? v : PACKING_FEE_PHP[mode];
   };
-  return { solo: read('solo'), kahati: read('kahati'), group_buy: read('group_buy') };
+  return { solo: read('solo'), kahati: read('kahati'), group_buy: read('group_buy'), moq: read('moq') };
 }
 
 const DOWNPAYMENT_KEY = 'kahati_downpayment';

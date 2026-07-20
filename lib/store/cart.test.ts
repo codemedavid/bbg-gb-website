@@ -24,26 +24,26 @@ describe('packingFeeFor', () => {
   });
 
   it('uses the admin on-hand fee for an on-hand cart', () => {
-    expect(packingFeeFor([onHand()], { solo: 275, kahati: 150, group_buy: 300 })).toBe(275);
+    expect(packingFeeFor([onHand()], { solo: 275, kahati: 150, group_buy: 300, moq: 300 })).toBe(275);
   });
 
   it('uses the admin hatian fee when the listing carries no override', () => {
     // Regression: the kahati leg ignored the admin settings entirely.
-    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300 })).toBe(99);
+    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(99);
   });
 
   it('lets a per-listing kahati fee override the admin default', () => {
-    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300 })).toBe(180);
+    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(180);
   });
 
   it('charges one fee per mode present in a mixed cart', () => {
-    const fees = { solo: 200, kahati: 150, group_buy: 300 };
+    const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
     expect(packingFeeFor([onHand(), kahati()], fees)).toBe(350);
   });
 
   it('takes the highest fee among several kahati listings', () => {
     const items = [kahati({ key: 'gb:a', packingFeePhp: 120 }), kahati({ key: 'gb:b', packingFeePhp: 210 })];
-    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300 })).toBe(210);
+    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(210);
   });
 
   it('charges nothing for an empty cart', () => {

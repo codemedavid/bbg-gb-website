@@ -9,7 +9,8 @@
 //   solo      -> On-hand  (pag onhand)
 //   kahati    -> Hatian   (kapag hatian)
 //   group_buy -> Pasabay  (pag pasabay)
-export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300 } as const;
+//   moq       -> MOQ shelf (its own page; bulk minimum per product)
+export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300, moq: 300 } as const;
 export type PackingMode = keyof typeof PACKING_FEE_PHP;
 export type PackingFees = Record<PackingMode, number>;
 
@@ -31,8 +32,9 @@ export const GROUP_BUY_MIN_KITS = 1;  // group buy (MOQ campaign): default per-c
 //   'product'      -> On-hand / ready stock (buy any qty, limited by stock, ₱200 packing)
 //   'group_buy'    -> Kahati / Hatian    (shared single-product order, 10-vial cap, min 1 vial, ₱150 packing)
 //   'moq_campaign' -> Group Buy / Pasabay (admin-set MOQ; ₱300 packing)
+//   'moq_product'  -> MOQ shelf (own page; per-product minimum order qty, ₱300 packing)
 export type PriceableItem = {
-  kind: 'product' | 'group_buy' | 'moq_campaign';
+  kind: 'product' | 'group_buy' | 'moq_campaign' | 'moq_product';
   unitPricePhp: number;
   qty: number;
   // Admin-editable per-listing packing fee (local shipping included). When omitted,
@@ -51,6 +53,9 @@ export function hasKahati(items: PriceableItem[]): boolean {
 export function hasGroupBuy(items: PriceableItem[]): boolean {
   return items.some((i) => i.kind === 'moq_campaign');
 }
+export function hasMoq(items: PriceableItem[]): boolean {
+  return items.some((i) => i.kind === 'moq_product');
+}
 
 export function subtotal(items: PriceableItem[]): number {
   return round2(items.reduce((sum, i) => sum + i.unitPricePhp * i.qty, 0));
@@ -60,6 +65,7 @@ const MODE_KIND: Record<PackingMode, PriceableItem['kind']> = {
   solo: 'product',
   kahati: 'group_buy',
   group_buy: 'moq_campaign',
+  moq: 'moq_product',
 };
 
 // Packing fee for the items of a single mode: the highest per-listing override
@@ -75,7 +81,7 @@ function packingFeeForMode(items: PriceableItem[], mode: PackingMode): number {
 // as its own order, so a mixed cart sums a packing fee per mode. Local shipping
 // is already included in every packing fee; there is no separate shipping or admin fee.
 export function packingFeeFor(items: PriceableItem[]): number {
-  const modes: PackingMode[] = ['solo', 'kahati', 'group_buy'];
+  const modes: PackingMode[] = ['solo', 'kahati', 'group_buy', 'moq'];
   return round2(modes.reduce((sum, mode) => sum + packingFeeForMode(items, mode), 0));
 }
 
@@ -83,7 +89,7 @@ export type OrderTotals = {
   subtotal: number;
   packingFee: number; // one fee per mode present; local shipping included
   total: number;
-  buyType: 'solo' | 'kahati' | 'group_buy';
+  buyType: 'solo' | 'kahati' | 'group_buy' | 'moq';
 };
 
 export function computeTotals(items: PriceableItem[]): OrderTotals {
@@ -94,9 +100,9 @@ export function computeTotals(items: PriceableItem[]): OrderTotals {
     packingFee,
     total: round2(sub + packingFee),
     // Any kahati item dominates record-keeping (repack/split handling); otherwise a
-    // group-buy campaign; otherwise plain solo. Modes are split before checkout,
-    // so a well-formed order segment is single-mode.
-    buyType: hasKahati(items) ? 'kahati' : hasGroupBuy(items) ? 'group_buy' : 'solo',
+    // group-buy campaign; otherwise the MOQ shelf; otherwise plain solo. Modes are
+    // split before checkout, so a well-formed order segment is single-mode.
+    buyType: hasKahati(items) ? 'kahati' : hasGroupBuy(items) ? 'group_buy' : hasMoq(items) ? 'moq' : 'solo',
   };
 }
 
@@ -190,6 +196,31 @@ export function validateGroupBuyCommit(
   if (!Number.isInteger(qty) || qty < perCustomerMin) {
     return { ok: false, message: `Minimum commitment is ${perCustomerMin} kit(s).` };
   }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// MOQ shelf
+//
+// An MOQ product is stocked like on-hand goods but sold in bulk: each carries an
+// admin-set minimum order quantity a customer must meet or exceed. Stock is the
+// ceiling, exactly as it is on-hand — the server remains the authoritative gate.
+// ---------------------------------------------------------------------------
+export const MOQ_MIN_ORDER_QTY = 1; // fallback when a product sets no minimum
+
+export function validateMoqQty(
+  qty: number,
+  minOrderQty: number = MOQ_MIN_ORDER_QTY,
+  stock: number = Infinity,
+): { ok: boolean; message?: string } {
+  if (!Number.isInteger(qty) || qty < 1) {
+    return { ok: false, message: 'Quantity must be a whole number of at least 1.' };
+  }
+  if (stock <= 0) return { ok: false, message: 'Out of stock.' };
+  if (qty < minOrderQty) {
+    return { ok: false, message: `Minimum order for this item is ${minOrderQty}.` };
+  }
+  if (qty > stock) return { ok: false, message: `Only ${stock} left in stock.` };
   return { ok: true };
 }
 

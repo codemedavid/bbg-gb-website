@@ -1,15 +1,15 @@
 // Cart segmentation and the checkout order-split.
 //
-// Per the storefront SRS, the three purchasing modes are never combined in one
+// Per the storefront SRS, the purchasing modes are never combined in one
 // order: a mixed cart checks out as one distinct order per mode, each with its
 // own packing fee and lifecycle. This module maps items to modes and splits them.
 
 import { computeTotals, type OrderTotals, type PriceableItem } from './pricing';
 
-export type PurchaseMode = 'solo' | 'kahati' | 'group_buy';
+export type PurchaseMode = 'solo' | 'kahati' | 'group_buy' | 'moq';
 
 // Deterministic emit order for split orders and receipts.
-export const PURCHASE_MODES: readonly PurchaseMode[] = ['solo', 'kahati', 'group_buy'] as const;
+export const PURCHASE_MODES: readonly PurchaseMode[] = ['solo', 'kahati', 'group_buy', 'moq'] as const;
 
 export function modeOf(item: PriceableItem): PurchaseMode {
   switch (item.kind) {
@@ -17,6 +17,8 @@ export function modeOf(item: PriceableItem): PurchaseMode {
       return 'kahati';
     case 'moq_campaign':
       return 'group_buy';
+    case 'moq_product':
+      return 'moq';
     case 'product':
     default:
       return 'solo';
@@ -26,7 +28,7 @@ export function modeOf(item: PriceableItem): PurchaseMode {
 export type CartSegments = Record<PurchaseMode, PriceableItem[]>;
 
 export function segmentByMode(items: PriceableItem[]): CartSegments {
-  const segments: CartSegments = { solo: [], kahati: [], group_buy: [] };
+  const segments: CartSegments = { solo: [], kahati: [], group_buy: [], moq: [] };
   for (const item of items) {
     segments[modeOf(item)].push(item);
   }
