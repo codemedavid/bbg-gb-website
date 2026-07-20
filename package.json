@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "drizzle-kit push",
+    "db:check": "tsx scripts/check-schema.ts",
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "drizzle-kit push --force && tsx scripts/seed.ts",
