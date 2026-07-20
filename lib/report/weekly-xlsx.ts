@@ -5,10 +5,12 @@
 // cannot do any of that. Money is therefore written as real numbers with a
 // currency format rather than pre-formatted strings.
 //
-// ExcelJS is dynamically imported by the download helper so its weight never
-// lands in the initial admin bundle; buildWeeklyWorkbook takes the module as an
-// argument-free import here only because tests need it synchronously.
-import ExcelJS from 'exceljs';
+// ExcelJS is loaded through a dynamic import so its ~22MB never lands in the
+// initial admin bundle — WeeklyReportButton imports this module statically, so a
+// top-level `import ExcelJS from 'exceljs'` here would be pulled into the admin
+// page chunk on load. The type-only import erases at compile time and costs
+// nothing. weekly-xlsx-download.test.ts pins both halves of that.
+import type { Workbook } from 'exceljs';
 import { REPORT_COLORS } from './constants';
 import { weekFilename } from './week';
 import type { WeeklyReport } from './build';
@@ -33,7 +35,8 @@ const argb = ([r, g, b]: [number, number, number]): string =>
 export async function buildWeeklyWorkbook(
   report: WeeklyReport,
   mondayYmd: string,
-): Promise<ExcelJS.Workbook> {
+): Promise<Workbook> {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'BBG Peptides';
   const sheet = workbook.addWorksheet(`Week ${report.weekNo}`, {
@@ -94,8 +97,7 @@ export function weeklyXlsxFilename(mondayYmd: string): string {
   return `${weekFilename(mondayYmd)}.xlsx`;
 }
 
-// Browser-side download. ExcelJS is imported here so the admin bundle only pays
-// for it when someone actually exports.
+// Browser-side download.
 export async function downloadWeeklyReportXlsx(
   report: WeeklyReport,
   mondayYmd: string,
@@ -106,12 +108,20 @@ export async function downloadWeeklyReportXlsx(
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
   const url = URL.createObjectURL(blob);
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = weeklyXlsxFilename(mondayYmd);
-    link.click();
-  } finally {
+
+  // The anchor has to be in the document for a synthetic click to register in
+  // Firefox, and the object URL must outlive the click: browsers start the
+  // download asynchronously, so revoking in the same tick invalidates the blob
+  // before it is read and the file silently never arrives.
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = weeklyXlsxFilename(mondayYmd);
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+
+  setTimeout(() => {
+    link.remove();
     URL.revokeObjectURL(url);
-  }
+  }, 0);
 }
