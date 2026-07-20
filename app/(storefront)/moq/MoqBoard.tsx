@@ -2,7 +2,7 @@
 import { SectionHeader } from '@/components/headers';
 import { MoqProductCard } from '@/components/MoqProductCard';
 import { useMoqProducts } from '@/lib/queries';
-import { useCart } from '@/lib/store/cart';
+import { moqCartLine, useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
 import type { MoqProduct } from '@/lib/types';
 
@@ -25,18 +25,7 @@ export function MoqBoard() {
   const toast = useToast((s) => s.show);
 
   const handleAdd = (p: MoqProduct) => {
-    add({
-      key: `moq:${p.id}`,
-      kind: 'moq',
-      refId: p.id,
-      name: p.name,
-      spec: p.spec,
-      unitPricePhp: Number(p.pricePhp),
-      minQty: p.minOrderQty,
-      qty: p.minOrderQty,
-      stock: p.stock,
-      packingFeePhp: p.packingFeePhp != null ? Number(p.packingFeePhp) : undefined,
-    });
+    add(moqCartLine(p));
     toast(`${p.name} × ${p.minOrderQty} added to cart`);
   };
 

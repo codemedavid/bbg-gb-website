@@ -86,7 +86,7 @@ describe('cart clearing after checkout', () => {
 // reject — and MOQ must add its own packing fee leg.
 // ---------------------------------------------------------------------------
 const moqItem = (o: Partial<CartItem> = {}): CartItem => ({
-  key: 'moq:m1', kind: 'moq', refId: 'm1', name: 'FUAN GTT1500',
+  key: 'moq:m1', kind: 'moq_product', refId: 'm1', name: 'FUAN GTT1500',
   spec: 'MOQ · min 5', unitPricePhp: 4500, qty: 5, minQty: 5, stock: 50, ...o,
 });
 

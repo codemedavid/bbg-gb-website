@@ -33,8 +33,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
-const { useCart } = await import('@/lib/store/cart');
-type CartKind = Parameters<ReturnType<typeof useCart.getState>['add']>[0]['kind'];
+const { useCart, moqCartLine } = await import('@/lib/store/cart');
 const { resetDb, makeUser, makeProduct, makeGroupBuy, makeMoqProduct, SHIPPING } = await import('@/lib/test/harness');
 
 // Byte-for-byte what app/checkout/page.tsx builds and sends.
@@ -66,12 +65,14 @@ describe('every cart line kind is accepted by checkout', () => {
     await signIn();
     const p = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 5 });
 
-    // Exactly the shape MoqBoard.handleAdd pushes into the cart.
-    useCart.getState().add({
-      key: `moq:${p.id}`, kind: 'moq' as CartKind, refId: p.id,
-      name: p.name, spec: 'MOQ · min 5',
-      unitPricePhp: 4500, minQty: 5, qty: 5, stock: 50,
-    });
+    // The exact line MoqBoard pushes into the cart — built by the production
+    // helper, so this test cannot drift from what the storefront really sends.
+    useCart.getState().add(moqCartLine({
+      id: p.id, name: p.name, spec: '1500mg', description: null,
+      imageUrl: null, imageEmoji: null, pricePhp: '4500.00', priceUsd: null,
+      stock: 50, minOrderQty: 5, packingFeePhp: null,
+      arrivalGroup: 'white_powder', isActive: true, sortOrder: 0, inStock: true,
+    }));
 
     const res = await POST(checkoutRequestFromCart());
     const body = await res.json();
@@ -116,8 +117,13 @@ describe('every cart line kind is accepted by checkout', () => {
       name: 'Test Peptide', spec: '10mg', unitPricePhp: 550, minQty: 1, qty: 1, unit: 'piece', stock: 50,
     });
     useCart.getState().add({
-      key: `moq:${moq.id}`, kind: 'moq' as CartKind, refId: moq.id,
-      name: moq.name, spec: 'MOQ · min 1', unitPricePhp: 4500, minQty: 1, qty: 2, stock: 50,
+      ...moqCartLine({
+        id: moq.id, name: moq.name, spec: '1500mg', description: null,
+        imageUrl: null, imageEmoji: null, pricePhp: '4500.00', priceUsd: null,
+        stock: 50, minOrderQty: 1, packingFeePhp: null,
+        arrivalGroup: 'white_powder', isActive: true, sortOrder: 0, inStock: true,
+      }),
+      qty: 2,
     });
 
     const body = await (await POST(checkoutRequestFromCart())).json();

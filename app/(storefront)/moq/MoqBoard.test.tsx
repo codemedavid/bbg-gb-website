@@ -17,7 +17,10 @@ let shelf: { data: MoqProduct[]; isLoading: boolean } = { data: [], isLoading: f
 vi.mock('@/lib/queries', () => ({ useMoqProducts: () => shelf }));
 
 const add = vi.fn();
-vi.mock('@/lib/store/cart', () => ({
+// Only the store is stubbed. moqCartLine stays real so these assertions check the
+// line the storefront actually builds, not a restatement of it.
+vi.mock('@/lib/store/cart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/store/cart')>()),
   useCart: (sel: (s: unknown) => unknown) => sel({ add }),
 }));
 
@@ -72,7 +75,7 @@ describe('MoqBoard', () => {
 
     expect(add).toHaveBeenCalledTimes(1);
     expect(add.mock.calls[0][0]).toMatchObject({
-      key: 'moq:m1', kind: 'moq', refId: 'm1', qty: 5, minQty: 5, unitPricePhp: 4500, stock: 50,
+      key: 'moq:m1', kind: 'moq_product', refId: 'm1', qty: 5, minQty: 5, unitPricePhp: 4500, stock: 50,
     });
   });
 

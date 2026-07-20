@@ -1,10 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees } from '@/lib/pricing';
+import type { MoqProduct } from '@/lib/types';
 
+// `kind` is the wire contract with POST /api/orders: app/checkout/page.tsx
+// forwards it verbatim, so these values must stay identical to the route's
+// accepted line kinds. They diverged once ('moq' here, 'moq_product' there) and
+// broke every MOQ checkout — see app/api/orders/cart-contract.test.ts.
 export type CartItem = {
   key: string;                    // stable dedupe key (product:id:unit / gb:id / moq:id)
-  kind: 'product' | 'group_buy' | 'moq';
+  kind: 'product' | 'group_buy' | 'moq_product';
   refId: string;
   name: string;
   spec: string;
@@ -23,7 +28,7 @@ export type CartItem = {
 export const maxQtyFor = (item: CartItem): number => {
   if (item.stock == null) return Infinity;
   // MOQ lines are sold by the unit, so stock caps quantity directly.
-  if (item.kind === 'moq') return item.stock;
+  if (item.kind === 'moq_product') return item.stock;
   if (item.kind !== 'product') return Infinity;
   return Math.floor(item.stock / vialsFor(item.unit ?? 'piece', 1));
 };
@@ -77,7 +82,7 @@ export const useCart = create<CartState>()(
       subtotal: () => get().items.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
       hasOnHand: () => get().items.some((i) => i.kind === 'product'),
       hasKahati: () => get().items.some((i) => i.kind === 'group_buy'),
-      hasMoq: () => get().items.some((i) => i.kind === 'moq'),
+      hasMoq: () => get().items.some((i) => i.kind === 'moq_product'),
     }),
     { name: 'bbg-cart' }
   )
@@ -97,7 +102,25 @@ export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE
   if (items.some((i) => i.kind === 'product')) total += fees.solo;
   const kahatiFees = items.filter((i) => i.kind === 'group_buy').map((i) => i.packingFeePhp ?? fees.kahati);
   if (kahatiFees.length) total += Math.max(...kahatiFees);
-  const moqFees = items.filter((i) => i.kind === 'moq').map((i) => i.packingFeePhp ?? fees.moq);
+  const moqFees = items.filter((i) => i.kind === 'moq_product').map((i) => i.packingFeePhp ?? fees.moq);
   if (moqFees.length) total += Math.max(...moqFees);
   return total;
 };
+
+// Builds the cart line for an MOQ product. Lives here rather than inline in the
+// MOQ board so the cart->checkout contract test can exercise the exact line the
+// storefront produces, instead of restating it and drifting from it.
+export const moqCartLine = (p: MoqProduct): CartItem => ({
+  key: `moq:${p.id}`,
+  kind: 'moq_product',
+  refId: p.id,
+  name: p.name,
+  spec: p.spec,
+  unitPricePhp: Number(p.pricePhp),
+  // MOQ lines start at the product's minimum: a line seeded at 1 would be
+  // rejected by checkout.
+  minQty: p.minOrderQty,
+  qty: p.minOrderQty,
+  stock: p.stock,
+  packingFeePhp: p.packingFeePhp != null ? Number(p.packingFeePhp) : undefined,
+});
