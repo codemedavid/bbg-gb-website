@@ -53,8 +53,21 @@ describe('describeDriverProblem', () => {
     expect(describeDriverProblem('local', false)).toBeNull();
   });
 
-  it('allows a real driver in production', () => {
+  it('allows a real driver in production when its credentials are present', () => {
+    expect(describeDriverProblem('imagekit', true, true)).toBeNull();
+    expect(describeDriverProblem('supabase', true, true)).toBeNull();
+  });
+
+  it('flags imagekit selected without its credentials, in any environment', () => {
+    expect(describeDriverProblem('imagekit', false, false)).toMatch(/IMAGEKIT/);
+    expect(describeDriverProblem('imagekit', true, false)).toMatch(/IMAGEKIT/);
+  });
+
+  it('flags supabase selected without its service key', () => {
+    expect(describeDriverProblem('supabase', true, false)).toMatch(/SUPABASE/);
+  });
+
+  it('defaults to assuming credentials are present for legacy two-arg callers', () => {
     expect(describeDriverProblem('imagekit', true)).toBeNull();
-    expect(describeDriverProblem('supabase', true)).toBeNull();
   });
 });

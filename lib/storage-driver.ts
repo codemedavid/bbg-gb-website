@@ -42,11 +42,23 @@ export function resolveStorageDriver({ explicit, hasImageKit, hasSupabase }: Dri
 // Non-null when the resolved driver cannot actually store files in this
 // environment. Callers surface this at upload time instead of at import time, so
 // a misconfigured deploy still serves pages and reports one clear cause.
-export function describeDriverProblem(driver: StorageDriver, isProd: boolean): string | null {
+//
+// `credsPresent` says whether the *selected* driver's credentials are set. It
+// defaults to true so legacy two-arg callers behave as before; a remote driver
+// chosen without its keys is a config error in every environment, not just prod.
+export function describeDriverProblem(driver: StorageDriver, isProd: boolean, credsPresent = true): string | null {
   if (driver === 'local' && isProd) {
     return 'File uploads are not configured: STORAGE_DRIVER is unset, so uploads fall back to the local '
       + 'filesystem, which is read-only in production. Set STORAGE_DRIVER=imagekit (with IMAGEKIT_PRIVATE_KEY '
       + 'and IMAGEKIT_URL_ENDPOINT) or STORAGE_DRIVER=supabase (with SUPABASE_SERVICE_KEY).';
+  }
+  if (driver === 'imagekit' && !credsPresent) {
+    return 'File uploads are not configured: STORAGE_DRIVER=imagekit but IMAGEKIT_PRIVATE_KEY '
+      + 'and/or IMAGEKIT_URL_ENDPOINT are missing. Set both (locally in .env and in the deploy env).';
+  }
+  if (driver === 'supabase' && !credsPresent) {
+    return 'File uploads are not configured: STORAGE_DRIVER=supabase but SUPABASE_SERVICE_KEY '
+      + '(and/or SUPABASE_URL) is missing. Set the service key in the deploy env.';
   }
   return null;
 }

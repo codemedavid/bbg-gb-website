@@ -53,7 +53,11 @@ export type StoredFile = { key: string };
 export async function putFile(bucket: string, key: string, body: Buffer, contentType: string): Promise<StoredFile> {
   // Catch a misconfigured backend here rather than letting it surface as an
   // EROFS deep inside fs.writeFile, which reached admins as "Something went wrong".
-  const problem = describeDriverProblem(env.storageDriver, env.isProd);
+  const credsPresent =
+    env.storageDriver === 'imagekit' ? !!(env.imagekitPrivateKey && env.imagekitUrlEndpoint)
+    : env.storageDriver === 'supabase' ? !!(env.supabaseUrl && env.supabaseServiceKey)
+    : true;
+  const problem = describeDriverProblem(env.storageDriver, env.isProd, credsPresent);
   if (problem) throw new ApiError(503, problem);
 
   if (env.storageDriver === 'imagekit') {
