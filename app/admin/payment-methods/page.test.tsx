@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { ConfirmProvider } from '@/components/ConfirmDialog';
+
+// Destructive actions route through the shared ConfirmProvider, so the page
+// must render inside it.
+const render = (ui: ReactElement) => rtlRender(<ConfirmProvider>{ui}</ConfirmProvider>);
 
 // A failing save (e.g. the prod 503 when uploads aren't configured) must show
 // its reason inside the form, not silently close or vanish into a toast.

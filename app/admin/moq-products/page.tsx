@@ -2,6 +2,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAdminMoqProducts, useMutate } from '@/lib/admin-api';
 import { field, label, btnPrimary } from '@/components/admin-ui';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import type { MoqProduct } from '@/lib/types';
 import { emptyMoqDraft, moqDraftFrom, moqProductFormData, type MoqDraft } from '@/lib/moq-product-form';
@@ -15,6 +16,7 @@ import { emptyMoqDraft, moqDraftFrom, moqProductFormData, type MoqDraft } from '
 export default function AdminMoqProductsPage() {
   const { data: items = [], isLoading } = useAdminMoqProducts();
   const { saveMoqProduct, deleteMoqProduct } = useMutate();
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<MoqDraft | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +44,12 @@ export default function AdminMoqProductsPage() {
   };
 
   const handleDelete = async (p: MoqProduct) => {
-    if (!confirm(`Delete "${p.name}" from the MOQ shelf?`)) return;
+    const ok = await confirm({
+      title: `Delete "${p.name}"?`,
+      message: 'This removes the product from the MOQ shelf. This cannot be undone.',
+      confirmLabel: 'Delete product',
+    });
+    if (!ok) return;
     await deleteMoqProduct.mutateAsync(p.id);
   };
 

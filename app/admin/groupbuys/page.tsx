@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAdminGroupBuys, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS, kahatiProgressPercent } from '@/lib/kahati';
 import type { GroupBuy } from '@/lib/types';
@@ -47,7 +48,17 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
 export default function AdminGroupBuysPage() {
   const { data: gbs = [], isLoading } = useAdminGroupBuys();
   const { deleteGroupBuy, saveGroupBuy } = useMutate();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<GroupBuy> | null>(null);
+
+  const handleDelete = async (g: GroupBuy) => {
+    const ok = await confirm({
+      title: `Delete "${g.name}"?`,
+      message: 'This permanently removes the group buy. This cannot be undone.',
+      confirmLabel: 'Delete group buy',
+    });
+    if (ok) deleteGroupBuy.mutate(g.id);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -74,7 +85,7 @@ export default function AdminGroupBuysPage() {
               <div className="mt-3 flex gap-2">
                 <button onClick={() => setEditing(g)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-brand-blue">Edit</button>
                 {g.status === 'open' && <button onClick={() => saveGroupBuy.mutate({ id: g.id, status: 'closed' } as any)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-warn-fg">Close</button>}
-                <button onClick={() => confirm(`Delete "${g.name}"?`) && deleteGroupBuy.mutate(g.id)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b]">✕</button>
+                <button onClick={() => handleDelete(g)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b]">✕</button>
               </div>
             </div>
           );

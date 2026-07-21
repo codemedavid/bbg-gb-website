@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useCampaigns, useAdminProducts, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import type { CampaignPayload, IncludedProduct, MoqCampaign } from '@/lib/types';
 
@@ -157,9 +158,29 @@ const STATUS_STYLE: Record<MoqCampaign['status'], string> = {
 export default function AdminCampaignsPage() {
   const { data: campaigns = [], isLoading } = useCampaigns();
   const { deleteCampaign, campaignAction } = useMutate();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<Draft | null>(null);
   const [extending, setExtending] = useState<MoqCampaign | null>(null);
   const busy = campaignAction.isPending || deleteCampaign.isPending;
+
+  const handleCancel = async (c: MoqCampaign) => {
+    const ok = await confirm({
+      title: `Cancel "${c.name}"?`,
+      message: 'This refunds all commitments and closes the campaign. This cannot be undone.',
+      confirmLabel: 'Cancel campaign',
+      cancelLabel: 'Keep campaign',
+    });
+    if (ok) campaignAction.mutate({ id: c.id, action: 'cancel' });
+  };
+
+  const handleDelete = async (c: MoqCampaign) => {
+    const ok = await confirm({
+      title: `Delete "${c.name}"?`,
+      message: 'This permanently removes the campaign. This cannot be undone.',
+      confirmLabel: 'Delete campaign',
+    });
+    if (ok) deleteCampaign.mutate(c.id);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -190,9 +211,9 @@ export default function AdminCampaignsPage() {
                 {c.status === 'open' && <>
                   <button onClick={() => campaignAction.mutate({ id: c.id, action: 'approve' })} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-brand-greendark disabled:opacity-50" disabled={busy}>Approve</button>
                   <button onClick={() => setExtending(c)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-ink-body disabled:opacity-50" disabled={busy}>Extend</button>
-                  <button onClick={() => confirm(`Cancel "${c.name}"? This refunds all commitments.`) && campaignAction.mutate({ id: c.id, action: 'cancel' })} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-warn-fg disabled:opacity-50" disabled={busy}>Cancel</button>
+                  <button onClick={() => handleCancel(c)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-warn-fg disabled:opacity-50" disabled={busy}>Cancel</button>
                 </>}
-                <button onClick={() => confirm(`Delete "${c.name}"?`) && deleteCampaign.mutate(c.id)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b] disabled:opacity-50" disabled={busy}>✕</button>
+                <button onClick={() => handleDelete(c)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b] disabled:opacity-50" disabled={busy}>✕</button>
               </div>
             </div>
           );

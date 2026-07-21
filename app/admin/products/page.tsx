@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAdminProducts, useAdminCategories, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import type { Product } from '@/lib/types';
 
@@ -66,7 +67,17 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
 export default function AdminProductsPage() {
   const { data: products = [], isLoading } = useAdminProducts();
   const { archiveProduct } = useMutate();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<Product> | null>(null);
+
+  const handleArchive = async (p: Product) => {
+    const ok = await confirm({
+      title: `Archive "${p.name}"?`,
+      message: 'This hides the product from the storefront. You can restore it later.',
+      confirmLabel: 'Archive product',
+    });
+    if (ok) archiveProduct.mutate(p.id);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -101,7 +112,7 @@ export default function AdminProductsPage() {
                   <td className="px-4 py-3"><span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${p.arrivalGroup === 'white_powder' ? 'bg-[#e8f5db] text-brand-greendark' : 'bg-warn-bg text-warn-fg'}`}>{p.arrivalGroup === 'white_powder' ? 'White' : 'Salt/Liquid'}</span></td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => setEditing(p)} className="mr-2 font-semibold text-brand-blue">Edit</button>
-                    {p.isActive && <button onClick={() => archiveProduct.mutate(p.id)} className="font-semibold text-[#b23b3b]">Archive</button>}
+                    {p.isActive && <button onClick={() => handleArchive(p)} className="font-semibold text-[#b23b3b]">Archive</button>}
                   </td>
                 </tr>
               ))}

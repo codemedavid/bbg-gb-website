@@ -6,9 +6,15 @@
 // the admin typed, since a field dropped here fails silently rather than
 // erroring.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ConfirmProvider } from '@/components/ConfirmDialog';
+import type { ReactElement } from 'react';
 import type { MoqProduct } from '@/lib/types';
+
+// Destructive actions now route through the shared ConfirmProvider, so the page
+// must render inside it for the warn-before-delete dialog to work.
+const render = (ui: ReactElement) => rtlRender(<ConfirmProvider>{ui}</ConfirmProvider>);
 
 let shelf: { data: MoqProduct[]; isLoading: boolean } = { data: [], isLoading: false };
 const saveMutate = vi.fn();
@@ -45,7 +51,6 @@ beforeEach(() => {
   saveMutate.mockReset().mockResolvedValue(undefined);
   deleteMutate.mockReset().mockResolvedValue(undefined);
   savePending = false;
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 
 describe('shelf listing', () => {
@@ -279,30 +284,34 @@ describe('editing a product', () => {
 });
 
 describe('deleting a product', () => {
-  it('deletes once the admin confirms', async () => {
+  it('deletes once the admin confirms in the dialog', async () => {
     shelf = { data: [product({ id: 'm1' })], isLoading: false };
     render(<AdminMoqProductsPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: /delete/i }));
+    // The card button only opens the warning; the mutation waits for confirm.
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(deleteMutate).not.toHaveBeenCalled();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete product' }));
 
     await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('m1'));
   });
 
-  it('names the product in the confirmation prompt', async () => {
+  it('names the product in the confirmation dialog', async () => {
     shelf = { data: [product({ name: 'FUAN GTT1500' })], isLoading: false };
     render(<AdminMoqProductsPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: /delete/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('FUAN GTT1500'));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('FUAN GTT1500');
   });
 
   it('does not delete when the admin backs out', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     shelf = { data: [product()], isLoading: false };
     render(<AdminMoqProductsPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: /delete/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
 
     expect(deleteMutate).not.toHaveBeenCalled();
   });
@@ -315,7 +324,8 @@ describe('deleting a product', () => {
     render(<AdminMoqProductsPage />);
 
     const secondCard = screen.getByText('Second').closest('div.rounded-2xl') as HTMLElement;
-    await userEvent.click(within(secondCard).getByRole('button', { name: /delete/i }));
+    await userEvent.click(within(secondCard).getByRole('button', { name: 'Delete' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete product' }));
 
     await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('b'));
   });

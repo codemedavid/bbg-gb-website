@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAdminPaymentMethods, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { useConfirm } from '@/components/ConfirmDialog';
 import type { PaymentMethod } from '@/lib/types';
 
 const blank = (): Partial<PaymentMethod> => ({ label: '', accountName: '', accountNumber: '', isActive: true, sortOrder: 0, qrUrl: null });
@@ -78,7 +79,17 @@ function MethodForm({ initial, onClose }: { initial: Partial<PaymentMethod>; onC
 export default function AdminPaymentMethodsPage() {
   const { data: methods = [], isLoading } = useAdminPaymentMethods();
   const { deletePaymentMethod } = useMutate();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<PaymentMethod> | null>(null);
+
+  const handleDelete = async (m: PaymentMethod) => {
+    const ok = await confirm({
+      title: `Delete "${m.label}"?`,
+      message: 'This payment method will no longer be shown at checkout. This cannot be undone.',
+      confirmLabel: 'Delete method',
+    });
+    if (ok) deletePaymentMethod.mutate(m.id);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -118,7 +129,7 @@ export default function AdminPaymentMethodsPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => setEditing(m)} className="mr-2 font-semibold text-brand-blue">Edit</button>
-                    <button onClick={() => deletePaymentMethod.mutate(m.id)} className="font-semibold text-[#b23b3b]">Delete</button>
+                    <button onClick={() => handleDelete(m)} className="font-semibold text-[#b23b3b]">Delete</button>
                   </td>
                 </tr>
               ))}

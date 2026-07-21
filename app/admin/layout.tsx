@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/useAuth';
 import { AdminLogin } from './AdminLogin';
 import { Toast } from '@/components/Toast';
+import { ConfirmProvider } from '@/components/ConfirmDialog';
 
 const NAV = [
   { href: '/admin', label: 'Dashboard', icon: '📊', exact: true },
@@ -32,6 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isActive = (n: (typeof NAV)[number]) => (n.exact ? pathname === n.href : pathname.startsWith(n.href));
 
   return (
+    <ConfirmProvider>
     <div className="min-h-screen bg-[#eef1ec] text-ink">
       <div className="mx-auto flex max-w-[1200px] gap-6 p-4 md:p-6">
         <aside className="hidden w-56 flex-none md:block">
@@ -62,5 +64,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
       <Toast />
     </div>
+    </ConfirmProvider>
   );
 }
