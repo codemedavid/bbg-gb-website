@@ -92,6 +92,29 @@ describe('CheckoutPage', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/success/BBG-2500'));
   });
 
+  it('offers J&T and Lalamove as the only shipping methods', () => {
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.getByRole('button', { name: 'J&T' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Lalamove' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'LBC' })).not.toBeInTheDocument();
+  });
+
+  it('sends the chosen shipping method with the order', async () => {
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+    screen.getByRole('button', { name: 'Lalamove' }).click();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+    const body = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].body as FormData;
+    expect(body.get('courier')).toBe('Lalamove');
+  });
+
   it('keeps the cart intact when the order fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: false,

@@ -2,10 +2,15 @@
 
 // Fulfilment handlers shown in the report's "Admin" column and offered in the
 // admin order editor. Editable here as the team changes.
-export const PACKERS = ['Nova', 'Thunder', 'Twinkle'] as const;
+export const PACKERS = ['Cza', 'Ruth', 'Richme'] as const;
 
-// Couriers offered in the order editor. J&T is the current default.
-export const COURIERS = ['J&T', 'LBC', 'Flash', 'Ninja Van'] as const;
+// Shipping methods a customer may choose at checkout.
+export const SHIPPING_OPTIONS = ['J&T', 'Lalamove'] as const;
+export type ShippingOption = (typeof SHIPPING_OPTIONS)[number];
+
+// Couriers offered in the admin order editor. Includes the customer-facing
+// options plus any others the team fulfils with. J&T is the current default.
+export const COURIERS = ['J&T', 'Lalamove', 'LBC', 'Flash', 'Ninja Van'] as const;
 export const DEFAULT_COURIER = 'J&T';
 
 // Report brand palette — matched to the BioRhythm Weekly Order Report sample.

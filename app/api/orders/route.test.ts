@@ -153,6 +153,36 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(400);
   });
 
+  it('persists the customer-chosen shipping method on the order', async () => {
+    await signIn();
+    const product = await makeProduct();
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }], { courier: 'Lalamove' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.order.courier).toBe('Lalamove');
+  });
+
+  it('defaults the shipping method to J&T when none is chosen', async () => {
+    await signIn();
+    const product = await makeProduct();
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }]));
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.order.courier).toBe('J&T');
+  });
+
+  it('rejects a shipping method that is not an offered option', async () => {
+    await signIn();
+    const product = await makeProduct();
+
+    const res = await POST(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1 }], { courier: 'LBC' }));
+    expect(res.status).toBe(400);
+  });
+
   it('charges the group buy packing fee (admin-editable per kahati)', async () => {
     await signIn();
     const gb = await makeGroupBuy({ repackFeePhp: 200, pricePerKitPhp: 9000 });

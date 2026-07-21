@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import { usePaymentMethods } from '@/lib/queries';
 import { php } from '@/lib/format';
+import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [methodId, setMethodId] = useState('');
+  const [courier, setCourier] = useState<string>(DEFAULT_COURIER);
   const [proof, setProof] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -62,6 +64,7 @@ export default function CheckoutPage() {
       fd.append('shipPhone', phone);
       fd.append('shipAddress', address);
       if (selectedMethod) fd.append('paymentMethod', selectedMethod.label);
+      fd.append('courier', courier);
       fd.append('proof', proof);
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
       const json = await res.json();
@@ -98,6 +101,21 @@ export default function CheckoutPage() {
             className="mb-2 w-full rounded-[10px] border-[1.5px] border-line px-3.5 py-2.5 text-[14px] outline-none focus:border-brand-green" />
           <textarea name="shipAddress" autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Complete delivery address"
             className="h-[60px] w-full resize-none rounded-[10px] border-[1.5px] border-line px-3.5 py-2.5 text-[14px] outline-none focus:border-brand-green" />
+        </div>
+
+        <div className="rounded-[14px] bg-white p-4 shadow-card">
+          <div className="mb-2.5 text-[13px] font-bold text-ink">Shipping method</div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {SHIPPING_OPTIONS.map((c) => {
+              const active = c === courier;
+              return (
+                <button key={c} type="button" onClick={() => setCourier(c)}
+                  className={`flex items-center justify-center gap-2 rounded-[12px] border-[1.5px] px-4 py-3.5 text-[15px] font-bold transition-colors ${active ? 'border-brand-green bg-[#f2f8ec] text-ink' : 'border-line bg-white text-ink-body hover:border-[#a9c88f]'}`}>
+                  {c}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="rounded-[14px] bg-white p-4 shadow-card">

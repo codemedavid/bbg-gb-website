@@ -14,6 +14,7 @@ import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
 import { captureEvent } from '@/lib/posthog';
+import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 const itemSchema = z.object({
   kind: z.enum(['product', 'group_buy', 'moq_product']),
@@ -29,6 +30,8 @@ const checkoutSchema = z.object({
   shipPhone: z.string().min(7).max(40),
   shipAddress: z.string().min(5).max(500),
   paymentMethod: z.string().min(1).max(40).optional(),
+  // Customer-chosen shipping method; only the offered options are accepted.
+  courier: z.enum(SHIPPING_OPTIONS).optional(),
 });
 
 // Checkout persists on-hand ('product'), kahati ('group_buy') and MOQ-shelf
@@ -55,6 +58,7 @@ export const POST = handler(async (req: Request) => {
     shipPhone: form.get('shipPhone'),
     shipAddress: form.get('shipAddress'),
     paymentMethod: form.get('paymentMethod') ?? undefined,
+    courier: form.get('courier') ?? undefined,
   });
 
   // Store the proof before opening the transaction — it is an external side effect.
@@ -247,6 +251,8 @@ export const POST = handler(async (req: Request) => {
         totalPhp: String(totals.total), downpaymentPhp: String(downpayment), totalUsd: String(totalUsd),
         shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
         paymentMethod: body.paymentMethod ?? null,
+        // Same chosen shipping method on every split order the cart produces.
+        courier: body.courier ?? DEFAULT_COURIER,
         // Each split order references the same proof — one payment covers the cart.
         paymentProofKey: proofKey,
       }).returning();

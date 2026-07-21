@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { GroupBuy } from '@/lib/types';
 import { php } from '@/lib/format';
 import { KAHATI_MIN_VIABLE_VIALS, isKahatiViable } from '@/lib/kahati';
@@ -7,6 +8,7 @@ import { useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
+  const router = useRouter();
   const [qty, setQty] = useState(Math.min(g.remaining, Math.max(g.minVials, 1)));
   const add = useCart((s) => s.add);
   const toast = useToast((s) => s.show);
@@ -14,8 +16,11 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
   const clamp = (n: number) => Math.min(g.remaining, Math.max(g.minVials, n));
   const confirm = () => {
     add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty });
-    toast('Kahati claimed! Nasa cart na.');
+    toast('Kahati claimed! Bayaran na ang downpayment.');
     onClose();
+    // Send the buyer straight to checkout to pay the reservation downpayment,
+    // rather than leaving the commitment sitting in the cart.
+    router.push('/checkout');
   };
 
   return (
