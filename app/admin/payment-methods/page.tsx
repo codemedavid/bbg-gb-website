@@ -31,8 +31,14 @@ function MethodForm({ initial, onClose }: { initial: Partial<PaymentMethod>; onC
     body.set('isActive', String(f.isActive ?? true));
     body.set('sortOrder', String(f.sortOrder ?? 0));
     if (qr) body.set('qr', qr);
-    await savePaymentMethod.mutateAsync({ id: f.id, body });
-    onClose();
+    // Surface a rejected save (e.g. the prod 503 when file uploads are not
+    // configured) inside the form instead of closing on failure.
+    try {
+      await savePaymentMethod.mutateAsync({ id: f.id, body });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save payment method.');
+    }
   };
 
   return (
