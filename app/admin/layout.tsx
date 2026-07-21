@@ -8,6 +8,7 @@ import { Toast } from '@/components/Toast';
 const NAV = [
   { href: '/admin', label: 'Dashboard', icon: '📊', exact: true },
   { href: '/admin/orders', label: 'Orders', icon: '📦' },
+  { href: '/admin/reports', label: 'Reports', icon: '📈' },
   { href: '/admin/products', label: 'Products', icon: '🧪' },
   { href: '/admin/groupbuys', label: 'Group Buys', icon: '🤝' },
   // Labelled 'Group Buy Campaigns' so 'MOQ' unambiguously means the MOQ shelf
