@@ -84,7 +84,15 @@ export const useCart = create<CartState>()(
       hasKahati: () => get().items.some((i) => i.kind === 'group_buy'),
       hasMoq: () => get().items.some((i) => i.kind === 'moq_product'),
     }),
-    { name: 'bbg-cart' }
+    {
+      name: 'bbg-cart',
+      // Do not read localStorage during store init. On the server there is no
+      // cart, so SSR renders an empty one; syncing that read to import time would
+      // let the client's first render show a filled cart against the server's
+      // empty HTML — the mismatch React reports as #418. useHydrateCart()
+      // rehydrates after mount instead.
+      skipHydration: true,
+    }
   )
 );
 

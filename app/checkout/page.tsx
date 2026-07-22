@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import { usePaymentMethods } from '@/lib/queries';
 import { php } from '@/lib/format';
+import { friendlyCheckoutError } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 export default function CheckoutPage() {
@@ -67,8 +68,15 @@ export default function CheckoutPage() {
       fd.append('courier', courier);
       fd.append('proof', proof);
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || 'Could not place order.');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        // The upload-config 503 carries deploy jargon; friendlyCheckoutError
+        // gives the customer a retryable message instead. Stock/validation
+        // errors still show their own actionable text.
+        toast(friendlyCheckoutError(res.status, json.error ?? ''));
+        setSubmitting(false);
+        return;
+      }
       clear();
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });
