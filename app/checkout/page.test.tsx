@@ -161,4 +161,29 @@ describe('CheckoutPage', () => {
     await waitFor(() => expect(replace).not.toHaveBeenCalled());
     expect(useCart.getState().items).toHaveLength(1);
   });
+
+  it('sends one idempotency key and reuses it when retrying the same submission', async () => {
+    // A retry of the same submission must be recognizable server-side, so the
+    // key is minted once per submission and reused until the order succeeds.
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      json: async () => ({ success: false, error: 'Only 1 left in stock.' }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const keys = fetchMock.mock.calls.map((c) => ((c as unknown[])[1] as { body: FormData }).body.get('idempotencyKey'));
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+  });
 });

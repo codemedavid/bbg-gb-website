@@ -149,7 +149,10 @@ export async function makePaymentMethod(
 }
 
 // Builds the multipart Request a checkout route handler expects.
-export function checkoutRequest(items: unknown, opts: { withProof?: boolean; paymentMethod?: string; courier?: string } = {}): Request {
+export function checkoutRequest(
+  items: unknown,
+  opts: { withProof?: boolean; paymentMethod?: string; courier?: string; idempotencyKey?: string } = {},
+): Request {
   const form = new FormData();
   form.set('items', JSON.stringify(items));
   form.set('shipName', SHIPPING.shipName);
@@ -157,6 +160,7 @@ export function checkoutRequest(items: unknown, opts: { withProof?: boolean; pay
   form.set('shipAddress', SHIPPING.shipAddress);
   if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.courier) form.set('courier', opts.courier);
+  if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
   if (opts.withProof !== false) {
     form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
   }

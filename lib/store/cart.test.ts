@@ -4,7 +4,7 @@
 // EVERY mode. It previously only threaded through the on-hand fee, so editing the
 // Hatian packing fee in the admin panel left the cart quoting the code constant.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useCart, packingFeeFor, type CartItem } from './cart';
+import { useCart, packingFeeFor, maxQtyFor, type CartItem } from './cart';
 import { PACKING_FEE_PHP } from '@/lib/pricing';
 
 const onHand = (o: Partial<CartItem> = {}): CartItem => ({
@@ -126,5 +126,38 @@ describe('MOQ cart lines', () => {
     useCart.getState().add(moqItem({ qty: 5 }));
     expect(useCart.getState().count()).toBe(5);
     expect(useCart.getState().subtotal()).toBe(22500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Kahati lines and the hatian's remaining vials.
+//
+// A kahati line's ceiling is the hatian's remaining open vials, passed in as
+// `stock` when the customer joins. Without it the cart treated kahati lines as
+// uncapped, so repeated Join taps accumulated a quantity checkout would reject.
+// ---------------------------------------------------------------------------
+describe('kahati lines clamp to the hatian’s remaining vials', () => {
+  beforeEach(() => useCart.getState().clear());
+
+  it('caps a kahati line at the remaining vials when they are known', () => {
+    expect(maxQtyFor(kahati({ stock: 4 }))).toBe(4);
+  });
+
+  it('keeps a kahati line without a known remainder uncapped (server is the gate)', () => {
+    expect(maxQtyFor(kahati())).toBe(Infinity);
+  });
+
+  it('clamps repeated Join taps to the remaining vials instead of accumulating', () => {
+    useCart.getState().add(kahati({ stock: 5, qty: 3 }));
+    useCart.getState().add(kahati({ stock: 5, qty: 3 }));
+
+    expect(useCart.getState().items[0].qty).toBe(5);
+  });
+
+  it('clamps a manual quantity edit the same way', () => {
+    useCart.getState().add(kahati({ stock: 6, qty: 2 }));
+    useCart.getState().setQty('gb:g1', 99);
+
+    expect(useCart.getState().items[0].qty).toBe(6);
   });
 });
