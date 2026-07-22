@@ -187,3 +187,63 @@ describe('CheckoutPage', () => {
     expect(keys[1]).toBe(keys[0]);
   });
 });
+
+// A persisted cart can hold lines the shop can no longer sell — a delisted
+// product, a deleted hatian, one that closed while the tab sat open. Retrying
+// checkout with the dead line just loops the same 400 (seen live: six
+// identical rejections). The page must drop the dead line and say so plainly,
+// leaving the rest of the cart intact for a clean retry.
+describe('CheckoutPage stale cart lines', () => {
+  const seedTwoLines = () => {
+    useCart.setState({
+      items: [
+        {
+          key: 'gb:g1', kind: 'group_buy', refId: 'g1', name: 'Reta 20mg — kahati',
+          spec: 'Kahati · min 1 vials', unitPricePhp: 900, qty: 2, minQty: 1,
+        },
+        {
+          key: 'product:p1:piece', kind: 'product', refId: 'p1', name: 'Test Peptide',
+          spec: '10mg', unitPricePhp: 550, qty: 1, minQty: 1, unit: 'piece', stock: 100,
+        },
+      ],
+    });
+  };
+
+  it('removes a dead line and explains, instead of looping the same rejection', async () => {
+    useToast.setState({ message: '' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ success: false, error: 'Group buy not found: g1' }),
+    })));
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    // The dead kahati line is gone; the still-valid on-hand line survives.
+    await waitFor(() => expect(useCart.getState().items.map((i) => i.key)).toEqual(['product:p1:piece']));
+    expect(useToast.getState().message).toMatch(/no longer available/i);
+    expect(useToast.getState().message).not.toMatch(/g1/); // no raw ids at the customer
+  });
+
+  it('drops a kahati line whose hatian closed, matched by name', async () => {
+    useToast.setState({ message: '' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ success: false, error: 'Kahati "Reta 20mg" has already closed and is no longer accepting commitments.' }),
+    })));
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(useCart.getState().items.map((i) => i.key)).toEqual(['product:p1:piece']));
+    expect(useToast.getState().message).toMatch(/no longer available/i);
+  });
+});
