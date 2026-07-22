@@ -20,7 +20,7 @@ vi.mock('@/lib/admin-api', () => ({
 
 const Page = (await import('./page')).default;
 
-beforeEach(() => saveMutate.mockReset());
+beforeEach(() => { saveMutate.mockReset(); });
 
 describe('AdminProductsPage', () => {
   it('shows the failure reason in the form when a save is rejected', async () => {

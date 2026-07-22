@@ -18,16 +18,24 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [courier, setCourier] = useState('');
   const [packedBy, setPackedBy] = useState('');
   const [payment, setPayment] = useState('');
+  // A rejected update must show its reason here in the sheet — silently keeping
+  // it open reads as a broken Save button.
+  const [error, setError] = useState<string | null>(null);
 
   if (isLoading || !data) return <Modal title="Order" onClose={onClose}><div className="py-6 text-ink-muted">Loading…</div></Modal>;
   const { order, items, customer, proofUrl } = data;
 
   const save = async () => {
-    await setOrderStatus.mutateAsync({
-      id: order.id, status: status || order.status, trackingNo: tracking || undefined, note: note || undefined,
-      courier: courier || undefined, packedBy: packedBy || undefined, paymentMethod: payment || undefined,
-    });
-    onClose();
+    setError(null);
+    try {
+      await setOrderStatus.mutateAsync({
+        id: order.id, status: status || order.status, trackingNo: tracking || undefined, note: note || undefined,
+        courier: courier || undefined, packedBy: packedBy || undefined, paymentMethod: payment || undefined,
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update the order.');
+    }
   };
 
   return (
@@ -114,6 +122,7 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         </div>
       </div>
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
         <button className={btnGhost} onClick={onClose}>Close</button>
         <button className={btnPrimary} disabled={setOrderStatus.isPending} onClick={save}>{setOrderStatus.isPending ? 'Saving…' : 'Save update'}</button>

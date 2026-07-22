@@ -13,17 +13,25 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
   const { saveProduct } = useMutate();
   const [f, setF] = useState<Partial<Product>>(initial);
   const num = (v: string) => (v === '' ? null : Number(v));
+  // A rejected save must show its reason here in the form — silently keeping
+  // the modal open reads as a broken Save button.
+  const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    await saveProduct.mutateAsync({
-      id: f.id,
-      name: f.name, spec: f.spec, categoryId: f.categoryId ?? null,
-      pricePhp: Number(f.pricePhp) as any, priceUsd: (f.priceUsd != null ? Number(f.priceUsd) : null) as any,
-      isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
-      onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
-      stock: f.stock, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
-    } as any);
-    onClose();
+    setError(null);
+    try {
+      await saveProduct.mutateAsync({
+        id: f.id,
+        name: f.name, spec: f.spec, categoryId: f.categoryId ?? null,
+        pricePhp: Number(f.pricePhp) as any, priceUsd: (f.priceUsd != null ? Number(f.priceUsd) : null) as any,
+        isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
+        onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
+        stock: f.stock, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
+      } as any);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save product.');
+    }
   };
 
   return (
@@ -56,6 +64,7 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
           <Labeled label="On-hand price / piece ₱"><input className={field} type="number" value={(f.onHandPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandPiecePhp: num(e.target.value) as any })} /></Labeled>
         </div>
       )}
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className={btnGhost} onClick={onClose}>Cancel</button>
         <button className={btnPrimary} disabled={saveProduct.isPending} onClick={submit}>{saveProduct.isPending ? 'Saving…' : 'Save'}</button>

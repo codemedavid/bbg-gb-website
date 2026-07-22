@@ -13,14 +13,23 @@ const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSl
 function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClose: () => void }) {
   const { saveGroupBuy } = useMutate();
   const [f, setF] = useState<Partial<GroupBuy>>(initial);
+  // A rejected save (over-cap counts, cap below claimed vials, …) must show its
+  // reason here in the form — closing, or failing silently, would leave the
+  // admin thinking the save worked or the button was broken.
+  const [error, setError] = useState<string | null>(null);
   const submit = async () => {
-    await saveGroupBuy.mutateAsync({
-      id: f.id, name: f.name, pricePerKitPhp: Number(f.pricePerKitPhp) as any,
-      totalSlots: Number(f.totalSlots), claimedSlots: Number(f.claimedSlots), minVials: Number(f.minVials),
-      repackFeePhp: Number(f.repackFeePhp) as any, status: f.status, arrivalGroup: f.arrivalGroup,
-      description: f.description ?? null,
-    } as any);
-    onClose();
+    setError(null);
+    try {
+      await saveGroupBuy.mutateAsync({
+        id: f.id, name: f.name, pricePerKitPhp: Number(f.pricePerKitPhp) as any,
+        totalSlots: Number(f.totalSlots), claimedSlots: Number(f.claimedSlots), minVials: Number(f.minVials),
+        repackFeePhp: Number(f.repackFeePhp) as any, status: f.status, arrivalGroup: f.arrivalGroup,
+        description: f.description ?? null,
+      } as any);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save group buy.');
+    }
   };
   return (
     <Modal title={f.id ? 'Edit group buy' : 'New group buy'} onClose={onClose}>
@@ -37,6 +46,7 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
           </select>
         </Labeled>
       </div>
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className={btnGhost} onClick={onClose}>Cancel</button>
         <button className={btnPrimary} disabled={saveGroupBuy.isPending} onClick={submit}>{saveGroupBuy.isPending ? 'Saving…' : 'Save'}</button>

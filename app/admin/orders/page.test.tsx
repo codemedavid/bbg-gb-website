@@ -37,7 +37,7 @@ vi.mock('@/lib/admin-api', () => ({
 
 const Page = (await import('./page')).default;
 
-beforeEach(() => setStatusMutate.mockReset());
+beforeEach(() => { setStatusMutate.mockReset(); });
 
 describe('AdminOrdersPage', () => {
   it('shows the failure reason in the sheet when a status update is rejected', async () => {
