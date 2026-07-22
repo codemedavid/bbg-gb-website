@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import { usePaymentMethods } from '@/lib/queries';
 import { php } from '@/lib/format';
-import { friendlyCheckoutError } from '@/lib/checkout-error';
+import { friendlyCheckoutError, staleCheckoutLine } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 export default function CheckoutPage() {
@@ -19,6 +19,7 @@ export default function CheckoutPage() {
   const { user, loading } = useAuth();
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
+  const removeLine = useCart((s) => s.remove);
   const { total, hasKahati, downpayment } = useOrderTotals();
   // Kahati carts pay only the reservation downpayment now; the balance is
   // collected after the kahati ends.
@@ -76,6 +77,19 @@ export default function CheckoutPage() {
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
+        // A line the shop can no longer sell (delisted product, deleted or
+        // closed hatian) would loop the same 400 on every retry — the cart is
+        // persisted, so it never heals on its own. Drop the dead line, keep
+        // the rest of the cart, and say so without exposing raw ids.
+        const stale = res.status === 400 ? staleCheckoutLine(json.error ?? '') : null;
+        const deadLine = stale && items.find((i) =>
+          'refId' in stale ? i.refId === stale.refId : i.kind === 'group_buy' && i.name.startsWith(stale.kahatiName));
+        if (deadLine) {
+          removeLine(deadLine.key);
+          toast(`"${deadLine.name}" is no longer available and was removed from your cart.`);
+          setSubmitting(false);
+          return;
+        }
         // The upload-config 503 carries deploy jargon; friendlyCheckoutError
         // gives the customer a retryable message instead. Stock/validation
         // errors still show their own actionable text.
