@@ -6,6 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useCart } from '@/lib/store/cart';
+import { useToast } from '@/lib/store/toast';
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -113,6 +114,35 @@ describe('CheckoutPage', () => {
     await waitFor(() => expect(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
     const body = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].body as FormData;
     expect(body.get('courier')).toBe('Lalamove');
+  });
+
+  it('shields the customer from deploy jargon when uploads are unconfigured', async () => {
+    // The order API answers a missing ImageKit config with a 503 whose message
+    // names STORAGE_DRIVER / IMAGEKIT_*. The customer must never see that.
+    useToast.setState({ message: '' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        success: false,
+        error: 'File uploads are not configured: STORAGE_DRIVER=imagekit but IMAGEKIT_PRIVATE_KEY '
+          + 'and/or IMAGEKIT_URL_ENDPOINT are missing.',
+      }),
+    })));
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(useToast.getState().message).not.toBe(''));
+    const shown = useToast.getState().message;
+    expect(shown).not.toMatch(/STORAGE_DRIVER|IMAGEKIT/);
+    expect(shown).toMatch(/try again/i);
+    // A failed upload must not discard the cart or navigate away.
+    expect(useCart.getState().items).toHaveLength(1);
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('keeps the cart intact when the order fails', async () => {
