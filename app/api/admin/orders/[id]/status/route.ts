@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, orderItems, orderStatusHistory, moqCampaigns, moqProducts, users } from '@/lib/db';
+import { getDb, orders, orderItems, orderStatusHistory, groupBuys, moqCampaigns, moqProducts, products, users } from '@/lib/db';
 import { ORDER_STATUS_FLOW } from '@/lib/db/schema';
+import { vialsForOrderLine } from '@/lib/kahati-server';
 import { sendEmail, orderStatusEmail } from '@/lib/email';
 import { captureEvent, orderStatusEvent } from '@/lib/posthog';
 import { STATUS_LABEL } from '@/lib/order-status';
@@ -38,8 +39,9 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
     }).where(eq(orders.id, id)).returning();
     await tx.insert(orderStatusHistory).values({ orderId: id, status: b.status as never, note: b.note });
 
-    // Cancelling releases whatever the order was holding. Guard on the
-    // transition into 'cancelled' so re-cancelling never releases twice.
+    // Cancelling releases everything the order was holding: MOQ campaign kits,
+    // MOQ shelf stock, claimed kahati vials and drawn on-hand stock. Guard on
+    // the transition into 'cancelled' so re-cancelling never releases twice.
     if (order.status !== 'cancelled' && b.status === 'cancelled') {
       // Group-buy kits go back to the campaign so committed reflects only live
       // commitments; clamp at 0.
@@ -65,6 +67,35 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
           await tx.update(moqProducts)
             .set({ stock: sql`${moqProducts.stock} + ${line.qty}` })
             .where(eq(moqProducts.id, line.moqProductId));
+        }
+      }
+
+      // Kahati vials go back to the counter — a cancelled commitment must not
+      // count toward the 7-vial minimum or hold a slot others could claim. Only
+      // an OPEN hatian is decremented: a terminal one keeps its historical
+      // count of the batch that was (or wasn't) ordered. Clamped at 0.
+      const kahatiLines = await tx.select().from(orderItems)
+        .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'group_buy')));
+      for (const line of kahatiLines) {
+        if (line.groupBuyId) {
+          await tx.update(groupBuys)
+            .set({ claimedSlots: sql`GREATEST(${groupBuys.claimedSlots} - ${line.qty}, 0)` })
+            .where(and(eq(groupBuys.id, line.groupBuyId), eq(groupBuys.status, 'open')));
+        }
+      }
+
+      // On-hand vials return to stock, mirroring the restock the kahati sweep
+      // does (lib/kahati-server.ts releaseKahatiOrders). The unit lives in the
+      // spec snapshot, so vialsForOrderLine reads it back to size the return.
+      const onHandLines = await tx.select().from(orderItems)
+        .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'product')));
+      for (const line of onHandLines) {
+        if (line.productId) {
+          const vials = vialsForOrderLine(line.specSnapshot, line.qty);
+          await tx.update(products).set({
+            stock: sql`${products.stock} + ${vials}`,
+            soldCount: sql`GREATEST(${products.soldCount} - ${vials}, 0)`,
+          }).where(eq(products.id, line.productId));
         }
       }
     }

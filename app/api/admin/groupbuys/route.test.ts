@@ -135,7 +135,9 @@ describe('PATCH /api/admin/groupbuys/[id]', () => {
 
   it('does not silently reopen a hatian the admin explicitly closed', async () => {
     await signIn();
-    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    // At or above the 7-vial minimum a close stays a close. (Below it, closing
+    // is a cancellation by business rule — covered in [id]/lifecycle.test.ts.)
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
 
     await PATCH(patchReq(gb.id, { status: 'closed' }), { params: Promise.resolve({ id: gb.id }) });
 

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { OverlayShell } from '@/components/OverlayShell';
@@ -34,6 +34,10 @@ export default function CheckoutPage() {
   const [proof, setProof] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Minted once per submission and reused on retries, so the server can
+  // recognize a resubmitted checkout and replay the original orders instead of
+  // creating duplicates. A fresh submission after success gets a fresh key.
+  const idempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (user) { setName(user.name); setPhone(user.phone || ''); setAddress(user.address || ''); }
@@ -67,6 +71,8 @@ export default function CheckoutPage() {
       if (selectedMethod) fd.append('paymentMethod', selectedMethod.label);
       fd.append('courier', courier);
       fd.append('proof', proof);
+      if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
+      fd.append('idempotencyKey', idempotencyKey.current);
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
@@ -77,6 +83,7 @@ export default function CheckoutPage() {
         setSubmitting(false);
         return;
       }
+      idempotencyKey.current = null; // this submission is done; the next one is new
       clear();
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });

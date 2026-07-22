@@ -21,7 +21,7 @@ export const productSchema = z.object({
 // A hatian fills exactly one kit, so its vial cap and per-person minimum can
 // never exceed KAHATI_MAX_VIALS (10). Enforced here so the rule holds for every
 // caller, not just the admin form.
-export const groupBuySchema = z.object({
+const groupBuyFields = z.object({
   name: z.string().min(2).max(160),
   pricePerKitPhp: z.number().nonnegative(),
   totalSlots: z.number().int().positive()
@@ -37,6 +37,18 @@ export const groupBuySchema = z.object({
   arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
   description: z.string().max(2000).nullable().optional(),
 });
+
+// Create payload: claimed vials can never exceed the cap — an omitted cap
+// defaults to KAHATI_MAX_VIALS, so the bound still holds.
+export const groupBuySchema = groupBuyFields.refine(
+  (b) => (b.claimedSlots ?? 0) <= (b.totalSlots ?? KAHATI_MAX_VIALS),
+  { message: 'Claimed vials cannot exceed the vial cap.', path: ['claimedSlots'] },
+);
+
+// PATCH bodies are partial, so the cross-field cap check cannot live here — the
+// missing half is only known once merged with the current row. The route
+// validates the merged effective values instead.
+export const groupBuyPatchSchema = groupBuyFields.partial();
 
 // Text fields of a payment method. The QR image arrives as a separate multipart
 // File part, validated by lib/uploads, so it is not part of this schema.

@@ -2,19 +2,23 @@
 //
 // There is no scheduler in this app, so expired counters are resolved lazily:
 // callers invoke sweepExpiredKahatis() when they read the board (public + admin).
-// The auto-open on fill happens inside the checkout transaction (see the orders route).
+// The auto-open on fill happens inside the checkout transaction (see the orders
+// route) and on admin edits that fill the kit — both through closeFullKahati.
 //
 // A hatian succeeds at KAHATI_MIN_VIABLE_VIALS (7), not at the 10-vial cap. An
 // expired hatian at or above the minimum simply closes. Below it, the batch is
 // never ordered, so every participant's order is cancelled, any on-hand stock in
-// that order is returned, and the customer is emailed about their refund.
-import { and, eq, inArray, isNotNull, lt, ne, sql } from 'drizzle-orm';
+// that order is returned, and the customer is emailed about their refund. An
+// admin cancelling a hatian outright runs the same release flow (cancelKahati).
+import { and, eq, gte, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, users } from '@/lib/db';
-import { KAHATI_MIN_VIABLE_VIALS, resolveExpiredKahatiStatus } from './kahati';
+import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail } from './email';
 import { captureEvent } from './posthog';
 
+// A transaction handle exposes the same query surface as the root database, so
+// helpers here accept either — checkout calls closeFullKahati inside its tx.
 type Db = Awaited<ReturnType<typeof getDb>>;
 type GroupBuyRow = typeof groupBuys.$inferSelect;
 
@@ -24,10 +28,12 @@ export type KahatiSweepResult = {
   ordersCancelled: number;
 };
 
-type CancellationNotice = {
+export type CancellationNotice = {
   userId: string; name: string; email: string; orderId: string; orderNo: string;
   kahatiId: string; kahatiName: string; claimedSlots: number; downpayment: number;
 };
+
+export type KahatiCancellation = { row: GroupBuyRow; notices: CancellationNotice[] };
 
 // Vials an on-hand line drew from stock. The unit is not its own column — the
 // checkout route encodes it in the spec snapshot ("On-hand · kit of 10" vs
@@ -36,33 +42,78 @@ export function vialsForOrderLine(specSnapshot: string | null, qty: number): num
   return /\bkit\b/i.test(specSnapshot ?? '') ? qty * VIALS_PER_KIT : qty;
 }
 
-// Resolve OPEN hatians whose close deadline has passed. Idempotent: only rows
-// still 'open' with an elapsed deadline are touched, and the participant release
-// skips orders that are already cancelled.
+// An open hatian whose deadline elapsed without reaching the minimum. Reused by
+// the sweep's candidate read and by the guarded cancel transition, so the
+// condition acted on is always the condition re-checked.
+const expiredUnviable = (now: Date): SQL | undefined => and(
+  eq(groupBuys.status, 'open'),
+  isNotNull(groupBuys.closesAt),
+  lt(groupBuys.closesAt, now),
+  lt(groupBuys.claimedSlots, KAHATI_MIN_VIABLE_VIALS),
+);
+
+// Resolve OPEN hatians whose close deadline has passed. Both transitions are
+// guarded conditional UPDATEs — the WHERE re-checks status, deadline and
+// viability, and RETURNING decides which rows this sweep actually resolved. A
+// checkout racing the sweep therefore cannot strand a fresh order on a
+// cancelled hatian, and a hatian that just turned viable cannot be cancelled.
+// Idempotent: a repeat sweep matches nothing and releases nobody.
 export async function sweepExpiredKahatis(db: Db, now: Date = new Date()): Promise<KahatiSweepResult> {
-  const expired = await db.select().from(groupBuys).where(and(
-    eq(groupBuys.status, 'open'),
-    isNotNull(groupBuys.closesAt),
-    lt(groupBuys.closesAt, now),
-  ));
-  if (expired.length === 0) return { closed: [], cancelled: [], ordersCancelled: 0 };
+  const closed = await db.update(groupBuys).set({ status: 'closed' })
+    .where(and(
+      eq(groupBuys.status, 'open'),
+      isNotNull(groupBuys.closesAt),
+      lt(groupBuys.closesAt, now),
+      gte(groupBuys.claimedSlots, KAHATI_MIN_VIABLE_VIALS),
+    ))
+    .returning({ id: groupBuys.id });
 
-  const closed = expired.filter((g) => resolveExpiredKahatiStatus(g.claimedSlots) === 'closed');
-  const cancelled = expired.filter((g) => resolveExpiredKahatiStatus(g.claimedSlots) === 'cancelled');
+  const candidates = await db.select({ id: groupBuys.id }).from(groupBuys)
+    .where(expiredUnviable(now));
 
-  if (closed.length) {
-    await db.update(groupBuys).set({ status: 'closed' })
-      .where(inArray(groupBuys.id, closed.map((g) => g.id)));
-  }
-
+  const cancelled: string[] = [];
   const notices: CancellationNotice[] = [];
-  for (const g of cancelled) {
-    await db.update(groupBuys).set({ status: 'cancelled' }).where(eq(groupBuys.id, g.id));
-    notices.push(...await releaseKahatiOrders(db, g));
+  for (const candidate of candidates) {
+    const result = await cancelExpiredKahati(db, candidate.id, now);
+    if (!result) continue; // lost the race: turned viable or already resolved
+    cancelled.push(result.row.id);
+    notices.push(...result.notices);
   }
 
-  // Email only after the database work is settled — never notify about a
-  // cancellation that then fails to persist.
+  await notifyKahatiCancellations(notices);
+
+  return {
+    closed: closed.map((r) => r.id),
+    cancelled,
+    ordersCancelled: notices.length,
+  };
+}
+
+// Guarded transition for the sweep: cancel this hatian only if it is still an
+// expired, unviable, open counter. A stale decision — the row changed since it
+// was read — flips nothing, releases nothing and returns null.
+export async function cancelExpiredKahati(db: Db, id: string, now: Date): Promise<KahatiCancellation | null> {
+  return flipToCancelled(db, id, expiredUnviable(now));
+}
+
+// Admin cancellation: an explicit cancel releases the participants whatever the
+// counter's viability, guarded only against repeating an earlier cancel.
+export async function cancelKahati(db: Db, id: string): Promise<KahatiCancellation | null> {
+  return flipToCancelled(db, id, ne(groupBuys.status, 'cancelled'));
+}
+
+async function flipToCancelled(db: Db, id: string, guard: SQL | undefined): Promise<KahatiCancellation | null> {
+  const [row] = await db.update(groupBuys).set({ status: 'cancelled' })
+    .where(and(eq(groupBuys.id, id), guard))
+    .returning();
+  if (!row) return null;
+  return { row, notices: await releaseKahatiOrders(db, row) };
+}
+
+// Email + analytics for a batch of cancellations. Called only after the
+// database work is settled — never notify about a cancellation that then
+// fails to persist.
+export async function notifyKahatiCancellations(notices: CancellationNotice[]): Promise<void> {
   for (const notice of notices) {
     await sendEmail({
       to: notice.email,
@@ -84,12 +135,25 @@ export async function sweepExpiredKahatis(db: Db, now: Date = new Date()): Promi
       },
     });
   }
+}
 
-  return {
-    closed: closed.map((g) => g.id),
-    cancelled: cancelled.map((g) => g.id),
-    ordersCancelled: notices.length,
-  };
+// Reaching the cap completes this kit: close the counter and auto-open a fresh
+// sibling that inherits the product, price, cap, min, packing fee, arrival
+// group and deadline window. The flip is guarded on 'open' so two callers
+// racing the same fill can never clone two siblings; returns null for the
+// caller that lost. Shared by the checkout transaction and the admin edit.
+export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<GroupBuyRow | null> {
+  const [sealed] = await db.update(groupBuys).set({ status: 'closed' })
+    .where(and(eq(groupBuys.id, g.id), eq(groupBuys.status, 'open')))
+    .returning();
+  if (!sealed) return null;
+  await db.insert(groupBuys).values({
+    name: g.name, pricePerKitPhp: g.pricePerKitPhp, totalSlots: g.totalSlots,
+    claimedSlots: 0, minVials: g.minVials, repackFeePhp: g.repackFeePhp,
+    status: 'open', arrivalGroup: g.arrivalGroup, description: g.description,
+    closesAt: nextKahatiClosesAt(g.createdAt, g.closesAt, new Date()),
+  });
+  return sealed;
 }
 
 // Cancels every live order holding a line on a failed hatian and returns the

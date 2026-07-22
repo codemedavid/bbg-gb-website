@@ -198,6 +198,11 @@ export const orders = pgTable('orders', {
   shipAddress: text('ship_address').notNull(),
   paymentMethod: varchar('payment_method', { length: 40 }), // snapshot of chosen method label (Payment column: BDO/GoTyme)
   paymentProofKey: text('payment_proof_key'), // storage key of uploaded proof
+  // Client-generated checkout key stored as `${key}:${splitIndex}`. Unique, so a
+  // resubmitted checkout can never insert duplicate orders, while an intentional
+  // cart split (one order per mode, distinct indexes) still can. Null for orders
+  // placed without a key (older clients, admin flows).
+  idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
   trackingNo: varchar('tracking_no', { length: 80 }),
   // Weekly-report fulfilment fields (admin-editable). courier = Shipping column,
   // packedBy = the "Admin" handler column, totalUsd = the report's USD order total

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
 import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqProducts, paymentMethods } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
@@ -7,7 +7,8 @@ import {
   computeTotals, perVialPrice, splitKahatiDownpayment, validateKahatiCommit, round2,
   onHandUnitPrice, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
-import { isKahatiFull, nextKahatiClosesAt } from '@/lib/kahati';
+import { isKahatiFull } from '@/lib/kahati';
+import { closeFullKahati } from '@/lib/kahati-server';
 import { splitCartIntoOrders } from '@/lib/order-modes';
 import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
@@ -32,6 +33,9 @@ const checkoutSchema = z.object({
   paymentMethod: z.string().min(1).max(40).optional(),
   // Customer-chosen shipping method; only the offered options are accepted.
   courier: z.enum(SHIPPING_OPTIONS).optional(),
+  // Client-minted once per submission and reused on retries, so a resubmitted
+  // checkout replays the original orders instead of creating duplicates.
+  idempotencyKey: z.string().min(8).max(64).optional(),
 });
 
 // Checkout persists on-hand ('product'), kahati ('group_buy') and MOQ-shelf
@@ -59,13 +63,21 @@ export const POST = handler(async (req: Request) => {
     shipAddress: form.get('shipAddress'),
     paymentMethod: form.get('paymentMethod') ?? undefined,
     courier: form.get('courier') ?? undefined,
+    idempotencyKey: form.get('idempotencyKey') ?? undefined,
   });
+
+  const db = await getDb();
+
+  // A retry of an already-successful submission replays the original orders —
+  // no new rows, no new stock draws, no repeat emails.
+  if (body.idempotencyKey) {
+    const replayed = await findReplayedCheckout(db, session.sub, body.idempotencyKey);
+    if (replayed) return ok(replayed, 201);
+  }
 
   // Store the proof before opening the transaction — it is an external side effect.
   // A rolled-back order leaves an orphaned object, which is harmless.
   const proofKey = await validateAndStoreProof(form.get('proof'));
-
-  const db = await getDb();
   // Global packing-fee defaults; the on-hand fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
   const packingFees = await getPackingFees();
@@ -75,7 +87,7 @@ export const POST = handler(async (req: Request) => {
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
-  const created = await db.transaction(async (tx) => {
+  const placeOrders = () => db.transaction(async (tx) => {
     // Reject a payment method the customer could not actually have chosen.
     if (body.paymentMethod) {
       const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
@@ -178,32 +190,34 @@ export const POST = handler(async (req: Request) => {
         if (!check.ok) throw new ApiError(400, check.message!);
 
         // Claim the slots atomically. The guard lives in the UPDATE itself, so two
-        // concurrent commits cannot both pass a stale remaining-slots check and oversell.
+        // concurrent commits cannot both pass a stale remaining-slots check and
+        // oversell — and an elapsed deadline refuses the claim even before the
+        // lazy sweep has marked the counter closed.
+        const now = new Date();
         const [claimed] = await tx.update(groupBuys)
           .set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${it.qty}` })
           .where(and(
             eq(groupBuys.id, g.id),
             eq(groupBuys.status, 'open'),
+            or(isNull(groupBuys.closesAt), gt(groupBuys.closesAt, now)),
             sql`${groupBuys.claimedSlots} + ${it.qty} <= ${groupBuys.totalSlots}`,
           ))
           .returning({ claimedSlots: groupBuys.claimedSlots });
         if (!claimed) {
-          const [fresh] = await tx.select({ remaining: sql<number>`${groupBuys.totalSlots} - ${groupBuys.claimedSlots}` })
-            .from(groupBuys).where(eq(groupBuys.id, g.id));
-          throw new ApiError(400, `Only ${Math.max(fresh?.remaining ?? 0, 0)} vials left in this kahati.`);
+          const [fresh] = await tx.select().from(groupBuys).where(eq(groupBuys.id, g.id));
+          // Tell the customer what actually stopped them: a hatian past its
+          // deadline (or no longer open) has closed — vials did not "run out".
+          if (!fresh || fresh.status !== 'open' || (fresh.closesAt && fresh.closesAt <= now)) {
+            throw new ApiError(400, `Kahati "${g.name}" has already closed and is no longer accepting commitments.`);
+          }
+          throw new ApiError(400, `Only ${Math.max(fresh.totalSlots - fresh.claimedSlots, 0)} vials left in this kahati.`);
         }
 
-        // Reaching the cap completes this kit: close the counter and auto-open a
-        // fresh sibling that inherits the product, price, cap, min, packing fee,
-        // arrival group and deadline window. All inside the checkout transaction.
+        // Reaching the cap completes this kit: close the counter and auto-open
+        // the sibling batch — inside the checkout transaction, shared with the
+        // admin edit that fills a kit (lib/kahati-server.ts closeFullKahati).
         if (isKahatiFull(claimed.claimedSlots, g.totalSlots)) {
-          await tx.update(groupBuys).set({ status: 'closed' }).where(eq(groupBuys.id, g.id));
-          await tx.insert(groupBuys).values({
-            name: g.name, pricePerKitPhp: g.pricePerKitPhp, totalSlots: g.totalSlots,
-            claimedSlots: 0, minVials: g.minVials, repackFeePhp: g.repackFeePhp,
-            status: 'open', arrivalGroup: g.arrivalGroup, description: g.description,
-            closesAt: nextKahatiClosesAt(g.createdAt, g.closesAt, new Date()),
-          });
+          await closeFullKahati(tx, g);
         }
 
         priced.push({
@@ -227,7 +241,7 @@ export const POST = handler(async (req: Request) => {
     const drafts = splitCartIntoOrders(priced);
 
     const created = [];
-    for (const draft of drafts) {
+    for (const [splitIndex, draft] of drafts.entries()) {
       // splitCartIntoOrders preserves item identity, so each draft's items are the
       // same Priced objects and carry their snapshots through.
       const lines = draft.items as Priced[];
@@ -255,6 +269,9 @@ export const POST = handler(async (req: Request) => {
         courier: body.courier ?? DEFAULT_COURIER,
         // Each split order references the same proof — one payment covers the cart.
         paymentProofKey: proofKey,
+        // Keyed per split index: one submission may legitimately create several
+        // orders, but never the same one twice — the unique index enforces it.
+        idempotencyKey: body.idempotencyKey ? `${body.idempotencyKey}:${splitIndex}` : null,
       }).returning();
 
       await tx.insert(orderItems).values(lines.map((p) => ({
@@ -273,6 +290,21 @@ export const POST = handler(async (req: Request) => {
     // the guarded UPDATE above, kahati slots in the guarded claim.
     return created;
   });
+
+  let created: Awaited<ReturnType<typeof placeOrders>>;
+  try {
+    created = await placeOrders();
+  } catch (err) {
+    // Two racing submissions of the same checkout: the loser's transaction
+    // rolls back (stock draws included) on the unique idempotency key. If the
+    // winner's orders exist, this IS that race — replay them; anything else
+    // is a genuine failure and propagates.
+    if (body.idempotencyKey) {
+      const replayed = await findReplayedCheckout(db, session.sub, body.idempotencyKey);
+      if (replayed) return ok(replayed, 201);
+    }
+    throw err;
+  }
 
   // Notify only after the transaction commits — never announce a rolled-back order.
   // One email and one event per order: a split cart produces orders with different
@@ -306,6 +338,41 @@ export const POST = handler(async (req: Request) => {
     totals: first.totals,
   }, 201);
 });
+
+// Orders a previous submission with this idempotency key already created, in
+// the same success-payload shape POST returns — so a retry (double tap, two
+// tabs, refresh mid-submit) hands back the original order numbers instead of
+// writing new rows. Returns null when the key has created nothing yet.
+async function findReplayedCheckout(
+  db: Awaited<ReturnType<typeof getDb>>,
+  userId: string,
+  idempotencyKey: string,
+) {
+  const rows = await db.select().from(orders)
+    .where(and(eq(orders.userId, userId), like(orders.idempotencyKey, `${idempotencyKey}:%`)))
+    // ':0', ':1', … — split carts produce at most one order per mode, so the
+    // lexicographic order matches the original creation order.
+    .orderBy(orders.idempotencyKey);
+  if (!rows.length) return null;
+
+  const created = await Promise.all(rows.map(async (order) => {
+    const lines = await db.select({ id: orderItems.id }).from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+    return {
+      order,
+      orderNo: order.orderNo,
+      totals: {
+        subtotal: Number(order.subtotalPhp),
+        packingFee: Number(order.packingFeePhp),
+        total: Number(order.totalPhp),
+      },
+      lineCount: lines.length,
+    };
+  }));
+
+  const [first] = created;
+  return { orders: created, order: first.order, orderNo: first.orderNo, totals: first.totals };
+}
 
 export const GET = handler(async () => {
   const session = await requireSession();

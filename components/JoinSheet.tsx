@@ -14,8 +14,14 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
   const toast = useToast((s) => s.show);
 
   const clamp = (n: number) => Math.min(g.remaining, Math.max(g.minVials, n));
+  // Fewer vials open than this hatian's per-person minimum: the server would
+  // reject the commit, so don't let the customer attempt it.
+  const belowMinimum = g.remaining < g.minVials;
   const confirm = () => {
-    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty });
+    if (belowMinimum) return;
+    // `stock` carries the hatian's remaining vials so the cart clamps repeated
+    // Join taps to what is actually open instead of accumulating.
+    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty, stock: g.remaining });
     toast('Kahati claimed! Bayaran na ang downpayment.');
     onClose();
     // Send the buyer straight to checkout to pay the reservation downpayment,
@@ -51,7 +57,13 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
             <button onClick={() => setQty((q) => clamp(q + 1))} className="flex h-11 w-[42px] items-center justify-center text-[18px] font-bold text-ink-body">+</button>
           </div>
         </div>
-        <button onClick={confirm} className="block w-full rounded-[12px] bg-brand-green py-[15px] text-center text-[15px] font-bold text-white active:scale-[.99]">
+        {belowMinimum && (
+          <div className="mb-3 rounded-[10px] bg-warn-softbg px-3 py-2 text-[12px] leading-snug text-[#6b5a24]">
+            Only {g.remaining} vial(s) left in this hatian — below its {g.minVials}-vial minimum, so it can no longer be joined.
+          </div>
+        )}
+        <button onClick={confirm} disabled={belowMinimum}
+          className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${belowMinimum ? 'bg-[#b9c6b4]' : 'bg-brand-green active:scale-[.99]'}`}>
           Commit {qty} vials · {php(g.perVialPhp * qty)}
         </button>
       </div>
