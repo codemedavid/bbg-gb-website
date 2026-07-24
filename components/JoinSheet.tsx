@@ -9,19 +9,23 @@ import { useToast } from '@/lib/store/toast';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
   const router = useRouter();
-  const [qty, setQty] = useState(Math.min(g.remaining, Math.max(g.minVials, 1)));
+  const [qty, setQty] = useState(Math.min(g.totalSlots, Math.max(g.minVials, 1)));
   const add = useCart((s) => s.add);
   const toast = useToast((s) => s.show);
 
-  const clamp = (n: number) => Math.min(g.remaining, Math.max(g.minVials, n));
+  // Cap a single commitment at one kit, not the current counter's remainder: a
+  // customer may commit past what is open, and checkout rolls the overflow into
+  // the fresh sibling that filling this counter auto-opens.
+  const clamp = (n: number) => Math.min(g.totalSlots, Math.max(g.minVials, n));
   // Fewer vials open than this hatian's per-person minimum: the server would
   // reject the commit, so don't let the customer attempt it.
   const belowMinimum = g.remaining < g.minVials;
   const confirm = () => {
     if (belowMinimum) return;
-    // `stock` carries the hatian's remaining vials so the cart clamps repeated
-    // Join taps to what is actually open instead of accumulating.
-    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty, stock: g.remaining });
+    // `stock` carries the kit cap (one kit = totalSlots vials) so the cart clamps
+    // repeated Join taps to a full kit, letting the customer commit past what is
+    // currently open — checkout rolls any overflow into the auto-opened sibling.
+    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty, stock: g.totalSlots });
     toast('Kahati claimed! Bayaran na ang downpayment.');
     onClose();
     // Send the buyer straight to checkout to pay the reservation downpayment,
@@ -52,9 +56,9 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
             <strong className="font-display text-[20px] text-ink">{php(g.perVialPhp)}</strong>
           </div>
           <div className="flex items-center overflow-hidden rounded-[12px] border border-line bg-white">
-            <button onClick={() => setQty((q) => clamp(q - 1))} className="flex h-11 w-[42px] items-center justify-center text-[18px] font-bold text-ink-body">−</button>
+            <button aria-label="Remove one vial" onClick={() => setQty((q) => clamp(q - 1))} className="flex h-11 w-[42px] items-center justify-center text-[18px] font-bold text-ink-body">−</button>
             <span className="w-[34px] text-center text-[16px] font-bold">{qty}</span>
-            <button onClick={() => setQty((q) => clamp(q + 1))} className="flex h-11 w-[42px] items-center justify-center text-[18px] font-bold text-ink-body">+</button>
+            <button aria-label="Add one vial" onClick={() => setQty((q) => clamp(q + 1))} className="flex h-11 w-[42px] items-center justify-center text-[18px] font-bold text-ink-body">+</button>
           </div>
         </div>
         {belowMinimum && (
