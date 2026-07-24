@@ -50,12 +50,24 @@ describe('admin-editable packing-fee overrides', () => {
     expect(packingFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }])).toBe(250);
     expect(packingFeeFor([{ kind: 'moq_campaign', unitPricePhp: 10400, qty: 1, packingFeePhp: 400 }])).toBe(400);
   });
-  it('takes the highest override across items of the same mode', () => {
+  it('sums a packing fee per placement, even within one mode', () => {
+    // Client rule: bawat placement sa ibat ibang peps may sariling packing fee.
     const items: PriceableItem[] = [
       { kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 150 },
       { kind: 'group_buy', unitPricePhp: 800, qty: 7, packingFeePhp: 220 },
     ];
-    expect(packingFeeFor(items)).toBe(220);
+    expect(packingFeeFor(items)).toBe(370);
+  });
+  it('charges two hatian fees for two distinct kahati placements', () => {
+    expect(packingFeeFor([kahati(900), kahati(800)])).toBe(PACKING_FEE_PHP.kahati * 2);
+  });
+  it('counts overflow fragments that share a placementKey as one fee', () => {
+    // One customer commitment that rolls across two counters is still one placement.
+    const items: PriceableItem[] = [
+      { kind: 'group_buy', unitPricePhp: 900, qty: 3, packingFeePhp: 150, placementKey: 'gb:1' },
+      { kind: 'group_buy', unitPricePhp: 900, qty: 2, packingFeePhp: 150, placementKey: 'gb:1' },
+    ];
+    expect(packingFeeFor(items)).toBe(150);
   });
   it('falls back to the mode default when an item sets no override', () => {
     expect(packingFeeFor([kahati(900)])).toBe(PACKING_FEE_PHP.kahati);

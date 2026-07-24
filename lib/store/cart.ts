@@ -100,24 +100,17 @@ export const useCart = create<CartState>()(
   )
 );
 
-// Mirrors lib/pricing.ts packingFeeFor: one packing fee per fulfillment mode
-// present (local shipping included, no admin fee). The cart holds on-hand
-// (product), kahati (group_buy) and MOQ-shelf (moq) items — Group Buy (MOQ
-// campaign) commitments still go through their own flow.
+// Mirrors lib/pricing.ts packingFeeFor: one packing fee per placement (each
+// distinct listing the customer added), local shipping included, no admin fee.
+// Client rule — "bawat placement sa ibat ibang peps may sariling packing fee":
+// two different hatians are two fees, two MOQ products are two fees. Every cart
+// line is its own placement (keys are unique), so this sums straight across.
 //
-// `fees` is the admin-editable set fetched at display time. Both legs read from
-// it: the kahati leg previously fell back to the PACKING_FEE_PHP constant, so
-// editing the Hatian packing fee in the admin panel never reached the cart.
-// A per-listing fee on a kahati item still wins over the global default.
-export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE_PHP): number => {
-  let total = 0;
-  if (items.some((i) => i.kind === 'product')) total += fees.solo;
-  const kahatiFees = items.filter((i) => i.kind === 'group_buy').map((i) => i.packingFeePhp ?? fees.kahati);
-  if (kahatiFees.length) total += Math.max(...kahatiFees);
-  const moqFees = items.filter((i) => i.kind === 'moq_product').map((i) => i.packingFeePhp ?? fees.moq);
-  if (moqFees.length) total += Math.max(...moqFees);
-  return total;
-};
+// `fees` is the admin-editable set fetched at display time; a per-listing fee on
+// a line still wins over its mode default.
+const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_product: 'moq' } as const;
+export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE_PHP): number =>
+  items.reduce((total, i) => total + (i.packingFeePhp ?? fees[CART_KIND_MODE[i.kind]]), 0);
 
 // Builds the cart line for an MOQ product. Lives here rather than inline in the
 // MOQ board so the cart->checkout contract test can exercise the exact line the

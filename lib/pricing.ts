@@ -40,6 +40,10 @@ export type PriceableItem = {
   // Admin-editable per-listing packing fee (local shipping included). When omitted,
   // the item's mode default from PACKING_FEE_PHP applies.
   packingFeePhp?: number;
+  // Groups fragments of one customer placement so they count as a single fee. A
+  // kahati commitment that rolls across two counters (overflow) emits one priced
+  // line per counter, both sharing this key. Omitted = the item is its own placement.
+  placementKey?: string;
 };
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -61,28 +65,30 @@ export function subtotal(items: PriceableItem[]): number {
   return round2(items.reduce((sum, i) => sum + i.unitPricePhp * i.qty, 0));
 }
 
-const MODE_KIND: Record<PackingMode, PriceableItem['kind']> = {
-  solo: 'product',
-  kahati: 'group_buy',
-  group_buy: 'moq_campaign',
-  moq: 'moq_product',
+const KIND_MODE: Record<PriceableItem['kind'], PackingMode> = {
+  product: 'solo',
+  group_buy: 'kahati',
+  moq_campaign: 'group_buy',
+  moq_product: 'moq',
 };
 
-// Packing fee for the items of a single mode: the highest per-listing override
-// among them, falling back to the mode default when none override.
-function packingFeeForMode(items: PriceableItem[], mode: PackingMode): number {
-  const modeItems = items.filter((i) => i.kind === MODE_KIND[mode]);
-  if (modeItems.length === 0) return 0;
-  const fees = modeItems.map((i) => i.packingFeePhp ?? PACKING_FEE_PHP[mode]);
-  return round2(Math.max(...fees));
-}
-
-// Total packing fee: one fee per fulfillment mode present. Each mode checks out
-// as its own order, so a mixed cart sums a packing fee per mode. Local shipping
-// is already included in every packing fee; there is no separate shipping or admin fee.
+// Total packing fee: one fee per placement (distinct listing the customer chose).
+// Client rule — "bawat placement sa ibat ibang peps may sariling packing fee": two
+// different hatians are two fees, two MOQ products are two fees, and so on. An
+// item's per-listing override wins over its mode default. Overflow fragments that
+// share a placementKey collapse to one fee, since they are one customer placement.
+// Local shipping is already included in every packing fee; no separate shipping
+// or admin fee is ever added.
 export function packingFeeFor(items: PriceableItem[]): number {
-  const modes: PackingMode[] = ['solo', 'kahati', 'group_buy', 'moq'];
-  return round2(modes.reduce((sum, mode) => sum + packingFeeForMode(items, mode), 0));
+  const counted = new Set<string>();
+  let total = 0;
+  items.forEach((item, index) => {
+    const key = item.placementKey ?? `#${index}`;
+    if (counted.has(key)) return;
+    counted.add(key);
+    total += item.packingFeePhp ?? PACKING_FEE_PHP[KIND_MODE[item.kind]];
+  });
+  return round2(total);
 }
 
 export type OrderTotals = {
