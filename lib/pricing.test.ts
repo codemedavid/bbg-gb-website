@@ -50,22 +50,25 @@ describe('admin-editable packing-fee overrides', () => {
     expect(packingFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }])).toBe(250);
     expect(packingFeeFor([{ kind: 'moq_campaign', unitPricePhp: 10400, qty: 1, packingFeePhp: 400 }])).toBe(400);
   });
-  it('sums a packing fee per placement, even within one mode', () => {
-    // Client rule: bawat placement sa ibat ibang peps may sariling packing fee.
+  it('charges one fee per mode even with several placements — the largest applies', () => {
+    // Client rule: the packing fee is per checkout/parcel, not per product. Two
+    // hatians ship in one kahati parcel, so they pay one packing fee — the larger
+    // of the two, since the parcel costs at least its priciest item to pack.
     const items: PriceableItem[] = [
       { kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 150 },
       { kind: 'group_buy', unitPricePhp: 800, qty: 7, packingFeePhp: 220 },
     ];
-    expect(packingFeeFor(items)).toBe(370);
+    expect(packingFeeFor(items)).toBe(220);
   });
-  it('charges two hatian fees for two distinct kahati placements', () => {
-    expect(packingFeeFor([kahati(900), kahati(800)])).toBe(PACKING_FEE_PHP.kahati * 2);
+  it('charges a single hatian fee for two distinct kahati placements', () => {
+    expect(packingFeeFor([kahati(900), kahati(800)])).toBe(PACKING_FEE_PHP.kahati);
   });
-  it('counts overflow fragments that share a placementKey as one fee', () => {
-    // One customer commitment that rolls across two counters is still one placement.
+  it('charges one fee for overflow fragments — same mode, one parcel', () => {
+    // A commitment that rolls across two counters emits two kahati lines; they
+    // ship as one parcel, so one packing fee — no per-placement bookkeeping needed.
     const items: PriceableItem[] = [
-      { kind: 'group_buy', unitPricePhp: 900, qty: 3, packingFeePhp: 150, placementKey: 'gb:1' },
-      { kind: 'group_buy', unitPricePhp: 900, qty: 2, packingFeePhp: 150, placementKey: 'gb:1' },
+      { kind: 'group_buy', unitPricePhp: 900, qty: 3, packingFeePhp: 150 },
+      { kind: 'group_buy', unitPricePhp: 900, qty: 2, packingFeePhp: 150 },
     ];
     expect(packingFeeFor(items)).toBe(150);
   });

@@ -41,9 +41,11 @@ describe('packingFeeFor', () => {
     expect(packingFeeFor([onHand(), kahati()], fees)).toBe(350);
   });
 
-  it('sums a fee per kahati placement — different peps each pay their own', () => {
+  it('charges one hatian fee for two kahati placements — the largest applies', () => {
+    // Packing fee is per checkout/parcel, not per product: both hatians ship in one
+    // kahati parcel, so one fee — the larger of the two listing fees.
     const items = [kahati({ key: 'gb:a', packingFeePhp: 120 }), kahati({ key: 'gb:b', packingFeePhp: 210 })];
-    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(330);
+    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(210);
   });
 
   it('charges nothing for an empty cart', () => {
