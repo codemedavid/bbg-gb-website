@@ -22,7 +22,7 @@ vi.mock('@/lib/session', () => {
   };
 });
 
-const { sweepExpiredKahatis } = await import('./kahati-server');
+const { sweepExpiredKahatis, closeFullKahati } = await import('./kahati-server');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { getDb, groupBuys, orders, orderItems, orderStatusHistory, emailLog, products } = await import('@/lib/db');
 const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
@@ -262,5 +262,23 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
 
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
     expect(lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe('closeFullKahati returns both the sealed counter and the opened sibling', () => {
+  it('seals the full counter and hands back the fresh open sibling', async () => {
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 10, minVials: 1, name: 'Reta 20mg', pricePerKitPhp: 9000 });
+    const db = await getDb();
+    const [row] = await db.select().from(groupBuys).where(eq(groupBuys.id, gb.id));
+
+    const result = await closeFullKahati(db, row);
+
+    expect(result).not.toBeNull();
+    expect(result!.sealed).toMatchObject({ id: gb.id, status: 'closed' });
+    // The sibling is a distinct, empty, open counter inheriting the listing.
+    expect(result!.opened.id).not.toBe(gb.id);
+    expect(result!.opened).toMatchObject({
+      name: 'Reta 20mg', totalSlots: 10, minVials: 1, claimedSlots: 0, status: 'open',
+    });
   });
 });

@@ -137,23 +137,27 @@ export async function notifyKahatiCancellations(notices: CancellationNotice[]): 
   }
 }
 
+export type KahatiRollover = { sealed: GroupBuyRow; opened: GroupBuyRow };
+
 // Reaching the cap completes this kit: close the counter and auto-open a fresh
 // sibling that inherits the product, price, cap, min, packing fee, arrival
 // group and deadline window. The flip is guarded on 'open' so two callers
 // racing the same fill can never clone two siblings; returns null for the
 // caller that lost. Shared by the checkout transaction and the admin edit.
-export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<GroupBuyRow | null> {
+// Returns both rows so a checkout that over-committed can roll its overflow
+// straight into the freshly opened sibling.
+export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<KahatiRollover | null> {
   const [sealed] = await db.update(groupBuys).set({ status: 'closed' })
     .where(and(eq(groupBuys.id, g.id), eq(groupBuys.status, 'open')))
     .returning();
   if (!sealed) return null;
-  await db.insert(groupBuys).values({
+  const [opened] = await db.insert(groupBuys).values({
     name: g.name, pricePerKitPhp: g.pricePerKitPhp, totalSlots: g.totalSlots,
     claimedSlots: 0, minVials: g.minVials, repackFeePhp: g.repackFeePhp,
     status: 'open', arrivalGroup: g.arrivalGroup, description: g.description,
     closesAt: nextKahatiClosesAt(g.createdAt, g.closesAt, new Date()),
-  });
-  return sealed;
+  }).returning();
+  return { sealed, opened };
 }
 
 // Cancels every live order holding a line on a failed hatian and returns the

@@ -393,18 +393,22 @@ describe('checkout concurrency', () => {
     expect(new Set(rows.map((r) => r.orderNo)).size).toBe(2);
   });
 
-  it('never oversells kahati slots under concurrent commits', async () => {
+  it('caps a counter at its slot limit and rolls overflow into a sibling', async () => {
     await signIn();
-    // 10 slots, min 7: exactly one of two concurrent 7-vial commits can fit.
+    // 10 slots: two 7-vial commits = 14 vials. Neither is rejected now — the
+    // counter fills to 10 and the remaining 4 roll into a fresh sibling. The
+    // enduring invariant is that no counter is ever pushed past its cap.
     const gb = await makeGroupBuy({ totalSlots: 10, minVials: 7 });
     const item = [{ kind: 'group_buy', refId: gb.id, qty: 7 }];
 
     const results = await Promise.all([POST(checkoutRequest(item)), POST(checkoutRequest(item))]);
 
-    expect(results.filter((r) => r.status === 201)).toHaveLength(1);
-    expect(results.filter((r) => r.status === 400)).toHaveLength(1);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 201]);
     const db = await getDb();
-    const [row] = await db.select({ claimed: groupBuys.claimedSlots }).from(groupBuys).where(eq(groupBuys.id, gb.id));
-    expect(row.claimed).toBe(7);
+    const rows = await db.select().from(groupBuys);
+    expect(rows.every((r) => r.claimedSlots <= r.totalSlots)).toBe(true);
+    expect(rows.reduce((sum, r) => sum + r.claimedSlots, 0)).toBe(14);
+    const [original] = rows.filter((r) => r.id === gb.id);
+    expect(original.claimedSlots).toBe(10);
   });
 });

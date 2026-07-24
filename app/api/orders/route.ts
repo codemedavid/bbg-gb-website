@@ -4,7 +4,7 @@ import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moq
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
-  computeTotals, perVialPrice, splitKahatiDownpayment, validateKahatiCommit, round2,
+  computeTotals, perVialPrice, splitKahatiDownpayment, round2,
   onHandUnitPrice, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
@@ -185,51 +185,83 @@ export const POST = handler(async (req: Request) => {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
         if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
-        // Honour this group buy's admin-editable minimum, not just the global default.
-        const check = validateKahatiCommit(it.qty, g.totalSlots - g.claimedSlots, g.minVials);
-        if (!check.ok) throw new ApiError(400, check.message!);
+        // Validate the whole commitment up front. Overflow rolls into freshly
+        // opened sibling counters, so the ceiling is one kit (totalSlots), not
+        // the current counter's remaining vials. Honour the group buy's
+        // admin-editable per-person minimum, not just the global default.
+        if (!Number.isInteger(it.qty) || it.qty < g.minVials) {
+          throw new ApiError(400, `Minimum kahati commitment is ${g.minVials} vials.`);
+        }
+        if (it.qty > g.totalSlots) {
+          throw new ApiError(400, `A single kahati commitment can be at most ${g.totalSlots} vials.`);
+        }
 
-        // Claim the slots atomically. The guard lives in the UPDATE itself, so two
-        // concurrent commits cannot both pass a stale remaining-slots check and
-        // oversell — and an elapsed deadline refuses the claim even before the
-        // lazy sweep has marked the counter closed.
+        // Claim across counters. Fill the current counter; when it caps, that
+        // fill closes it and auto-opens a fresh sibling (the "reset" the client
+        // asked for), and the remainder rolls into that sibling instead of being
+        // rejected. Each claim is guarded in its UPDATE, so concurrent commits
+        // can never oversell a counter or push one past its cap. The whole
+        // commitment is one placement: every fragment shares a placementKey so
+        // it checks out under a single packing fee.
         const now = new Date();
-        const [claimed] = await tx.update(groupBuys)
-          .set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${it.qty}` })
-          .where(and(
-            eq(groupBuys.id, g.id),
-            eq(groupBuys.status, 'open'),
-            or(isNull(groupBuys.closesAt), gt(groupBuys.closesAt, now)),
-            sql`${groupBuys.claimedSlots} + ${it.qty} <= ${groupBuys.totalSlots}`,
-          ))
-          .returning({ claimedSlots: groupBuys.claimedSlots });
-        if (!claimed) {
-          const [fresh] = await tx.select().from(groupBuys).where(eq(groupBuys.id, g.id));
-          // Tell the customer what actually stopped them: a hatian past its
-          // deadline (or no longer open) has closed — vials did not "run out".
-          if (!fresh || fresh.status !== 'open' || (fresh.closesAt && fresh.closesAt <= now)) {
-            throw new ApiError(400, `Kahati "${g.name}" has already closed and is no longer accepting commitments.`);
+        const placementKey = `gb:${g.id}`;
+        let current = g;
+        let remaining = it.qty;
+        while (remaining > 0) {
+          const openSlots = current.totalSlots - current.claimedSlots;
+          // A full-but-still-open counter (e.g. an admin over-edit) has no room;
+          // close it and roll straight into its sibling rather than claiming 0.
+          if (openSlots <= 0) {
+            const rolled = await closeFullKahati(tx, current);
+            if (!rolled) throw new ApiError(409, `Kahati "${g.name}" just rolled over — please try again.`);
+            current = rolled.opened;
+            continue;
           }
-          throw new ApiError(400, `Only ${Math.max(fresh.totalSlots - fresh.claimedSlots, 0)} vials left in this kahati.`);
-        }
+          const take = Math.min(remaining, openSlots);
+          const [claimed] = await tx.update(groupBuys)
+            .set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${take}` })
+            .where(and(
+              eq(groupBuys.id, current.id),
+              eq(groupBuys.status, 'open'),
+              or(isNull(groupBuys.closesAt), gt(groupBuys.closesAt, now)),
+              sql`${groupBuys.claimedSlots} + ${take} <= ${groupBuys.totalSlots}`,
+            ))
+            .returning({ claimedSlots: groupBuys.claimedSlots });
+          if (!claimed) {
+            const [fresh] = await tx.select().from(groupBuys).where(eq(groupBuys.id, current.id));
+            // Tell the customer what actually stopped them: a hatian past its
+            // deadline (or no longer open) has closed — vials did not "run out".
+            if (!fresh || fresh.status !== 'open' || (fresh.closesAt && fresh.closesAt <= now)) {
+              throw new ApiError(400, `Kahati "${g.name}" has already closed and is no longer accepting commitments.`);
+            }
+            throw new ApiError(400, `Only ${Math.max(fresh.totalSlots - fresh.claimedSlots, 0)} vials left in this kahati.`);
+          }
 
-        // Reaching the cap completes this kit: close the counter and auto-open
-        // the sibling batch — inside the checkout transaction, shared with the
-        // admin edit that fills a kit (lib/kahati-server.ts closeFullKahati).
-        if (isKahatiFull(claimed.claimedSlots, g.totalSlots)) {
-          await closeFullKahati(tx, g);
-        }
+          priced.push({
+            kind: 'group_buy',
+            unitPricePhp: perVialPrice(Number(current.pricePerKitPhp)),
+            unitPriceUsd: null, // kahati vials are priced in PHP only
+            qty: take,
+            packingFeePhp: Number(current.repackFeePhp), // kahati packing fee, admin-editable per group buy
+            placementKey, // shared across overflow fragments -> one packing fee
+            nameSnapshot: `${current.name} — kahati`,
+            specSnapshot: `Kahati · min ${current.minVials} vials`,
+            groupBuyId: current.id,
+          });
 
-        priced.push({
-          kind: 'group_buy',
-          unitPricePhp: perVialPrice(Number(g.pricePerKitPhp)),
-          unitPriceUsd: null, // kahati vials are priced in PHP only
-          qty: it.qty,
-          packingFeePhp: Number(g.repackFeePhp), // kahati packing fee, admin-editable per group buy
-          nameSnapshot: `${g.name} — kahati`,
-          specSnapshot: `Kahati · min ${g.minVials} vials`,
-          groupBuyId: g.id,
-        });
+          remaining -= take;
+
+          // Reaching the cap completes this kit: close the counter and auto-open
+          // the sibling batch — inside the checkout transaction, shared with the
+          // admin edit that fills a kit (lib/kahati-server.ts closeFullKahati).
+          if (isKahatiFull(claimed.claimedSlots, current.totalSlots)) {
+            const rolled = await closeFullKahati(tx, current);
+            if (remaining > 0) {
+              if (!rolled) throw new ApiError(409, `Kahati "${g.name}" just rolled over — please try again.`);
+              current = rolled.opened; // place the overflow into the fresh sibling
+            }
+          }
+        }
       }
     }
 

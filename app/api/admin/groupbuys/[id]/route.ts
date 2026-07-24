@@ -64,8 +64,8 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   // off the effective post-edit state — the admin form always sends a status,
   // so "status present" must not suppress the rule.
   if (row.status === 'open' && isKahatiFull(row.claimedSlots, row.totalSlots)) {
-    const sealed = await closeFullKahati(db, row);
-    return ok(sealed ?? row);
+    const rollover = await closeFullKahati(db, row);
+    return ok(rollover?.sealed ?? row);
   }
   return ok(row);
 });
