@@ -6,8 +6,8 @@
 // closes it and auto-opens a fresh sibling) and roll the remainder into that
 // sibling — never reject the excess, never push a counter past 10.
 //
-// The customer made ONE placement, so it still carries ONE packing fee even
-// though it lands in two counters (two order lines, shared placementKey).
+// Both order lines are the same (kahati) mode, so the commitment carries ONE
+// packing fee even though it lands in two counters — one fee per parcel.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 

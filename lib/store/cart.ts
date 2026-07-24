@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees } from '@/lib/pricing';
+import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
 import type { MoqProduct } from '@/lib/types';
 
 // `kind` is the wire contract with POST /api/orders: app/checkout/page.tsx
@@ -100,17 +100,27 @@ export const useCart = create<CartState>()(
   )
 );
 
-// Mirrors lib/pricing.ts packingFeeFor: one packing fee per placement (each
-// distinct listing the customer added), local shipping included, no admin fee.
-// Client rule — "bawat placement sa ibat ibang peps may sariling packing fee":
-// two different hatians are two fees, two MOQ products are two fees. Every cart
-// line is its own placement (keys are unique), so this sums straight across.
+// Mirrors lib/pricing.ts packingFeeFor: one packing fee per fulfillment mode
+// present (each mode ships as its own parcel), local shipping included, no admin
+// fee. Client rule — "packing fee per checkout, hindi per product": several
+// different vials/products that ship together are one fee, not one each. Within a
+// mode the largest listing fee applies, since the parcel costs at least its
+// priciest item to pack. A cart mixing modes adds one fee per mode.
 //
 // `fees` is the admin-editable set fetched at display time; a per-listing fee on
 // a line still wins over its mode default.
 const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_product: 'moq' } as const;
-export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE_PHP): number =>
-  items.reduce((total, i) => total + (i.packingFeePhp ?? fees[CART_KIND_MODE[i.kind]]), 0);
+export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE_PHP): number => {
+  const feeByMode = new Map<PackingMode, number>();
+  for (const i of items) {
+    const mode = CART_KIND_MODE[i.kind];
+    const fee = i.packingFeePhp ?? fees[mode];
+    feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
+  }
+  let total = 0;
+  for (const fee of feeByMode.values()) total += fee;
+  return total;
+};
 
 // Builds the cart line for an MOQ product. Lives here rather than inline in the
 // MOQ board so the cart->checkout contract test can exercise the exact line the

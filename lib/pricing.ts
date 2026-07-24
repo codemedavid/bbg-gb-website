@@ -1,8 +1,9 @@
 // Central order/pricing rules for BBG Peptides.
-// One packing fee per order, priced by fulfillment mode. The packing fee already
-// includes local shipping (SF) — there is no separate shipping or admin fee.
-// A cart that mixes modes checks out as one order per mode, each carrying its own
-// packing fee, so a mixed-cart total sums one packing fee per mode present.
+// One packing fee per checkout parcel, priced by fulfillment mode. The packing fee
+// already includes local shipping (SF) — there is no separate shipping or admin fee.
+// A cart that mixes modes checks out as one order per mode (each ships as its own
+// parcel), so a mixed-cart total sums one packing fee per mode present — never one
+// per product. Buying several different vials/products in one parcel is one fee.
 
 // Per-mode packing-fee defaults (PHP, local shipping included). Admin-editable:
 // these are the fallback defaults; a per-listing override on the item wins.
@@ -40,10 +41,6 @@ export type PriceableItem = {
   // Admin-editable per-listing packing fee (local shipping included). When omitted,
   // the item's mode default from PACKING_FEE_PHP applies.
   packingFeePhp?: number;
-  // Groups fragments of one customer placement so they count as a single fee. A
-  // kahati commitment that rolls across two counters (overflow) emits one priced
-  // line per counter, both sharing this key. Omitted = the item is its own placement.
-  placementKey?: string;
 };
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -72,22 +69,23 @@ const KIND_MODE: Record<PriceableItem['kind'], PackingMode> = {
   moq_product: 'moq',
 };
 
-// Total packing fee: one fee per placement (distinct listing the customer chose).
-// Client rule — "bawat placement sa ibat ibang peps may sariling packing fee": two
-// different hatians are two fees, two MOQ products are two fees, and so on. An
-// item's per-listing override wins over its mode default. Overflow fragments that
-// share a placementKey collapse to one fee, since they are one customer placement.
-// Local shipping is already included in every packing fee; no separate shipping
-// or admin fee is ever added.
+// Total packing fee: one fee per fulfillment mode present (each mode ships as its
+// own parcel). Client rule — "packing fee per checkout, hindi per product": buying
+// several different vials/products that ship together is one fee, not one each. Two
+// hatians in the same kahati parcel are one fee; a cart that also has on-hand items
+// adds a second fee for that separate parcel. When listings within a mode carry
+// different per-listing fees, the parcel is charged the largest — it costs at least
+// its priciest item to pack. Local shipping is already included in every packing
+// fee; no separate shipping or admin fee is ever added.
 export function packingFeeFor(items: PriceableItem[]): number {
-  const counted = new Set<string>();
+  const feeByMode = new Map<PackingMode, number>();
+  for (const item of items) {
+    const mode = KIND_MODE[item.kind];
+    const fee = item.packingFeePhp ?? PACKING_FEE_PHP[mode];
+    feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
+  }
   let total = 0;
-  items.forEach((item, index) => {
-    const key = item.placementKey ?? `#${index}`;
-    if (counted.has(key)) return;
-    counted.add(key);
-    total += item.packingFeePhp ?? PACKING_FEE_PHP[KIND_MODE[item.kind]];
-  });
+  for (const fee of feeByMode.values()) total += fee;
   return round2(total);
 }
 

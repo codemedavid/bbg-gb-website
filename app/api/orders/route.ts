@@ -200,11 +200,10 @@ export const POST = handler(async (req: Request) => {
         // fill closes it and auto-opens a fresh sibling (the "reset" the client
         // asked for), and the remainder rolls into that sibling instead of being
         // rejected. Each claim is guarded in its UPDATE, so concurrent commits
-        // can never oversell a counter or push one past its cap. The whole
-        // commitment is one placement: every fragment shares a placementKey so
-        // it checks out under a single packing fee.
+        // can never oversell a counter or push one past its cap. Both fragments
+        // are the same (kahati) mode, so they check out under a single packing
+        // fee — one fee per parcel, regardless of how many counters it spans.
         const now = new Date();
-        const placementKey = `gb:${g.id}`;
         let current = g;
         let remaining = it.qty;
         while (remaining > 0) {
@@ -243,7 +242,6 @@ export const POST = handler(async (req: Request) => {
             unitPriceUsd: null, // kahati vials are priced in PHP only
             qty: take,
             packingFeePhp: Number(current.repackFeePhp), // kahati packing fee, admin-editable per group buy
-            placementKey, // shared across overflow fragments -> one packing fee
             nameSnapshot: `${current.name} — kahati`,
             specSnapshot: `Kahati · min ${current.minVials} vials`,
             groupBuyId: current.id,
