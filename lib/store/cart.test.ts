@@ -20,32 +20,30 @@ const kahati = (o: Partial<CartItem> = {}): CartItem => ({
 describe('packingFeeFor', () => {
   it('falls back to the code defaults when no admin fees are supplied', () => {
     expect(packingFeeFor([onHand()])).toBe(PACKING_FEE_PHP.solo);
-    expect(packingFeeFor([kahati()])).toBe(PACKING_FEE_PHP.kahati);
   });
 
   it('uses the admin on-hand fee for an on-hand cart', () => {
     expect(packingFeeFor([onHand()], { solo: 275, kahati: 150, group_buy: 300, moq: 300 })).toBe(275);
   });
 
-  it('uses the admin hatian fee when the listing carries no override', () => {
-    // Regression: the kahati leg ignored the admin settings entirely.
-    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(99);
+  it('charges nothing for a kahati cart — the hatian fee is deferred to settlement', () => {
+    expect(packingFeeFor([kahati()])).toBe(0);
+    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(0);
   });
 
-  it('lets a per-listing kahati fee override the admin default', () => {
-    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(180);
+  it('ignores a per-listing kahati fee at commit time — it is charged at settlement', () => {
+    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(0);
   });
 
-  it('charges one fee per mode present in a mixed cart', () => {
+  it('charges one fee per charged-at-checkout mode in a mixed cart', () => {
     const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
-    expect(packingFeeFor([onHand(), kahati()], fees)).toBe(350);
+    // The hatian leg adds nothing now; only the on-hand parcel is billed.
+    expect(packingFeeFor([onHand(), kahati()], fees)).toBe(200);
   });
 
-  it('charges one hatian fee for two kahati placements — the largest applies', () => {
-    // Packing fee is per checkout/parcel, not per product: both hatians ship in one
-    // kahati parcel, so one fee — the larger of the two listing fees.
+  it('charges nothing for two kahati placements — one fee follows at settlement', () => {
     const items = [kahati({ key: 'gb:a', packingFeePhp: 120 }), kahati({ key: 'gb:b', packingFeePhp: 210 })];
-    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(210);
+    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(0);
   });
 
   it('charges nothing for an empty cart', () => {

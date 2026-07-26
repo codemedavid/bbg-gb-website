@@ -89,7 +89,9 @@ describe('mixed cart splits into one order per mode', () => {
         [o.order.buyType, o.totals.packingFee]),
     );
     expect(byMode.solo).toBe(200);
-    expect(byMode.kahati).toBe(150);
+    // The hatian parcel is not billed at commit time — one fee is charged when
+    // the customer settles their completed hatian orders.
+    expect(byMode.kahati).toBe(0);
   });
 
   it('keeps each order total to its own lines', async () => {

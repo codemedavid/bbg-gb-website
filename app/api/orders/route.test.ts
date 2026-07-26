@@ -183,13 +183,29 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(400);
   });
 
-  it('charges the group buy packing fee (admin-editable per kahati)', async () => {
+  it('charges no packing fee on a hatian commitment — it is collected at settlement', async () => {
     await signIn();
     const gb = await makeGroupBuy({ repackFeePhp: 200, pricePerKitPhp: 9000 });
     const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
     const body = await res.json();
     expect(res.status).toBe(201);
-    expect(body.data.totals).toMatchObject({ packingFee: 200, total: 900 * 7 + 200 });
+    expect(body.data.totals).toMatchObject({ packingFee: 0, total: 900 * 7 });
+    expect(Number(body.data.order.packingFeePhp)).toBe(0);
+  });
+
+  it('charges one packing fee per hatian commitment, never accumulating across visits', async () => {
+    // The rule this feature exists for: joining several hatians must not stack a
+    // packing fee per commitment. Each commitment is billed ₱0 now.
+    await signIn();
+    const a = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000 });
+    const b = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000 });
+
+    for (const gb of [a, b]) {
+      const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
+      const body = await res.json();
+      expect(res.status).toBe(201);
+      expect(body.data.totals.packingFee).toBe(0);
+    }
   });
 });
 
