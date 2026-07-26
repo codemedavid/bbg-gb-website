@@ -27,6 +27,10 @@ export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
 export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign', 'moq_product']);
+// Final checkout for completed hatian orders. 'proof_review' = the customer paid
+// and uploaded proof; 'paid' = admin verified it, which is what flips the
+// packing fee to Paid; 'cancelled' releases its orders to be settled again.
+export const settlementStatusEnum = pgEnum('settlement_status', ['proof_review', 'paid', 'cancelled']);
 
 // ---- Users -------------------------------------------------------------
 export const users = pgTable('users', {
@@ -175,6 +179,34 @@ export const coaFiles = pgTable('coa_files', {
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---- Settlements (hatian final checkout) -------------------------------
+// One row per final checkout. A customer commits to as many hatians as they
+// like paying only downpayments; once those hatians complete, they settle the
+// lot in a single transaction that carries ONE packing fee. The fee lives here
+// rather than on each order precisely so it cannot be charged twice: an order
+// points at at most one settlement, and a settlement holds exactly one fee.
+export const settlements = pgTable('settlements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  status: settlementStatusEnum('status').notNull().default('proof_review'),
+  // The single packing fee for this parcel (local shipping included).
+  packingFeePhp: numeric('packing_fee_php', { precision: 12, scale: 2 }).notNull(),
+  // Σ of the settled orders' outstanding balances (total − downpayment).
+  balancePhp: numeric('balance_php', { precision: 12, scale: 2 }).notNull(),
+  totalPhp: numeric('total_php', { precision: 12, scale: 2 }).notNull(), // balance + packing fee
+  paymentMethod: varchar('payment_method', { length: 40 }),
+  paymentProofKey: text('payment_proof_key'),
+  // Same contract as orders.idempotency_key: a resubmitted final checkout
+  // replays the original settlement instead of charging a second packing fee.
+  idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+}, (t) => ({
+  userIdx: index('settlements_user_idx').on(t.userId),
+  statusIdx: index('settlements_status_idx').on(t.status),
+}));
+
 // ---- Orders ------------------------------------------------------------
 export const orders = pgTable('orders', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -203,6 +235,11 @@ export const orders = pgTable('orders', {
   // cart split (one order per mode, distinct indexes) still can. Null for orders
   // placed without a key (older clients, admin flows).
   idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
+  // The final checkout that settled this order, once it has been settled. NULL
+  // means the balance and packing fee are still outstanding. An order belongs to
+  // at most one settlement, which is what makes a duplicate packing fee
+  // impossible rather than merely unlikely.
+  settlementId: uuid('settlement_id').references(() => settlements.id),
   trackingNo: varchar('tracking_no', { length: 80 }),
   // Weekly-report fulfilment fields (admin-editable). courier = Shipping column,
   // packedBy = the "Admin" handler column, totalUsd = the report's USD order total
@@ -266,8 +303,13 @@ export const productsRelations = relations(products, ({ one, many }) => ({
 }));
 export const ordersRelations = relations(orders, ({ one, many }) => ({
   user: one(users, { fields: [orders.userId], references: [users.id] }),
+  settlement: one(settlements, { fields: [orders.settlementId], references: [settlements.id] }),
   items: many(orderItems),
   history: many(orderStatusHistory),
+}));
+export const settlementsRelations = relations(settlements, ({ one, many }) => ({
+  user: one(users, { fields: [settlements.userId], references: [users.id] }),
+  orders: many(orders),
 }));
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),

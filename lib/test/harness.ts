@@ -12,7 +12,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 
 // Cleared between tests, children before parents.
 const TABLES = [
-  'order_status_history', 'order_items', 'orders',
+  'order_status_history', 'order_items', 'orders', 'settlements',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories', 'users',
   'settings',
 ];
