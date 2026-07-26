@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
+import { PACKING_FEE_PHP, isDeferredPackingMode, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
 import type { MoqProduct } from '@/lib/types';
 
 // `kind` is the wire contract with POST /api/orders: app/checkout/page.tsx
@@ -100,12 +100,17 @@ export const useCart = create<CartState>()(
   )
 );
 
-// Mirrors lib/pricing.ts packingFeeFor: one packing fee per fulfillment mode
-// present (each mode ships as its own parcel), local shipping included, no admin
-// fee. Client rule — "packing fee per checkout, hindi per product": several
+// Mirrors lib/pricing.ts packingFeeFor: one packing fee per charged-at-checkout
+// mode present (each mode ships as its own parcel), local shipping included, no
+// admin fee. Client rule — "packing fee per checkout, hindi per product": several
 // different vials/products that ship together are one fee, not one each. Within a
 // mode the largest listing fee applies, since the parcel costs at least its
 // priciest item to pack. A cart mixing modes adds one fee per mode.
+//
+// Kahati lines add nothing: the hatian fee is deferred and charged once at the
+// final checkout that settles the customer's completed hatian orders. This must
+// stay in step with isDeferredPackingMode in lib/pricing.ts — the two rules
+// diverging is what shows the customer a total the server then disagrees with.
 //
 // `fees` is the admin-editable set fetched at display time; a per-listing fee on
 // a line still wins over its mode default.
@@ -114,6 +119,7 @@ export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE
   const feeByMode = new Map<PackingMode, number>();
   for (const i of items) {
     const mode = CART_KIND_MODE[i.kind];
+    if (isDeferredPackingMode(mode)) continue;
     const fee = i.packingFeePhp ?? fees[mode];
     feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
   }

@@ -60,9 +60,10 @@ describe('splitCartIntoOrders', () => {
     expect(soloOrder.totals.packingFee).toBe(PACKING_FEE_PHP.solo);
     expect(soloOrder.totals.total).toBe(3200 + PACKING_FEE_PHP.solo);
 
+    // The hatian order carries no fee — it is billed once at settlement.
     const kahatiOrder = orders.find((o) => o.mode === 'kahati')!;
-    expect(kahatiOrder.totals.packingFee).toBe(PACKING_FEE_PHP.kahati);
-    expect(kahatiOrder.totals.total).toBe(900 * 7 + PACKING_FEE_PHP.kahati);
+    expect(kahatiOrder.totals.packingFee).toBe(0);
+    expect(kahatiOrder.totals.total).toBe(900 * 7);
 
     const groupBuyOrder = orders.find((o) => o.mode === 'group_buy')!;
     expect(groupBuyOrder.totals.packingFee).toBe(PACKING_FEE_PHP.group_buy);

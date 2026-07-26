@@ -111,8 +111,8 @@ describe('mixed cart splits into one order per mode', () => {
     );
     // 2 x 550 on-hand, + its own 200 fee
     expect(byMode.solo).toMatchObject({ subtotal: 1100, total: 1300 });
-    // one vial of a 9000 kit = 900, + its own 150 fee
-    expect(byMode.kahati).toMatchObject({ subtotal: 900, total: 1050 });
+    // one vial of a 9000 kit = 900, with no fee — the hatian parcel is billed at settlement
+    expect(byMode.kahati).toMatchObject({ subtotal: 900, total: 900 });
   });
 
   it('puts only the kahati downpayment on the kahati order', async () => {

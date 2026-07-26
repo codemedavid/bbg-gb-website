@@ -4,6 +4,12 @@
 // A cart that mixes modes checks out as one order per mode (each ships as its own
 // parcel), so a mixed-cart total sums one packing fee per mode present — never one
 // per product. Buying several different vials/products in one parcel is one fee.
+//
+// Kahati (Hatian) is the exception: its fee is DEFERRED. Committing to a hatian
+// charges the downpayment only, because a customer may join many hatians over
+// weeks and they all ship as one parcel in the end. The fee is collected once,
+// at the final checkout where the customer settles every completed hatian order
+// (see settlementPackingFee and lib/settlement.ts).
 
 // Per-mode packing-fee defaults (PHP, local shipping included). Admin-editable:
 // these are the fallback defaults; a per-listing override on the item wins.
@@ -68,24 +74,45 @@ const KIND_MODE: Record<PriceableItem['kind'], PackingMode> = {
   moq_product: 'moq',
 };
 
-// Total packing fee: one fee per fulfillment mode present (each mode ships as its
-// own parcel). Client rule — "packing fee per checkout, hindi per product": buying
-// several different vials/products that ship together is one fee, not one each. Two
-// hatians in the same kahati parcel are one fee; a cart that also has on-hand items
-// adds a second fee for that separate parcel. When listings within a mode carry
-// different per-listing fees, the parcel is charged the largest — it costs at least
-// its priciest item to pack. Local shipping is already included in every packing
-// fee; no separate shipping or admin fee is ever added.
+// Modes whose packing fee is deferred to a later settlement rather than charged
+// at checkout. Only kahati defers: its parcel is not assembled until every
+// hatian the customer joined has completed.
+export const DEFERRED_PACKING_MODES: readonly PackingMode[] = ['kahati'] as const;
+
+export const isDeferredPackingMode = (mode: PackingMode): boolean =>
+  DEFERRED_PACKING_MODES.includes(mode);
+
+// Total packing fee due AT CHECKOUT: one fee per charged-at-checkout mode present
+// (each mode ships as its own parcel). Client rule — "packing fee per checkout,
+// hindi per product": buying several different vials/products that ship together
+// is one fee, not one each. When listings within a mode carry different
+// per-listing fees, the parcel is charged the largest — it costs at least its
+// priciest item to pack. Kahati lines contribute nothing here; their fee is
+// collected once at settlement. Local shipping is already included in every
+// packing fee; no separate shipping or admin fee is ever added.
 export function packingFeeFor(items: PriceableItem[]): number {
   const feeByMode = new Map<PackingMode, number>();
   for (const item of items) {
     const mode = KIND_MODE[item.kind];
+    if (isDeferredPackingMode(mode)) continue;
     const fee = item.packingFeePhp ?? PACKING_FEE_PHP[mode];
     feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
   }
   let total = 0;
   for (const fee of feeByMode.values()) total += fee;
   return round2(total);
+}
+
+// The single packing fee a settlement charges. `fees` holds the per-hatian
+// packing fee of every order being settled; the parcel is charged the largest,
+// on the same reasoning as packingFeeFor — it costs at least its priciest item
+// to pack. Settling ten hatians is still exactly one fee. Nothing to settle, or
+// only fees that were already charged at commit time (legacy orders, filtered by
+// the caller), means no fee at all rather than a floor.
+export function settlementPackingFee(fees: number[]): number {
+  const usable = fees.filter((f) => Number.isFinite(f) && f > 0);
+  if (!usable.length) return 0;
+  return round2(Math.max(...usable));
 }
 
 export type OrderTotals = {

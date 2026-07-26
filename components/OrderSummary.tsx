@@ -45,6 +45,15 @@ export function OrderSummary() {
           </div>
         </div>
       )}
+      {hasKahati && (
+        // The hatian packing fee is deferred, so the summary above shows none for
+        // it. Say why, or the customer reads a missing fee as a fee they dodged
+        // and is surprised by it at the final checkout.
+        <p className="mt-2 text-[11.5px] leading-relaxed text-ink-muted">
+          📦 Walang packing fee sa pag-join ng hatian. Isang packing fee lang ang
+          singil sa huling checkout, kahit ilang hatian pa ang sinalihan mo.
+        </p>
+      )}
     </div>
   );
 }

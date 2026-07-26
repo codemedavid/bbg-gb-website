@@ -197,8 +197,8 @@ describe('POST /api/orders', () => {
     // The rule this feature exists for: joining several hatians must not stack a
     // packing fee per commitment. Each commitment is billed ₱0 now.
     await signIn();
-    const a = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000 });
-    const b = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000 });
+    const a = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000, minVials: 1 });
+    const b = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000, minVials: 1 });
 
     for (const gb of [a, b]) {
       const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
@@ -219,8 +219,9 @@ describe('kahati downpayment at checkout', () => {
 
     expect(res.status).toBe(201);
     expect(Number(body.data.order.downpaymentPhp)).toBe(150);
-    // The full total is unchanged — the downpayment is deducted from it, not added.
-    expect(body.data.totals.total).toBe(900 * 7 + 150);
+    // The full total is the vials alone — the downpayment is deducted from it,
+    // not added, and the packing fee is not charged until settlement.
+    expect(body.data.totals.total).toBe(900 * 7);
   });
 
   it('uses the admin-set downpayment when configured', async () => {

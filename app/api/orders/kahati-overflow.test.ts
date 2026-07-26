@@ -67,11 +67,12 @@ describe('kahati commitment larger than the counter’s remaining vials', () => 
     expect(kahatiOrders).toHaveLength(1);
     const order = kahatiOrders[0];
 
-    // One placement → one packing fee, even though the vials landed in two counters.
-    expect(Number(order.packingFeePhp)).toBe(150);
-    // 5 vials × ₱900/vial + one ₱150 packing fee.
+    // No fee at commit time, even though the vials landed in two counters — the
+    // whole hatian parcel is billed one fee at settlement.
+    expect(Number(order.packingFeePhp)).toBe(0);
+    // 5 vials × ₱900/vial.
     expect(Number(order.subtotalPhp)).toBe(4500);
-    expect(Number(order.totalPhp)).toBe(4650);
+    expect(Number(order.totalPhp)).toBe(4500);
 
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
     expect(lines).toHaveLength(2);
@@ -93,6 +94,6 @@ describe('kahati commitment larger than the counter’s remaining vials', () => 
     const [order] = (await db.select().from(orders)).filter((o) => o.buyType === 'kahati');
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
     expect(lines).toHaveLength(1);
-    expect(Number(order.packingFeePhp)).toBe(150);
+    expect(Number(order.packingFeePhp)).toBe(0);
   });
 });
