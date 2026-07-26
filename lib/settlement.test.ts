@@ -47,6 +47,23 @@ describe('isReadyToSettle', () => {
   it('rejects an order with no hatian lines at all', () => {
     expect(isReadyToSettle({ status: 'payment_confirmed', settlementId: null, groupBuyStatuses: [] })).toBe(false);
   });
+
+  // Orders placed before the fee was deferred carry their packing fee on the
+  // order row. They predate this flow entirely: their balances were collected
+  // off-platform under the old arrangement, and nothing in the database records
+  // whether that happened. Quoting them here would re-bill a balance the
+  // customer may well have already paid in person.
+  it('rejects a legacy order that was charged its packing fee at commit time', () => {
+    expect(isReadyToSettle({
+      status: 'payment_confirmed', settlementId: null, groupBuyStatuses: ['closed'], packingFeePhp: 150,
+    })).toBe(false);
+  });
+
+  it('accepts an order placed under the deferred rule', () => {
+    expect(isReadyToSettle({
+      status: 'payment_confirmed', settlementId: null, groupBuyStatuses: ['closed'], packingFeePhp: 0,
+    })).toBe(true);
+  });
 });
 
 describe('orderBalance', () => {

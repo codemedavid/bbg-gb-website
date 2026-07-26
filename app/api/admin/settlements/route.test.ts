@@ -102,6 +102,42 @@ describe('PATCH /api/admin/settlements/[id]', () => {
     expect(rows.every((o) => o.settlementId === null)).toBe(true);
   });
 
+  it('re-attaches the released orders when a cancelled settlement is confirmed after all', async () => {
+    // Cancelling releases the orders. Confirming afterwards must take them back,
+    // or the customer is emailed "no balance left" while their orders still read
+    // unpaid and get quoted a second packing fee on the next visit to /settle.
+    const id = await settledCustomer();
+    await asAdmin();
+
+    await PATCH(patch('cancelled'), ctx(id));
+    await PATCH(patch('paid'), ctx(id));
+
+    const db = await getDb();
+    const rows = await db.select().from(orders);
+    expect(rows.every((o) => o.settlementId === id)).toBe(true);
+  });
+
+  it('keeps the confirmation timestamp when a paid settlement is edited', async () => {
+    // A notes-only update must not wipe paidAt — the participants panel reads it
+    // as "settled on".
+    const id = await settledCustomer();
+    await asAdmin();
+    await PATCH(patch('paid'), ctx(id));
+
+    const db = await getDb();
+    const [confirmed] = await db.select().from(settlements).where(eq(settlements.id, id));
+    const stampedAt = confirmed.paidAt;
+
+    await PATCH(new Request('http://localhost/api/admin/settlements/x', {
+      method: 'PATCH', body: JSON.stringify({ status: 'paid', notes: 'received via GCash' }),
+      headers: { 'content-type': 'application/json' },
+    }), ctx(id));
+
+    const [after] = await db.select().from(settlements).where(eq(settlements.id, id));
+    expect(after.paidAt).toEqual(stampedAt);
+    expect(after.notes).toBe('received via GCash');
+  });
+
   it('refuses a customer', async () => {
     const id = await settledCustomer();
     const res = await PATCH(patch('paid'), ctx(id));

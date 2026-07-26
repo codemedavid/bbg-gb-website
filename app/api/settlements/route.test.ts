@@ -30,7 +30,7 @@ const { POST: CHECKOUT } = await import('../orders/route');
 const {
   resetDb, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest, settlementRequest,
 } = await import('@/lib/test/harness');
-const { getDb, orders, groupBuys, settlements } = await import('@/lib/db');
+const { getDb, orders, groupBuys, settlements, emailLog } = await import('@/lib/db');
 
 async function signIn() {
   const user = await makeUser({ role: 'customer' });
@@ -78,6 +78,31 @@ describe('GET /api/settlements/preview', () => {
 
     const body = await (await PREVIEW()).json();
     expect(body.data.orders).toHaveLength(1);
+  });
+
+  it('leaves out legacy orders that already paid their packing fee at commit', async () => {
+    // Pre-deferral orders were settled off-platform; nothing records whether the
+    // balance was paid, so quoting them would re-bill money already collected.
+    await signIn();
+    const gb = await committedAndClosedHatian(3);
+    const db = await getDb();
+    await db.update(orders).set({ packingFeePhp: '150' }); // as an old order looks
+
+    const body = await (await PREVIEW()).json();
+    expect(body.data.orders).toHaveLength(0);
+    expect(body.data.totals.totalPhp).toBe(0);
+    expect(gb).toBeTruthy();
+  });
+
+  it('refuses to settle a customer holding only legacy orders', async () => {
+    await signIn();
+    await committedAndClosedHatian(3);
+    const db = await getDb();
+    await db.update(orders).set({ packingFeePhp: '150' });
+
+    const res = await POST(settlementRequest());
+    expect(res.status).toBe(400);
+    expect(await db.select().from(settlements)).toHaveLength(0);
   });
 
   it('quotes nothing when the customer has no completed hatian orders', async () => {
@@ -169,6 +194,18 @@ describe('POST /api/settlements', () => {
     expect(Number(body.data.settlement.packingFeePhp)).toBe(150);
     const db = await getDb();
     expect(await db.select().from(settlements)).toHaveLength(2);
+  });
+
+  it('greets the customer by name in the confirmation email, not by email address', async () => {
+    await signIn();
+    await committedAndClosedHatian(3);
+    await POST(settlementRequest());
+
+    const db = await getDb();
+    const [mail] = await db.select().from(emailLog).where(eq(emailLog.kind, 'settlement_placed'));
+    expect(mail).toBeTruthy();
+    expect(mail.body).not.toMatch(/Salamat, \S+@\S+/);
+    expect(mail.body).toContain('Test User'); // the name on the account
   });
 
   it('rejects a settlement with nothing ready to settle', async () => {

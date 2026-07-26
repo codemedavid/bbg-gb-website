@@ -113,6 +113,41 @@ describe('GET /api/admin/groupbuys/[id]/commitments', () => {
     expect(paid.finalPayment).toBe('paid');
   });
 
+  it('does not report the same balance under two counters when a commitment overflows', async () => {
+    // A commitment larger than the counter's remaining vials rolls into a fresh
+    // sibling, giving ONE order lines against two hatians. Reporting the whole
+    // order balance under each would make an admin totalling "what this hatian is
+    // owed" count the same money twice.
+    const gb = await makeGroupBuy({ minVials: 1, totalSlots: 10, claimedSlots: 8, pricePerKitPhp: 9000 });
+    await asCustomer('ana@example.com');
+    await CHECKOUT(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 5 }])); // 2 here, 3 in the sibling
+    await asAdmin();
+
+    const db = await getDb();
+    const sibling = (await db.select().from(groupBuys)).find((g) => g.id !== gb.id)!;
+
+    const [onOriginal] = (await (await GET(req(), ctx(gb.id))).json()).data;
+    const [onSibling] = (await (await GET(req(), ctx(sibling.id))).json()).data;
+
+    // Vials are already split per counter; the balance must be labelled as the
+    // whole order's and flagged as spanning counters, so it is never summed blind.
+    expect(onOriginal.vials).toBe(2);
+    expect(onSibling.vials).toBe(3);
+    expect(onOriginal.spansOtherHatians).toBe(true);
+    expect(onSibling.spansOtherHatians).toBe(true);
+    expect(onOriginal.orderBalancePhp).toBe(onSibling.orderBalancePhp);
+  });
+
+  it('does not flag a single-counter commitment as spanning', async () => {
+    const gb = await makeGroupBuy({ minVials: 1, totalSlots: 100 });
+    await asCustomer('ana@example.com');
+    await CHECKOUT(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
+    await asAdmin();
+
+    const [row] = (await (await GET(req(), ctx(gb.id))).json()).data;
+    expect(row.spansOtherHatians).toBe(false);
+  });
+
   it('refuses a customer', async () => {
     const gb = await makeGroupBuy({ minVials: 1 });
     await asCustomer('ana@example.com');
