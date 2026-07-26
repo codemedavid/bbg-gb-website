@@ -78,8 +78,36 @@ export type Order = {
   shipName: string; shipPhone: string; shipAddress: string; trackingNo: string | null;
   // Weekly-report fulfilment fields (admin-editable). paymentMethod drives the Payment column.
   paymentMethod?: string | null; courier?: string | null; packedBy?: string | null; totalUsd?: string;
+  // The final checkout that settled this order's balance and packing fee; null
+  // while either is still outstanding.
+  settlementId?: string | null;
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };
+
+// A payment obligation as the customer and admin see it.
+export type PaymentState = 'paid' | 'under_review' | 'unpaid' | 'cancelled';
+
+// One completed hatian order awaiting its final payment, as quoted by
+// GET /api/settlements/preview.
+export type SettlementOrder = {
+  id: string; orderNo: string; status: string;
+  totalPhp: number; downpaymentPhp: number; packingFeePhp: number;
+  hatianPackingFeePhp: number; hatianNames: string[];
+  packingFee: PaymentState; createdAt: string;
+};
+
+// The whole final checkout: every settleable order, and the ONE packing fee
+// charged for the parcel no matter how many hatians it spans.
+export type SettlementPreview = {
+  orders: SettlementOrder[];
+  totals: { balancePhp: number; packingFeePhp: number; totalPhp: number };
+};
+
+export type Settlement = {
+  id: string; status: 'proof_review' | 'paid' | 'cancelled';
+  packingFeePhp: string; balancePhp: string; totalPhp: string;
+  paymentMethod: string | null; createdAt: string; paidAt: string | null;
+};
 
 export type User = { id: string; name: string; email: string; phone: string | null; address: string | null; role: 'customer' | 'admin' };

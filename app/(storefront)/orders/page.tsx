@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { SectionHeader } from '@/components/headers';
-import { useOrders } from '@/lib/queries';
+import { useOrders, useSettlementPreview } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { php, shortDate } from '@/lib/format';
 import { STATUS_FLOW, STATUS_LABEL, STATUS_BADGE, statusIndex } from '@/lib/order-status';
@@ -55,6 +55,14 @@ function OrderCard({ order }: { order: Order }) {
             <div className="mt-2 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5 text-[12.5px] text-ink-body">
               <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
               {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
+              {/* The fee is charged at the final checkout, not here — say which
+                  state this order is in so an unpaid fee is never a surprise. */}
+              {order.buyType === 'kahati' && (
+                <div className="mt-0.5 flex justify-between">
+                  <span>Packing fee</span>
+                  <span>{order.settlementId ? 'Settled' : 'Charged once at final checkout'}</span>
+                </div>
+              )}
             </div>
           )}
           <div className="mt-3 flex items-center justify-between">
@@ -64,6 +72,35 @@ function OrderCard({ order }: { order: Order }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Completed hatians waiting on their final payment. The customer has no other
+// way to discover them, and the packing fee is only ever collected here — so the
+// prompt states plainly that the whole lot costs one fee.
+function SettlePrompt() {
+  const router = useRouter();
+  const { data: preview } = useSettlementPreview();
+  const ready = preview?.orders.length ?? 0;
+  if (!ready) return null;
+
+  return (
+    <div className="rounded-[16px] border-[1.5px] border-[#a9c88f] bg-[#f2f8ec] p-4">
+      <div className="text-[14px] font-bold text-brand-greendark">
+        🎉 {ready} hatian order{ready === 1 ? '' : 's'} ready to settle
+      </div>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-ink-body">
+        Bayaran mo na lahat sa isang checkout — isang packing fee lang para sa buong
+        parcel, kahit ilang hatian ang sinalihan mo.
+      </p>
+      <div className="mt-2 flex items-center justify-between">
+        <span className="font-display text-[16px] font-bold text-ink">{php(preview!.totals.totalPhp)}</span>
+        <button onClick={() => router.push('/settle')}
+          className="rounded-[10px] bg-brand-green px-4 py-2.5 text-[13px] font-bold text-white active:scale-[.99]">
+          Settle now →
+        </button>
+      </div>
     </div>
   );
 }
@@ -90,6 +127,7 @@ export default function OrdersPage() {
     <>
       <SectionHeader title="📦 My Orders" sub="Track status · download COA" />
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 p-4 md:p-6">
+        <SettlePrompt />
         {isLoading || loading ? <div className="py-16 text-center text-[13px] text-ink-muted">Loading…</div>
           : orders.length ? orders.map((o) => <OrderCard key={o.id} order={o} />)
           : <div className="py-16 text-center text-[13px] text-ink-muted">No orders yet. Sali sa kahati o mag-shop! 🛒</div>}

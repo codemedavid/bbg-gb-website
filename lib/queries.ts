@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
-import type { Category, CheckoutPaymentMethod, GroupBuy, MoqCampaign, MoqProduct, Order, Product } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, MoqCampaign, MoqProduct, Order, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -79,6 +79,18 @@ export const useCampaigns = () =>
 
 export const usePaymentMethods = () =>
   useQuery({ queryKey: ['payment-methods'], queryFn: () => apiGet<CheckoutPaymentMethod[]>('/payment-methods') });
+
+// What the hatian final checkout would cost right now: the completed hatian
+// orders still owing a balance, and the one packing fee that settles them all.
+// Never cached stale — a hatian closing (or a settlement clearing) changes it,
+// and quoting a fee the server no longer agrees with is the failure to avoid.
+export const useSettlementPreview = (enabled = true) =>
+  useQuery({
+    queryKey: ['settlement-preview'],
+    queryFn: () => apiGet<SettlementPreview>('/settlements/preview'),
+    enabled,
+    staleTime: 0,
+  });
 
 export const useOrders = (enabled = true) =>
   useQuery({ queryKey: ['orders'], queryFn: () => apiGet<Order[]>('/orders'), enabled });

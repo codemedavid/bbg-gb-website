@@ -1,0 +1,76 @@
+// My Orders — the customer's only route into the hatian final checkout.
+//
+// Without a prompt here a customer has no way to know their completed hatians
+// are waiting to be settled, and the packing fee would never be collected.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+const push = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn(), push, back: vi.fn(), prefetch: vi.fn() }),
+}));
+vi.mock('@/lib/useAuth', () => ({
+  useAuth: () => ({ user: { id: 'u1', name: 'Ana Cruz', email: 'ana@example.com' }, loading: false }),
+}));
+
+const state = {
+  orders: [] as unknown[],
+  preview: { orders: [] as unknown[], totals: { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 } },
+};
+vi.mock('@/lib/queries', () => ({
+  useOrders: () => ({ data: state.orders, isLoading: false }),
+  useSettlementPreview: () => ({ data: state.preview, isLoading: false }),
+}));
+
+const OrdersPage = (await import('./page')).default;
+
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {children}
+  </QueryClientProvider>
+);
+
+const kahatiOrder = {
+  id: 'o1', orderNo: 'BBG-2418', status: 'batch_filling', buyType: 'kahati',
+  subtotalPhp: '2700', packingFeePhp: '0', totalPhp: '2700', downpaymentPhp: '150',
+  shipName: 'Ana', shipPhone: '0917', shipAddress: 'x', trackingNo: null,
+  createdAt: new Date('2026-07-01').toISOString(), items: [{ id: 'i1', nameSnapshot: 'Reta — kahati', qty: 3 }],
+};
+
+beforeEach(() => {
+  push.mockReset();
+  state.orders = [kahatiOrder];
+  state.preview = { orders: [], totals: { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 } };
+});
+
+describe('settle prompt on My Orders', () => {
+  it('prompts the customer once a completed hatian is ready to settle', async () => {
+    state.preview = {
+      orders: [{ id: 'o1' }, { id: 'o2' }],
+      totals: { balancePhp: 4200, packingFeePhp: 150, totalPhp: 4350 },
+    };
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByText(/ready to settle/i)).toBeInTheDocument();
+    // The single fee is the reassurance the prompt has to carry.
+    expect(screen.getByText(/one packing fee|isang packing fee/i)).toBeInTheDocument();
+  });
+
+  it('sends the customer to the final checkout', async () => {
+    state.preview = {
+      orders: [{ id: 'o1' }],
+      totals: { balancePhp: 2550, packingFeePhp: 150, totalPhp: 2700 },
+    };
+    render(<OrdersPage />, { wrapper });
+
+    (await screen.findByRole('button', { name: /settle/i })).click();
+    expect(push).toHaveBeenCalledWith('/settle');
+  });
+
+  it('stays quiet while no hatian has completed', () => {
+    render(<OrdersPage />, { wrapper });
+    expect(screen.queryByText(/ready to settle/i)).toBeNull();
+  });
+});
