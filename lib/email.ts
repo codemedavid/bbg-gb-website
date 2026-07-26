@@ -58,6 +58,35 @@ export function orderPlacedEmail(o: { name: string; orderNo: string; total: numb
   };
 }
 
+// The hatian final checkout: one payment settling every completed hatian, with
+// the single packing fee spelled out — customers who joined several batches
+// need to see they were charged one fee, not one per hatian.
+export function settlementPlacedEmail(s: {
+  name: string; orderCount: number; balance: number; packingFee: number; total: number;
+}) {
+  const feeLine = s.packingFee > 0
+    ? `<p>Packing fee (isang beses lang, local shipping included): <strong>${php(s.packingFee)}</strong></p>`
+    : '';
+  return {
+    subject: `Final payment received - ${s.orderCount} hatian order${s.orderCount === 1 ? '' : 's'} under review`,
+    html: wrap(`Salamat, ${s.name}!`, `
+      <p>We received your final payment of <strong>${php(s.total)}</strong> covering
+      <strong>${s.orderCount}</strong> completed hatian order${s.orderCount === 1 ? '' : 's'}.</p>
+      <p>Balance settled: <strong>${php(s.balance)}</strong></p>${feeLine}
+      <p>Our team will verify your payment proof within 24 hours. You'll get another email once it's confirmed.</p>`),
+  };
+}
+
+export function settlementConfirmedEmail(s: { name: string; total: number }) {
+  return {
+    subject: 'Final payment confirmed - salamat!',
+    html: wrap(`Confirmed, ${s.name}!`, `
+      <p>Your final payment of <strong>${php(s.total)}</strong> is verified. Wala nang
+      balance ang mga hatian order mo — kasama na ang packing fee.</p>
+      <p>We'll update you as each batch ships.</p>`),
+  };
+}
+
 const STATUS_COPY: Record<string, { title: string; line: string }> = {
   payment_confirmed: { title: 'Payment confirmed', line: 'Your payment is verified. Your order is now queued for batch filling.' },
   batch_filling: { title: 'Batch filling', line: 'Your vials are being filled and prepared for shipment.' },

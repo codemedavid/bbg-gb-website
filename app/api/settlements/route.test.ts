@@ -28,7 +28,7 @@ const { POST } = await import('./route');
 const { GET: PREVIEW } = await import('./preview/route');
 const { POST: CHECKOUT } = await import('../orders/route');
 const {
-  resetDb, makeUser, makeGroupBuy, checkoutRequest, settlementRequest,
+  resetDb, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest, settlementRequest,
 } = await import('@/lib/test/harness');
 const { getDb, orders, groupBuys, settlements } = await import('@/lib/db');
 
@@ -100,6 +100,7 @@ describe('GET /api/settlements/preview', () => {
 describe('POST /api/settlements', () => {
   it('charges the packing fee once for a customer settling several hatians', async () => {
     await signIn();
+    await makePaymentMethod({ label: 'GCash' });
     await committedAndClosedHatian(3);
     await committedAndClosedHatian(2);
 
