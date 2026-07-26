@@ -24,7 +24,8 @@ const { GET } = await import('./route');
 const { PATCH } = await import('./[id]/route');
 const { POST: SETTLE } = await import('../../settlements/route');
 const { POST: CHECKOUT } = await import('../../orders/route');
-const { resetDb, makeUser, makeGroupBuy, checkoutRequest, settlementRequest } = await import('@/lib/test/harness');
+const { GET: PREVIEW } = await import('../../settlements/preview/route');
+const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest, settlementRequest } = await import('@/lib/test/harness');
 const { getDb, groupBuys, orders, settlements } = await import('@/lib/db');
 
 const asAdmin = async () => {
@@ -115,6 +116,42 @@ describe('PATCH /api/admin/settlements/[id]', () => {
     const db = await getDb();
     const rows = await db.select().from(orders);
     expect(rows.every((o) => o.settlementId === id)).toBe(true);
+  });
+
+  it('does not swallow the customer’s other orders when a cancelled settlement is confirmed', async () => {
+    // Re-attaching by "every unsettled order this customer has" sweeps in orders
+    // the settlement never covered — a solo on-hand order, or a hatian they
+    // joined after the cancellation — marking them paid for by money that never
+    // covered them.
+    const id = await settledCustomer(); // session is still that customer
+    const db = await getDb();
+    const covered = (await db.select().from(orders)).map((o) => o.id);
+
+    // The same customer buys ready stock after the settlement was made.
+    const product = await makeProduct({ onHandPiecePhp: 550, stock: 50 });
+    await CHECKOUT(checkoutRequest([{ kind: 'product', refId: product.id, qty: 1, unit: 'piece' }]));
+
+    await asAdmin();
+    await PATCH(patch('cancelled'), ctx(id));
+    await PATCH(patch('paid'), ctx(id));
+
+    const after = await db.select().from(orders);
+    const attached = after.filter((o) => o.settlementId === id).map((o) => o.id).sort();
+    expect(attached).toEqual(covered.sort());
+    // The on-hand order stays free of the hatian settlement entirely.
+    const solo = after.find((o) => o.buyType === 'solo')!;
+    expect(solo.settlementId).toBeNull();
+  });
+
+  it('lets a cancelled settlement’s orders be settled again by the customer', async () => {
+    const id = await settledCustomer();
+    const customerSession = session.current;
+    await asAdmin();
+    await PATCH(patch('cancelled'), ctx(id));
+
+    session.current = customerSession; // back to the customer
+    const quote = await (await PREVIEW()).json();
+    expect(quote.data.orders.length).toBeGreaterThan(0);
   });
 
   it('keeps the confirmation timestamp when a paid settlement is edited', async () => {
