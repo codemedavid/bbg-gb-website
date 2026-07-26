@@ -4,7 +4,7 @@
 // query answers both "what may I settle?" (the preview) and "what am I settling
 // right now?" (the POST), so the quote a customer accepts is computed by the
 // same code that bills them.
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { getDb, groupBuys, orderItems, orders, settlements } from '@/lib/db';
 import {
   isReadyToSettle, packingFeeState, settlementTotals,
@@ -36,13 +36,17 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
     hatianStatus: groupBuys.status,
     hatianName: groupBuys.name,
     hatianFeePhp: groupBuys.repackFeePhp,
+    settlementStatus: settlements.status,
   })
     .from(orders)
     .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
     .innerJoin(groupBuys, eq(groupBuys.id, orderItems.groupBuyId))
+    // A cancelled settlement keeps its link but releases its orders, so they are
+    // quotable again — hence the join rather than a bare `settlement_id IS NULL`.
+    .leftJoin(settlements, eq(settlements.id, orders.settlementId))
     .where(and(
       eq(orders.userId, userId),
-      isNull(orders.settlementId),
+      or(isNull(orders.settlementId), eq(settlements.status, 'cancelled')),
       ne(orders.status, 'cancelled'),
     ))
     .orderBy(orders.createdAt);
@@ -67,6 +71,7 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
     if (!isReadyToSettle({
       status: row.status,
       settlementId: row.settlementId,
+      settlementStatus: row.settlementStatus as SettlementStatus | null,
       groupBuyStatuses: statuses,
       // Excludes pre-deferral orders, whose balances were collected off-platform.
       packingFeePhp: Number(row.packingFeePhp),

@@ -52,11 +52,14 @@ export type SettleableOrder = {
 export function isReadyToSettle(o: {
   status: OrderStatus;
   settlementId: string | null;
+  settlementStatus?: SettlementStatus | null;
   groupBuyStatuses: string[];
   packingFeePhp?: number;
 }): boolean {
   if (o.status === 'cancelled') return false;
-  if (o.settlementId != null) return false;
+  // Held by a settlement — unless that settlement was cancelled, which frees the
+  // order to be settled again while keeping the record of what it once covered.
+  if (o.settlementId != null && o.settlementStatus !== 'cancelled') return false;
   if ((o.packingFeePhp ?? 0) > 0) return false;
   if (!o.groupBuyStatuses.length) return false;
   return o.groupBuyStatuses.every(

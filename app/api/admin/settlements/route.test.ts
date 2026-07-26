@@ -93,14 +93,19 @@ describe('PATCH /api/admin/settlements/[id]', () => {
   });
 
   it('releases the orders when a settlement is cancelled, so they can be settled again', async () => {
+    // The release is by status, not by erasing the link — the link is the only
+    // record of what this settlement covered. What matters is that the customer
+    // can settle those orders again, which the preview below proves.
     const id = await settledCustomer();
+    const customerSession = session.current;
     await asAdmin();
 
     await PATCH(patch('cancelled'), ctx(id));
 
-    const db = await getDb();
-    const rows = await db.select().from(orders);
-    expect(rows.every((o) => o.settlementId === null)).toBe(true);
+    session.current = customerSession;
+    const quote = await (await PREVIEW()).json();
+    expect(quote.data.orders.length).toBeGreaterThan(0);
+    expect(quote.data.totals.packingFeePhp).toBeGreaterThan(0);
   });
 
   it('re-attaches the released orders when a cancelled settlement is confirmed after all', async () => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { getDb, orders, paymentMethods, settlements, users } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
@@ -70,15 +70,22 @@ export const POST = handler(async (req: Request) => {
       idempotencyKey: body.idempotencyKey ?? null,
     }).returning();
 
-    // Claim the orders. The `settlement_id IS NULL` guard lives in the WHERE
-    // clause and RETURNING decides what this settlement actually took, so two
-    // concurrent final checkouts cannot both bill the same order — the loser
-    // claims fewer rows than it priced and rolls back rather than charging a
-    // duplicate packing fee.
+    // Claim the orders. The guard lives in the WHERE clause and RETURNING decides
+    // what this settlement actually took, so two concurrent final checkouts
+    // cannot both bill the same order — the loser claims fewer rows than it
+    // priced and rolls back rather than charging a duplicate packing fee.
+    //
+    // An order held by a CANCELLED settlement is claimable again (that is what
+    // cancelling means), but one held by a live settlement is never stolen.
     const ids = ready.map((o) => o.id);
+    const cancelledSettlements = tx.select({ id: settlements.id }).from(settlements)
+      .where(eq(settlements.status, 'cancelled'));
     const claimed = await tx.update(orders)
       .set({ settlementId: settlement.id, updatedAt: new Date() })
-      .where(and(inArray(orders.id, ids), isNull(orders.settlementId)))
+      .where(and(
+        inArray(orders.id, ids),
+        or(isNull(orders.settlementId), inArray(orders.settlementId, cancelledSettlements)),
+      ))
       .returning({ id: orders.id });
     if (claimed.length !== ids.length) {
       throw new ApiError(409, 'Some of these orders were just settled — please refresh and try again.');

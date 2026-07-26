@@ -25,6 +25,15 @@ export default defineConfig({
     setupFiles: ['./lib/test/setup-dom.ts'],
     globals: true,
     include: ['{app,lib,components}/**/*.test.{ts,tsx}'],
+    // Every integration file's beforeEach applies the whole migration set to a
+    // fresh in-memory Postgres and truncates it. That is comfortably under a
+    // second alone, but the files run in parallel and the slowest of them
+    // crossed vitest's 10s default under load — producing "Hook timed out"
+    // failures that moved between files run to run and passed in isolation.
+    // Raised rather than papered over with retries: a flaky suite that has to be
+    // re-run is a suite nobody trusts.
+    hookTimeout: 60_000,
+    testTimeout: 30_000,
     // Isolated in-memory Postgres per test file; never touch the dev ./.pglite or a real DB.
     env: {
       DATABASE_URL: '',
