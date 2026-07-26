@@ -91,7 +91,7 @@ describe('GET /api/admin/groupbuys/[id]/commitments', () => {
     const [row] = (await (await GET(req(), ctx(gb.id))).json()).data;
     expect(row.finalPayment).toBe('unpaid');
     expect(row.packingFee).toBe('unpaid');
-    expect(row.balancePhp).toBe(2700 - 150);
+    expect(row.orderBalancePhp).toBe(2700 - 150);
   });
 
   it('turns the packing fee to paid once the settlement is confirmed', async () => {

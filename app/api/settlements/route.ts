@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { getDb, orders, paymentMethods, settlements } from '@/lib/db';
+import { getDb, orders, paymentMethods, settlements, users } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { settlementTotals } from '@/lib/settlement';
@@ -102,11 +102,14 @@ export const POST = handler(async (req: Request) => {
   }
 
   // Notify only after the transaction commits — never announce a rolled-back
-  // settlement.
+  // settlement. Greet the customer by name; the session carries only their email
+  // address, and "Salamat, ana@example.com!" reads like a mailing-list blast.
+  const [customer] = await db.select({ name: users.name })
+    .from(users).where(eq(users.id, session.sub));
   await sendEmail({
     to: session.email,
     ...settlementPlacedEmail({
-      name: session.email,
+      name: customer?.name ?? session.email,
       orderCount: created.orderCount,
       balance: created.totals.balancePhp,
       packingFee: created.totals.packingFeePhp,

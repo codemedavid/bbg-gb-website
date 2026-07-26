@@ -36,18 +36,28 @@ export type SettleableOrder = {
   settlementId: string | null;
 };
 
-// An order is ready to settle when it is live, unsettled, and EVERY hatian it
-// claimed from has finished filling. The "every" matters for an overflow
-// commitment that rolled into a sibling counter: it ships as one parcel, so
-// settling it while the sibling is still open would bill a parcel that is not
-// ready to go out.
+// An order is ready to settle when it is live, unsettled, placed under the
+// deferred-fee rule, and EVERY hatian it claimed from has finished filling.
+//
+// The "every" matters for an overflow commitment that rolled into a sibling
+// counter: it ships as one parcel, so settling it while the sibling is still
+// open would bill a parcel that is not ready to go out.
+//
+// The packing-fee check is the cutover. An order carrying a fee on its own row
+// was placed before the fee was deferred, when balances were collected
+// off-platform and nothing in the database recorded whether that had happened.
+// Quoting those orders here would ask customers to pay a balance many of them
+// already settled in person. They stay out of this flow entirely; the admin
+// closes them the way they always have.
 export function isReadyToSettle(o: {
   status: OrderStatus;
   settlementId: string | null;
   groupBuyStatuses: string[];
+  packingFeePhp?: number;
 }): boolean {
   if (o.status === 'cancelled') return false;
   if (o.settlementId != null) return false;
+  if ((o.packingFeePhp ?? 0) > 0) return false;
   if (!o.groupBuyStatuses.length) return false;
   return o.groupBuyStatuses.every(
     (s) => (SETTLEABLE_GROUP_BUY_STATUSES as readonly string[]).includes(s),

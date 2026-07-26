@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, orders, settlements, users } from '@/lib/db';
@@ -25,6 +25,14 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   const [existing] = await db.select().from(settlements).where(eq(settlements.id, id));
   if (!existing) throw new ApiError(404, 'Settlement not found.');
 
+  // Orders released by an earlier cancel, so confirming afterwards can take them
+  // back. Read before the update, since the update is what changes their state.
+  const releasedOrderIds = existing.status === 'cancelled' && b.status !== 'cancelled'
+    ? (await db.select({ id: orders.id }).from(orders)
+        .where(and(eq(orders.userId, existing.userId), isNull(orders.settlementId))))
+        .map((o) => o.id)
+    : [];
+
   const updated = await db.transaction(async (tx) => {
     const [row] = await tx.update(settlements).set({
       status: b.status,
@@ -37,6 +45,13 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
     if (b.status === 'cancelled') {
       await tx.update(orders).set({ settlementId: null, updatedAt: new Date() })
         .where(eq(orders.settlementId, id));
+    } else if (releasedOrderIds.length) {
+      // Un-cancelling: take back the orders this settlement had released, but
+      // only those still unclaimed — a customer who settled again in the
+      // meantime owns them now, and stealing them back would strand that newer
+      // settlement holding nothing while this one claims money it never covered.
+      await tx.update(orders).set({ settlementId: id, updatedAt: new Date() })
+        .where(and(inArray(orders.id, releasedOrderIds), isNull(orders.settlementId)));
     }
     return row;
   });

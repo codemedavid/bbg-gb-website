@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, groupBuys, orderItems, orders, settlements, users } from '@/lib/db';
@@ -31,8 +31,10 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     settlementStatus: settlements.status,
     settlementPaidAt: settlements.paidAt,
     hatianFeePhp: groupBuys.repackFeePhp,
-    // A commitment that overflowed into a sibling counter holds several lines
-    // against this hatian; the participant committed their sum, not one of them.
+    // Vials this participant claimed FROM THIS COUNTER. A commitment larger than
+    // the counter's remaining vials is split across it and a freshly opened
+    // sibling (app/api/orders/route.ts), so one order can hold lines against two
+    // hatians — each counter reports only its own share.
     vials: sql<number>`sum(${orderItems.qty})::int`,
   })
     .from(orderItems)
@@ -48,6 +50,23 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       settlements.status, settlements.paidAt, groupBuys.repackFeePhp,
     )
     .orderBy(orders.createdAt);
+
+  // Which of these orders also claimed from another counter. An order balance is
+  // a property of the whole order, so when a commitment overflowed into a sibling
+  // the same figure appears under both hatians — the admin has to be told, or a
+  // column total counts that money twice.
+  const orderIds = rows.map((r) => r.orderId);
+  const spanning = new Set(
+    orderIds.length
+      ? (await db.selectDistinct({ orderId: orderItems.orderId })
+          .from(orderItems)
+          .where(and(
+            inArray(orderItems.orderId, orderIds),
+            isNotNull(orderItems.groupBuyId),
+            ne(orderItems.groupBuyId, id),
+          ))).map((r) => r.orderId)
+      : [],
+  );
 
   return ok(rows.map((r) => {
     const order = {
@@ -69,7 +88,11 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       customerPhone: r.customerPhone,
       vials: r.vials,
       committedAt: r.committedAt,
-      balancePhp: orderBalance(order),
+      // Named for what it is: the balance of the whole ORDER. When the order also
+      // claimed from another counter the same figure appears there too, so it
+      // must never be summed down the column without regard to the flag below.
+      orderBalancePhp: orderBalance(order),
+      spansOtherHatians: spanning.has(r.orderId),
       downpaymentPhp: order.downpaymentPhp,
       downpayment: downpaymentState(order),
       finalPayment: finalPaymentState(order, settlementStatus),

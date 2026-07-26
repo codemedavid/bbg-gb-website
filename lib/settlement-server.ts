@@ -64,7 +64,13 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
 
   const ready: ReadyOrder[] = [];
   for (const { row, statuses, names, fees } of byOrder.values()) {
-    if (!isReadyToSettle({ status: row.status, settlementId: row.settlementId, groupBuyStatuses: statuses })) continue;
+    if (!isReadyToSettle({
+      status: row.status,
+      settlementId: row.settlementId,
+      groupBuyStatuses: statuses,
+      // Excludes pre-deferral orders, whose balances were collected off-platform.
+      packingFeePhp: Number(row.packingFeePhp),
+    })) continue;
     const order: SettleableOrder = {
       id: row.id,
       status: row.status,
