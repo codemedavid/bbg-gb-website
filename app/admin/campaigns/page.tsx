@@ -9,7 +9,7 @@ import type { CampaignPayload, IncludedProduct, MoqCampaign } from '@/lib/types'
 type Draft = Partial<MoqCampaign>;
 
 const blank = (): Draft => ({
-  name: '', pricePerKitPhp: '0', moq: 10, perCustomerMin: 1, shippingPhp: '300',
+  name: '', pricePerKitPhp: '0', moq: 10, shippingPhp: '300',
   status: 'open', deadline: null, includedProducts: [], arrivalGroup: 'white_powder', description: null,
 });
 
@@ -33,7 +33,6 @@ function validate(f: Draft): string | null {
   if ((f.name ?? '').trim().length < 2) return 'Name must be at least 2 characters.';
   if (!(Number(f.pricePerKitPhp) > 0)) return 'Price / kit must be greater than 0.';
   if (!Number.isInteger(Number(f.moq)) || Number(f.moq) < 1) return 'MOQ must be a whole number of 1 or more.';
-  if (!Number.isInteger(Number(f.perCustomerMin)) || Number(f.perCustomerMin) < 1) return 'Min / customer must be 1 or more.';
   if (Number(f.shippingPhp) < 0) return 'Shipping cannot be negative.';
   return null;
 }
@@ -65,7 +64,6 @@ function CampaignForm({ initial, onClose }: { initial: Draft; onClose: () => voi
       name: (f.name ?? '').trim(),
       pricePerKitPhp: Number(f.pricePerKitPhp),
       moq: Number(f.moq),
-      perCustomerMin: Number(f.perCustomerMin),
       shippingPhp: Number(f.shippingPhp),
       deadline: f.deadline ?? null,
       includedProducts: included,
@@ -87,7 +85,6 @@ function CampaignForm({ initial, onClose }: { initial: Draft; onClose: () => voi
         <Labeled label="Price / kit ₱"><input className={field} type="number" value={f.pricePerKitPhp as any} onChange={(e) => setF({ ...f, pricePerKitPhp: e.target.value })} /></Labeled>
         <Labeled label="Packing fee ₱ (local shipping incl.)"><input className={field} type="number" value={f.shippingPhp as any} onChange={(e) => setF({ ...f, shippingPhp: e.target.value })} /></Labeled>
         <Labeled label="MOQ (kits)"><input className={field} type="number" value={f.moq ?? 10} onChange={(e) => setF({ ...f, moq: Number(e.target.value) })} /></Labeled>
-        <Labeled label="Min / customer"><input className={field} type="number" value={f.perCustomerMin ?? 1} onChange={(e) => setF({ ...f, perCustomerMin: Number(e.target.value) })} /></Labeled>
         <Labeled label="Deadline"><input className={field} type="datetime-local" value={toLocalInput(f.deadline)} onChange={(e) => setF({ ...f, deadline: toIso(e.target.value) })} /></Labeled>
         <Labeled label="Arrival group">
           <select className={field} value={f.arrivalGroup} onChange={(e) => setF({ ...f, arrivalGroup: e.target.value as MoqCampaign['arrivalGroup'] })}>

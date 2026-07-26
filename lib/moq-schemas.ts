@@ -11,7 +11,6 @@ export const moqCampaignSchema = z.object({
   name: z.string().min(2).max(160),
   pricePerKitPhp: z.number().nonnegative(),
   moq: z.number().int().positive(),
-  perCustomerMin: z.number().int().positive().optional(),
   shippingPhp: z.number().nonnegative().optional(),
   status: z.enum(['open', 'approved', 'cancelled']).optional(),
   deadline: z.string().datetime().nullable().optional(),

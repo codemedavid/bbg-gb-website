@@ -14,7 +14,7 @@ import type { MoqCampaign } from '@/lib/types';
 
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4,
-  perCustomerMin: 1, shippingPhp: '300.00', status: 'open', deadline: '2026-08-01T00:00:00Z',
+  shippingPhp: '300.00', status: 'open', deadline: '2026-08-01T00:00:00Z',
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
   progress: 0.4, remaining: 6, reached: false, outcome: 'awaiting_moq',
@@ -91,11 +91,5 @@ describe('CampaignCard', () => {
     expect(button === null || (button as HTMLButtonElement).disabled).toBe(true);
     if (button) await userEvent.click(button);
     expect(onCommit).not.toHaveBeenCalled();
-  });
-
-  it('states the per-customer minimum so the commit sheet is not a surprise', () => {
-    render(<CampaignCard c={campaign({ perCustomerMin: 2 })} onCommit={vi.fn()} />);
-
-    expect(screen.getByText(/min 2 kit/i)).toBeInTheDocument();
   });
 });

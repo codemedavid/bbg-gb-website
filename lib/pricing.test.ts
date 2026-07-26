@@ -4,7 +4,7 @@ import {
   validateKahatiCommit, hasOnHand, hasKahati, hasGroupBuy,
   validateGroupBuyCommit, groupBuyMoqStatus, hasMoq, validateMoqQty,
   splitKahatiDownpayment, onHandUnitPrice, vialsFor, validateOnHandQty,
-  PACKING_FEE_PHP, KAHATI_MIN_VIALS, GROUP_BUY_MIN_KITS, VIALS_PER_KIT,
+  PACKING_FEE_PHP, KAHATI_MIN_VIALS, VIALS_PER_KIT,
   type PriceableItem,
 } from './pricing';
 
@@ -155,16 +155,14 @@ describe('group buy (MOQ) mode', () => {
 });
 
 describe('validateGroupBuyCommit', () => {
-  it('rejects below the per-customer minimum', () => {
-    expect(validateGroupBuyCommit(GROUP_BUY_MIN_KITS - 1).ok).toBe(false);
-  });
-  it('accepts a commitment at or above the minimum', () => {
-    expect(validateGroupBuyCommit(GROUP_BUY_MIN_KITS).ok).toBe(true);
+  it('accepts any positive whole number of kits — group buys have no minimum', () => {
+    expect(validateGroupBuyCommit(1).ok).toBe(true);
     expect(validateGroupBuyCommit(5).ok).toBe(true);
+    expect(validateGroupBuyCommit(42).ok).toBe(true);
   });
-  it('honours a campaign-specific per-customer minimum', () => {
-    expect(validateGroupBuyCommit(2, 3).ok).toBe(false);
-    expect(validateGroupBuyCommit(3, 3).ok).toBe(true);
+  it('rejects zero or negative commitments', () => {
+    expect(validateGroupBuyCommit(0).ok).toBe(false);
+    expect(validateGroupBuyCommit(-1).ok).toBe(false);
   });
   it('rejects non-integer commitments', () => {
     expect(validateGroupBuyCommit(2.5).ok).toBe(false);

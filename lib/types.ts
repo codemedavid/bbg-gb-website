@@ -36,7 +36,7 @@ export type IncludedProduct = { productId: string; name: string; outOfStock?: bo
 
 export type MoqCampaign = {
   id: string; name: string; pricePerKitPhp: string; moq: number; committed: number;
-  perCustomerMin: number; shippingPhp: string; status: 'open' | 'approved' | 'cancelled';
+  shippingPhp: string; status: 'open' | 'approved' | 'cancelled';
   deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null; createdAt: string;
   // Derived server-side.
@@ -49,7 +49,7 @@ export type MoqCampaign = {
 // Numeric prices are serialized as numbers; the API coerces to its numeric columns.
 // `status` is intentionally omitted — it is lifecycle-owned (see /campaigns/:id/action).
 export type CampaignPayload = {
-  id?: string; name: string; pricePerKitPhp: number; moq: number; perCustomerMin: number;
+  id?: string; name: string; pricePerKitPhp: number; moq: number;
   shippingPhp: number; deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
 };

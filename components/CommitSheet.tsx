@@ -19,7 +19,7 @@ type Props = {
 
 export function CommitSheet({ c, onClose, onCommitted }: Props) {
   const { user } = useAuth();
-  const [qty, setQty] = useState(c.perCustomerMin);
+  const [qty, setQty] = useState(1);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -36,9 +36,9 @@ export function CommitSheet({ c, onClose, onCommitted }: Props) {
   const packingFee = Number(c.shippingPhp);
   const total = unitPrice * qty + packingFee;
 
-  // The per-customer minimum is the floor; a campaign has no per-customer cap,
-  // since overshooting the MOQ is allowed.
-  const clamp = (n: number) => Math.max(c.perCustomerMin, n);
+  // One kit is the floor; a campaign has no per-customer cap, since overshooting
+  // the MOQ is allowed.
+  const clamp = (n: number) => Math.max(1, n);
 
   const onProof = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -87,7 +87,7 @@ export function CommitSheet({ c, onClose, onCommitted }: Props) {
           <button onClick={onClose} aria-label="Close" className="px-2 py-1 text-[20px] text-ink-muted">✕</button>
         </div>
         <p className="mb-3 text-[12.5px] text-ink-muted">
-          {c.committed} / {c.moq} kits committed · min {c.perCustomerMin} kit{c.perCustomerMin === 1 ? '' : 's'} · {php(packingFee)} packing fee
+          {c.committed} / {c.moq} kits committed · {php(packingFee)} packing fee
         </p>
 
         <div className="mb-3 rounded-[10px] bg-warn-softbg px-3 py-2 text-[12px] leading-snug text-[#6b5a24]">

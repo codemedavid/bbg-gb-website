@@ -69,7 +69,7 @@ describe('POST /api/campaigns (admin create)', () => {
   });
   it('creates a campaign for an admin', async () => {
     await signIn('admin');
-    const res = await CREATE(jsonReq({ name: 'July Batch', pricePerKitPhp: 10400, moq: 10, perCustomerMin: 2 }));
+    const res = await CREATE(jsonReq({ name: 'July Batch', pricePerKitPhp: 10400, moq: 10 }));
     const body = await res.json();
     expect(res.status).toBe(201);
     expect(body.data).toMatchObject({ name: 'July Batch', moq: 10, committed: 0, status: 'open' });
@@ -123,11 +123,11 @@ describe('POST /api/campaigns/[id]/commit (customer)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('rejects a commitment below the per-customer minimum', async () => {
+  it('accepts a commitment of any positive quantity — group buys have no per-customer minimum', async () => {
     await signIn('customer');
-    const c = await makeMoqCampaign({ perCustomerMin: 3 });
-    const res = await COMMIT(commitRequest(2), ctx(c.id));
-    expect(res.status).toBe(400);
+    const c = await makeMoqCampaign({ moq: 10 });
+    const res = await COMMIT(commitRequest(1), ctx(c.id));
+    expect(res.status).toBe(201);
   });
 
   it('rejects a commitment to a non-open campaign', async () => {

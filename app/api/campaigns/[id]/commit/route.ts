@@ -34,7 +34,7 @@ export const POST = handler(async (req: Request, ctx: Ctx) => {
     if (!c) throw new ApiError(404, 'Campaign not found.');
     if (!canCommit(c.status)) throw new ApiError(400, `This campaign is ${c.status} and no longer accepting commitments.`);
 
-    const check = validateGroupBuyCommit(b.qty, c.perCustomerMin);
+    const check = validateGroupBuyCommit(b.qty);
     if (!check.ok) throw new ApiError(400, check.message!);
 
     // Atomic increment; the status guard lives in the UPDATE so a race with an

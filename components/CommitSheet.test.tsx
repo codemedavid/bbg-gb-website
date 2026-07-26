@@ -12,7 +12,7 @@ import type { MoqCampaign } from '@/lib/types';
 
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4,
-  perCustomerMin: 1, shippingPhp: '300.00', status: 'open', deadline: null,
+  shippingPhp: '300.00', status: 'open', deadline: null,
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
   progress: 0.4, remaining: 6, reached: false, outcome: 'awaiting_moq',
@@ -51,18 +51,18 @@ describe('CommitSheet', () => {
     expect(screen.getByPlaceholderText(/mobile/i)).toHaveValue('09171234567');
   });
 
-  it('starts at the campaign’s per-customer minimum', () => {
-    render(<CommitSheet c={campaign({ perCustomerMin: 3 })} onClose={vi.fn()} onCommitted={vi.fn()} />);
+  it('starts at one kit — group buys have no minimum', () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
 
-    expect(screen.getByTestId('commit-qty')).toHaveTextContent('3');
+    expect(screen.getByTestId('commit-qty')).toHaveTextContent('1');
   });
 
-  it('will not go below the per-customer minimum', async () => {
-    render(<CommitSheet c={campaign({ perCustomerMin: 2 })} onClose={vi.fn()} onCommitted={vi.fn()} />);
+  it('will not go below one kit', async () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
 
     await userEvent.click(screen.getByRole('button', { name: /decrease/i }));
 
-    expect(screen.getByTestId('commit-qty')).toHaveTextContent('2');
+    expect(screen.getByTestId('commit-qty')).toHaveTextContent('1');
   });
 
   it('prices the commitment as kits × price plus the packing fee', async () => {

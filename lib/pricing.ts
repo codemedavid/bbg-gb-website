@@ -27,7 +27,6 @@ export const KAHATI_MAX_VIALS = VIALS_PER_KIT; // a hatian counter caps at one k
 // this the batch is not placed and the hatian is cancelled; at or above it the
 // hatian is "Good to Go" even if the kit never filled.
 export const KAHATI_MIN_VIABLE_VIALS = 7;
-export const GROUP_BUY_MIN_KITS = 1;  // group buy (MOQ campaign): default per-customer commitment
 
 // The three purchasing modes carried by a cart item:
 //   'product'      -> On-hand / ready stock (buy any qty, limited by stock, ₱200 packing)
@@ -191,14 +190,11 @@ export function validateOnHandQty(
   return { ok: true };
 }
 
-// Validate a group buy (MOQ campaign) commitment against the per-customer minimum.
-// perCustomerMin is admin-configurable per campaign; falls back to GROUP_BUY_MIN_KITS.
-export function validateGroupBuyCommit(
-  qty: number,
-  perCustomerMin: number = GROUP_BUY_MIN_KITS,
-): { ok: boolean; message?: string } {
-  if (!Number.isInteger(qty) || qty < perCustomerMin) {
-    return { ok: false, message: `Minimum commitment is ${perCustomerMin} kit(s).` };
+// Validate a group buy (MOQ campaign) commitment. Group buys carry no
+// per-customer minimum — any positive whole number of kits is allowed.
+export function validateGroupBuyCommit(qty: number): { ok: boolean; message?: string } {
+  if (!Number.isInteger(qty) || qty < 1) {
+    return { ok: false, message: 'Commit at least 1 kit.' };
   }
   return { ok: true };
 }

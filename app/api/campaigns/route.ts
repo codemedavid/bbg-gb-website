@@ -35,7 +35,6 @@ export const POST = handler(async (req: Request) => {
     name: b.name,
     pricePerKitPhp: String(b.pricePerKitPhp),
     moq: b.moq,
-    perCustomerMin: b.perCustomerMin ?? 1,
     shippingPhp: String(b.shippingPhp ?? defaultFee),
     status: b.status ?? 'open',
     deadline: b.deadline ? new Date(b.deadline) : null,

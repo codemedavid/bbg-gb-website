@@ -39,7 +39,7 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
         <div>
           <h3 className="m-0 font-display text-[15px] font-bold leading-tight text-ink">{c.name}</h3>
           <p className="mt-0.5 text-[12px] text-ink-muted">
-            {php(c.pricePerKitPhp)} per kit · min {c.perCustomerMin} kit{c.perCustomerMin === 1 ? '' : 's'}
+            {php(c.pricePerKitPhp)} per kit
           </p>
         </div>
         <span className={`flex-none rounded-full px-2.5 py-1 text-[11px] font-bold ${outcome.className}`}>
