@@ -136,12 +136,38 @@ $ npx vitest run <settlement suites> --coverage.include='lib/settlement*.ts' \
   lib/pricing.ts    |     100 |   98.61  |    100  |     100
 ```
 
-## Known gaps
+## Production migration (applied 2026-07-26)
 
-- **Not yet applied to production.** Migration `0009` exists but `npm run db:push`
-  has not been run against the Supabase database in `.env`. Until it is, the
-  settlement routes will 500 on missing relations — `npm run db:check` reports the
-  drift. This is deliberately left for the operator.
+Migration `0009` was applied to the live Supabase project through the Supabase MCP
+as `0009_settlements_hatian_final_checkout`, after confirming the MCP and `.env`
+address the same database (matching row counts; `.env` host is that project's
+pooler). Purely additive: one new enum, one new table, one nullable column, two
+indexes and two foreign keys — no existing column or row was altered.
+
+```
+$ npm run db:check
+Database matches schema.ts — no drift.
+```
+
+### Legacy orders on the live database
+
+Every one of the 13 existing kahati orders was charged its packing fee at commit
+time under the old rule (₱150–₱350 on the order row). The settlement fee is
+computed only from orders with `packing_fee_php = 0`, so those customers are
+quoted **₱0** in packing fees when they settle — they are not billed twice.
+Verified against production:
+
+| Customer | Ready orders | Balance due | Settlement packing fee |
+|---|---|---|---|
+| realpapitotz@gmail.com | 7 | ₱49,937.50 | **₱0** |
+| ana@example.com | 2 | ₱15,457.50 | **₱0** |
+| admin@bbgpeptides.ph | 1 | ₱2,125.00 | **₱0** |
+
+One further commitment sits on a still-open hatian and is correctly excluded.
+The first customer would have paid seven packing fees under the old rule; going
+forward, new commitments carry no fee and settle under a single one.
+
+## Known gaps
 - **Flaky under load, not a regression.** Two full-suite runs each showed one
   DB-heavy test hitting the 10s hook timeout — a different file each time
   (`idempotency.test.ts`, then `kahati-expiry.test.ts`), both passing in isolation
