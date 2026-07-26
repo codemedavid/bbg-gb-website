@@ -104,6 +104,18 @@ export type SettlementPreview = {
   totals: { balancePhp: number; packingFeePhp: number; totalPhp: number };
 };
 
+// One participant's commitment to a hatian, as the admin panel lists it. The
+// three payments are separate: a customer may have paid their downpayment and
+// still owe both the balance and the packing fee.
+export type HatianCommitment = {
+  orderId: string; orderNo: string; orderStatus: string;
+  customerName: string; customerEmail: string; customerPhone: string | null;
+  vials: number; committedAt: string;
+  balancePhp: number; downpaymentPhp: number;
+  downpayment: PaymentState; finalPayment: PaymentState; packingFee: PaymentState;
+  settledAt: string | null;
+};
+
 export type Settlement = {
   id: string; status: 'proof_review' | 'paid' | 'cancelled';
   packingFeePhp: string; balancePhp: string; totalPhp: string;

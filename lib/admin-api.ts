@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { CampaignPayload, Category, GroupBuy, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
+import type { CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -22,6 +22,15 @@ export const useStats = () => useQuery({ queryKey: ['admin', 'stats'], queryFn: 
 export const useAdminProducts = () => useQuery({ queryKey: ['admin', 'products'], queryFn: () => apiGet<Product[]>('/admin/products') });
 export const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], queryFn: () => apiGet<Category[]>('/admin/categories') });
 export const useAdminGroupBuys = () => useQuery({ queryKey: ['admin', 'groupbuys'], queryFn: () => apiGet<GroupBuy[]>('/admin/groupbuys') });
+// Participants in one hatian, with their three payments kept apart — see
+// app/api/admin/groupbuys/[id]/commitments/route.ts.
+export const useAdminGroupBuyCommitments = (id: string | null) =>
+  useQuery({
+    queryKey: ['admin', 'groupbuys', id, 'commitments'],
+    queryFn: () => apiGet<HatianCommitment[]>(`/admin/groupbuys/${id}/commitments`),
+    enabled: !!id,
+  });
+
 export const useAdminPaymentMethods = () => useQuery({ queryKey: ['admin', 'payment-methods'], queryFn: () => apiGet<PaymentMethod[]>('/admin/payment-methods') });
 // The MOQ shelf, admin view — includes archived rows, unlike the public list.
 export const useAdminMoqProducts = () =>
