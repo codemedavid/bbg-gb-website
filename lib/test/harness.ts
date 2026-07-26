@@ -167,6 +167,21 @@ export function checkoutRequest(
   return new Request('http://localhost/api/orders', { method: 'POST', body: form });
 }
 
+// Builds the multipart Request the hatian final-checkout route expects. The
+// route picks the orders to settle itself, so the client sends payment details
+// only — never a list of orders it could under- or over-report.
+export function settlementRequest(
+  opts: { withProof?: boolean; paymentMethod?: string; idempotencyKey?: string } = {},
+): Request {
+  const form = new FormData();
+  if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
+  if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
+  if (opts.withProof !== false) {
+    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
+  }
+  return new Request('http://localhost/api/settlements', { method: 'POST', body: form });
+}
+
 // Builds the multipart Request a campaign-commit route handler expects.
 export function commitRequest(qty: number, opts: { withProof?: boolean } = {}): Request {
   const form = new FormData();
