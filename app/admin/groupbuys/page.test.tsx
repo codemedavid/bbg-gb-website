@@ -57,4 +57,22 @@ describe('AdminGroupBuysPage', () => {
 
     await vi.waitFor(() => expect(screen.queryByText('Edit group buy')).not.toBeInTheDocument());
   });
+
+  // Without a deadline field, every new kahati is created with closesAt: null, so
+  // the storefront board shows "closes —" and the expiry/auto-cancel lifecycle
+  // never runs. The admin must be able to set the closing date on creation.
+  it('sends the chosen closing date when a new hatian is created', async () => {
+    saveMutate.mockResolvedValue({});
+    render(<Page />);
+
+    fireEvent.click(screen.getByRole('button', { name: /new group buy/i }));
+    await screen.findByText('New group buy');
+
+    fireEvent.change(screen.getByLabelText(/closes at/i), { target: { value: '2026-08-01T10:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await vi.waitFor(() => expect(saveMutate).toHaveBeenCalledTimes(1));
+    const payload = saveMutate.mock.calls[0][0];
+    expect(payload.closesAt).toEqual(expect.stringContaining('2026-08-01'));
+  });
 });
