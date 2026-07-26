@@ -4,7 +4,11 @@ import { KAHATI_MAX_VIALS } from './pricing';
 export const productSchema = z.object({
   code: z.string().max(40).optional(),
   name: z.string().min(2).max(160),
-  spec: z.string().min(1).max(120),
+  // Optional, matching the MOQ shelf (moqProductSchema): many real items
+  // (aesthetics "per piece", botulinum toxins) carry no spec beyond the name,
+  // and forcing one rejected an otherwise-valid save. The create route defaults
+  // an absent spec to '' so the NOT NULL column stays satisfied.
+  spec: z.string().max(120).optional(),
   categoryId: z.string().uuid().nullable().optional(),
   pricePhp: z.number().nonnegative(),
   priceUsd: z.number().nonnegative().nullable().optional(),

@@ -8,7 +8,18 @@ import { KAHATI_MAX_VIALS, kahatiProgressPercent } from '@/lib/kahati';
 import type { GroupBuy } from '@/lib/types';
 
 // A brand-new hatian starts empty and fills exactly one kit.
-const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSlots: KAHATI_MAX_VIALS, claimedSlots: 0, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder' });
+const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSlots: KAHATI_MAX_VIALS, claimedSlots: 0, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder', closesAt: null });
+
+// The hatian deadline drives the storefront "closes in …" countdown and the
+// expiry sweep. Stored as an ISO string; the <input type="datetime-local">
+// works in local time, so convert on the boundary.
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+const toIso = (local: string): string | null => (local ? new Date(local).toISOString() : null);
 
 function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClose: () => void }) {
   const { saveGroupBuy } = useMutate();
@@ -24,6 +35,7 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
         id: f.id, name: f.name, pricePerKitPhp: Number(f.pricePerKitPhp) as any,
         totalSlots: Number(f.totalSlots), claimedSlots: Number(f.claimedSlots), minVials: Number(f.minVials),
         repackFeePhp: Number(f.repackFeePhp) as any, status: f.status, arrivalGroup: f.arrivalGroup,
+        closesAt: f.closesAt ?? null,
         description: f.description ?? null,
       } as any);
       onClose();
@@ -45,6 +57,12 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
             {['open', 'closed', 'shipped', 'completed', 'cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </Labeled>
+        <div className="col-span-2">
+          <Labeled label="Closes at (deadline)">
+            <input className={field} type="datetime-local" aria-label="Closes at"
+              value={toLocalInput(f.closesAt)} onChange={(e) => setF({ ...f, closesAt: toIso(e.target.value) })} />
+          </Labeled>
+        </div>
       </div>
       {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
