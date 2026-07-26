@@ -90,8 +90,8 @@ export default function SettlePage() {
         <SectionHeader title="💳 Final checkout" sub="Settle your completed hatian orders" />
         <div className="px-5 py-16 text-center">
           <div className="mb-3 text-4xl">🫙</div>
-          <div className="mx-auto max-w-sm text-[13px] leading-relaxed text-ink-muted">
-            Wala pang nothing to settle — none of your hatians has completed yet. Once a
+          <div data-testid="settle-empty" className="mx-auto max-w-sm text-[13px] leading-relaxed text-ink-muted">
+            Wala pa kang babayaran — none of your hatians has completed yet. Once a
             batch fills up or reaches its deadline, its balance shows up here and you
             settle everything in one payment with a single packing fee.
           </div>
@@ -100,7 +100,10 @@ export default function SettlePage() {
     );
   }
 
-  const canPay = !!proof && orders.length > 0 && (methods.length === 0 || !!selectedMethod);
+  // A settlement claims every ready order and marks them awaiting review, so it
+  // must not be submittable when there is no method to have paid into — that
+  // would file a payment nobody could have made.
+  const canPay = !!proof && orders.length > 0 && !!selectedMethod;
 
   return (
     <>

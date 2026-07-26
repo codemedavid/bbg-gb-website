@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqProducts, paymentMethods } from '@/lib/db';
+import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqProducts, paymentMethods, settlements } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
@@ -407,9 +407,17 @@ async function findReplayedCheckout(
 export const GET = handler(async () => {
   const session = await requireSession();
   const db = await getDb();
-  const rows = await db.select().from(orders).where(eq(orders.userId, session.sub)).orderBy(desc(orders.createdAt));
-  const withItems = await Promise.all(rows.map(async (o) => ({
-    ...o, items: await db.select().from(orderItems).where(eq(orderItems.orderId, o.id)),
+  // The settlement's status rides along: My Orders has to tell an uploaded proof
+  // apart from a verified payment, and the settlement id alone cannot.
+  const rows = await db.select({ order: orders, settlementStatus: settlements.status })
+    .from(orders)
+    .leftJoin(settlements, eq(settlements.id, orders.settlementId))
+    .where(eq(orders.userId, session.sub))
+    .orderBy(desc(orders.createdAt));
+  const withItems = await Promise.all(rows.map(async ({ order, settlementStatus }) => ({
+    ...order,
+    settlementStatus,
+    items: await db.select().from(orderItems).where(eq(orderItems.orderId, order.id)),
   })));
   return ok(withItems);
 });

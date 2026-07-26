@@ -12,6 +12,7 @@ const NAV = [
   { href: '/admin/reports', label: 'Reports', icon: '📈' },
   { href: '/admin/products', label: 'Products', icon: '🧪' },
   { href: '/admin/groupbuys', label: 'Group Buys', icon: '🤝' },
+  { href: '/admin/settlements', label: 'Final Checkouts', icon: '💳' },
   // Labelled 'Group Buy Campaigns' so 'MOQ' unambiguously means the MOQ shelf
   // below. The route and table names are unchanged.
   { href: '/admin/campaigns', label: 'Group Buy Campaigns', icon: '🎯' },

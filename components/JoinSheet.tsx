@@ -41,7 +41,10 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
           <button onClick={onClose} className="px-2 py-1 text-[20px] text-ink-muted">✕</button>
         </div>
         <div className="mb-2 text-[12.5px] text-ink-muted">
-          {g.remaining} vials open · min {g.minVials} vials · {php(g.repackFeePhp)} packing fee, local shipping included
+          {/* No packing fee is charged for joining — it is collected once at the
+              final checkout that settles every completed hatian. Quoting the fee
+              here would contradict the ₱0 the cart then shows. */}
+          {g.remaining} vials open · min {g.minVials} vials · packing fee charged once at final checkout
         </div>
         {/* The refund condition belongs where the customer actually commits money. */}
         <div className={`mb-4 rounded-[10px] px-3 py-2 text-[12px] leading-snug ${

@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
+import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -22,6 +22,14 @@ export const useStats = () => useQuery({ queryKey: ['admin', 'stats'], queryFn: 
 export const useAdminProducts = () => useQuery({ queryKey: ['admin', 'products'], queryFn: () => apiGet<Product[]>('/admin/products') });
 export const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], queryFn: () => apiGet<Category[]>('/admin/categories') });
 export const useAdminGroupBuys = () => useQuery({ queryKey: ['admin', 'groupbuys'], queryFn: () => apiGet<GroupBuy[]>('/admin/groupbuys') });
+// Hatian final checkouts awaiting verification. Without this the settlement API
+// has no caller and a customer's payment can never be confirmed in-product.
+export const useAdminSettlements = (status?: string) =>
+  useQuery({
+    queryKey: ['admin', 'settlements', status ?? 'all'],
+    queryFn: () => apiGet<AdminSettlement[]>(`/admin/settlements${qs({ status })}`),
+  });
+
 // Participants in one hatian, with their three payments kept apart — see
 // app/api/admin/groupbuys/[id]/commitments/route.ts.
 export const useAdminGroupBuyCommitments = (id: string | null) =>
@@ -54,6 +62,9 @@ export function useMutate() {
     saveGroupBuy: useMutation({ mutationFn: (g: any) => g.id ? apiSend(`/admin/groupbuys/${g.id}`, 'PATCH', g) : apiSend('/admin/groupbuys', 'POST', g), onSuccess: invalidate, onError: toastError('Could not save group buy.') }),
     deleteGroupBuy: useMutation({ mutationFn: (id: string) => apiSend(`/admin/groupbuys/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete group buy.') }),
     setOrderStatus: useMutation({ mutationFn: (v: { id: string; status: string; trackingNo?: string; note?: string; courier?: string; packedBy?: string; paymentMethod?: string }) => apiSend(`/admin/orders/${v.id}/status`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the order.') }),
+    // Confirming a hatian final checkout is what flips the customer's packing fee
+    // and balance to Paid; cancelling releases its orders to be settled again.
+    setSettlementStatus: useMutation({ mutationFn: (v: { id: string; status: 'proof_review' | 'paid' | 'cancelled'; notes?: string }) => apiSend(`/admin/settlements/${v.id}`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the settlement.') }),
     savePaymentMethod: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/payment-methods/${v.id}`, 'PATCH', v.body) : apiSend('/admin/payment-methods', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save payment method.') }),
     deletePaymentMethod: useMutation({ mutationFn: (id: string) => apiSend(`/admin/payment-methods/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete payment method.') }),
     // Multipart so the product image rides along with the fields.

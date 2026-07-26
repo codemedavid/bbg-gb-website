@@ -31,6 +31,20 @@ function Timeline({ order }: { order: Order }) {
   );
 }
 
+// What the customer is told about a hatian order's packing fee. A settlement
+// that exists but is unverified is "under review", never "settled" — and a
+// cancelled one drops back to owing.
+const PACKING_FEE_LABEL = {
+  outstanding: 'Charged once at final checkout',
+  under_review: 'Final payment under review',
+  settled: 'Settled',
+} as const;
+
+function settlementLabelKey(order: Order): keyof typeof PACKING_FEE_LABEL {
+  if (!order.settlementId || order.settlementStatus === 'cancelled') return 'outstanding';
+  return order.settlementStatus === 'paid' ? 'settled' : 'under_review';
+}
+
 function OrderCard({ order }: { order: Order }) {
   const [open, setOpen] = useState(false);
   const toast = useToast((s) => s.show);
@@ -56,11 +70,15 @@ function OrderCard({ order }: { order: Order }) {
               <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
               {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
               {/* The fee is charged at the final checkout, not here — say which
-                  state this order is in so an unpaid fee is never a surprise. */}
+                  state this order is in so an unpaid fee is never a surprise.
+                  Keyed on the settlement's status, not merely on its existence:
+                  an uploaded proof is not a verified payment, and saying
+                  "Settled" while the admin panel says "under review" would have
+                  the two screens contradicting each other. */}
               {order.buyType === 'kahati' && (
                 <div className="mt-0.5 flex justify-between">
                   <span>Packing fee</span>
-                  <span>{order.settlementId ? 'Settled' : 'Charged once at final checkout'}</span>
+                  <span data-testid={`packing-fee-${order.orderNo}`}>{PACKING_FEE_LABEL[settlementLabelKey(order)]}</span>
                 </div>
               )}
             </div>

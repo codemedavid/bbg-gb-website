@@ -96,14 +96,24 @@ describe('packing fee status on a hatian order', () => {
     state.orders = [withSettlement('proof_review')];
     render(<OrdersPage />, { wrapper });
     (await screen.findByText('BBG-2418')).click();
-    expect(await screen.findByText(/under review/i)).toBeInTheDocument();
-    expect(screen.queryByText(/^settled$/i)).toBeNull();
+    // Scoped to the packing-fee row: the order's own status also reads
+    // "Proof under review", and the two must not be conflated.
+    const fee = await screen.findByTestId('packing-fee-BBG-2418');
+    expect(fee).toHaveTextContent(/under review/i);
+    expect(fee).not.toHaveTextContent(/^Settled$/i);
   });
 
   it('says settled only once the admin has confirmed the payment', async () => {
     state.orders = [withSettlement('paid')];
     render(<OrdersPage />, { wrapper });
     (await screen.findByText('BBG-2418')).click();
-    expect(await screen.findByText(/settled/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('packing-fee-BBG-2418')).toHaveTextContent(/settled/i);
+  });
+
+  it('goes back to owing when the settlement was cancelled', async () => {
+    state.orders = [{ ...withSettlement('proof_review'), settlementStatus: 'cancelled' }];
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2418')).click();
+    expect(await screen.findByTestId('packing-fee-BBG-2418')).toHaveTextContent(/charged once at final checkout/i);
   });
 });

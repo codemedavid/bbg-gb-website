@@ -79,8 +79,10 @@ export type Order = {
   // Weekly-report fulfilment fields (admin-editable). paymentMethod drives the Payment column.
   paymentMethod?: string | null; courier?: string | null; packedBy?: string | null; totalUsd?: string;
   // The final checkout that settled this order's balance and packing fee; null
-  // while either is still outstanding.
+  // while either is still outstanding. settlementStatus distinguishes a proof
+  // awaiting verification from a confirmed payment — the id alone does not.
   settlementId?: string | null;
+  settlementStatus?: 'proof_review' | 'paid' | 'cancelled' | null;
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };
@@ -114,6 +116,17 @@ export type HatianCommitment = {
   balancePhp: number; downpaymentPhp: number;
   downpayment: PaymentState; finalPayment: PaymentState; packingFee: PaymentState;
   settledAt: string | null;
+};
+
+// A settlement as the admin list renders it: the row plus who it belongs to and
+// how many hatian orders the one packing fee covered.
+export type AdminSettlement = {
+  id: string; status: 'proof_review' | 'paid' | 'cancelled';
+  packingFeePhp: string; balancePhp: string; totalPhp: string;
+  paymentMethod: string | null; paymentProofKey: string | null;
+  createdAt: string; paidAt: string | null;
+  customerName: string | null; customerEmail: string | null;
+  orderCount: number;
 };
 
 export type Settlement = {
