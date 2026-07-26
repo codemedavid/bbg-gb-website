@@ -167,6 +167,34 @@ One further commitment sits on a still-open hatian and is correctly excluded.
 The first customer would have paid seven packing fees under the old rule; going
 forward, new commitments carry no fee and settle under a single one.
 
+## Code-review findings and fixes (2026-07-26, after the first push to main)
+
+`/code-review` over `main...HEAD` returned 9 findings, all valid. Fixed on
+`fix/settlement-review-findings` (`6c43ded` RED → `e5892ba` GREEN,
+`b92d619` RED → `f7ebdf5` GREEN).
+
+| Severity | Finding | Fix |
+|---|---|---|
+| HIGH | Settlements had no admin surface — a paid settlement could never be confirmed in-product | New Admin → Final Checkouts page + `useAdminSettlements` / `setSettlementStatus` hooks + nav entry |
+| HIGH | Every pre-existing kahati order became "ready to settle", re-billing balances collected off-platform | `isReadyToSettle` excludes orders carrying a commit-time packing fee — the cutover marker |
+| MEDIUM | Cancel-then-reconfirm left a `paid` settlement owning no orders | Confirming re-attaches the released orders, skipping any a newer settlement has claimed |
+| MEDIUM | `balancePhp` reported in full under every hatian an overflow order touched | Renamed `orderBalancePhp`, added `spansOtherHatians`; the misleading comment corrected |
+| MEDIUM | My Orders read "Settled" as soon as `settlementId` was set, before verification | Label keyed on settlement status; `GET /api/orders` now returns `settlementStatus` |
+| MEDIUM | Join sheet still advertised a packing fee joining no longer charges | Copy now says the fee is charged once at final checkout |
+| LOW | Final-payment email greeted the customer by email address | Looks up `users.name` |
+| LOW | Pay button enabled with no payment methods configured | `canPay` requires a selected method |
+| LOW | Empty state read "Wala pang nothing to settle" | Rewritten |
+
+**One partial disagreement, recorded rather than silently dropped.** The review
+said a notes-only PATCH wipes `paidAt`. It does not for the realistic path: the
+schema requires `status`, and passing `status: 'paid'` preserves the existing
+timestamp (`existing.paidAt ?? new Date()`). A regression test now pins that
+behaviour. `paidAt` *is* cleared when moving a paid settlement back to
+`proof_review`, which is intended — it is no longer confirmed.
+
+**The 10 live orders quoted in the production table above are, after this fix, no
+longer settleable in-app** — they are legacy and close off-platform as before.
+
 ## Known gaps
 - **Flaky under load, not a regression.** Two full-suite runs each showed one
   DB-heavy test hitting the 10s hook timeout — a different file each time
