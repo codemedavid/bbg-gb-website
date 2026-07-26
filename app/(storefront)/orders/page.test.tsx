@@ -74,3 +74,36 @@ describe('settle prompt on My Orders', () => {
     expect(screen.queryByText(/ready to settle/i)).toBeNull();
   });
 });
+
+// The packing fee must not read as settled until someone has actually verified
+// the payment. Showing "Settled" the moment a settlement row exists contradicts
+// the admin panel, which still says "under review" for the same order.
+describe('packing fee status on a hatian order', () => {
+  const withSettlement = (settlementStatus: string | null) => ({
+    ...kahatiOrder,
+    settlementId: settlementStatus ? 's1' : null,
+    settlementStatus,
+  });
+
+  it('says the fee is charged at the final checkout while nothing is settled', async () => {
+    state.orders = [withSettlement(null)];
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2418')).click();
+    expect(await screen.findByText(/charged once at final checkout/i)).toBeInTheDocument();
+  });
+
+  it('says the payment is under review, not settled, while the proof is unverified', async () => {
+    state.orders = [withSettlement('proof_review')];
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2418')).click();
+    expect(await screen.findByText(/under review/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^settled$/i)).toBeNull();
+  });
+
+  it('says settled only once the admin has confirmed the payment', async () => {
+    state.orders = [withSettlement('paid')];
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2418')).click();
+    expect(await screen.findByText(/settled/i)).toBeInTheDocument();
+  });
+});

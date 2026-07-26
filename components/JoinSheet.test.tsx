@@ -21,6 +21,20 @@ beforeEach(() => {
 });
 
 describe('JoinSheet (Kahati commit)', () => {
+  // The fee is no longer charged when a customer joins a hatian — it is charged
+  // once at their final checkout. The sheet advertising "₱150 packing fee" while
+  // the cart totals ₱0 is the client/server disagreement this rule exists to
+  // avoid, one surface removed.
+  it('does not advertise a packing fee that joining no longer charges', () => {
+    render(<JoinSheet g={gb} onClose={vi.fn()} />);
+    expect(screen.queryByText(/₱150 packing fee/i)).toBeNull();
+  });
+
+  it('tells the customer the packing fee comes later, at the final checkout', () => {
+    render(<JoinSheet g={gb} onClose={vi.fn()} />);
+    expect(screen.getByText(/final checkout|huling checkout/i)).toBeInTheDocument();
+  });
+
   it('adds the committed vials to the cart', () => {
     render(<JoinSheet g={gb} onClose={vi.fn()} />);
     screen.getByRole('button', { name: /commit/i }).click();
