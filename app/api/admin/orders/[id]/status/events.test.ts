@@ -119,7 +119,7 @@ describe('order status events', () => {
 
 describe('kahati cancellation events', () => {
   it('emits kahati_cancelled for each participant of a failed hatian', async () => {
-    const { sweepExpiredKahatis } = await import('@/lib/kahati-server');
+    const { sweepKahatis } = await import('@/lib/kahati-server');
     const { getDb, groupBuys } = await import('@/lib/db');
     const { eq } = await import('drizzle-orm');
 
@@ -132,7 +132,7 @@ describe('kahati cancellation events', () => {
     await db.update(groupBuys).set({ closesAt: new Date(Date.now() - 86_400_000) }).where(eq(groupBuys.id, gb.id));
     captureEvent.mockClear();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     const [payload] = eventsNamed('kahati_cancelled');
     expect(payload).toBeTruthy();

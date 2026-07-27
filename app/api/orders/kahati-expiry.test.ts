@@ -1,5 +1,5 @@
 // The hatian deadline is authoritative at checkout. Expired counters are only
-// resolved lazily (sweepExpiredKahatis runs on board reads), so a checkout can
+// resolved lazily (sweepKahatis runs on board reads), so a checkout can
 // arrive while an expired hatian is still marked 'open' — the claim itself has
 // to refuse it, and with a message that says "closed", not "N vials left".
 import { describe, it, expect, beforeEach, vi } from 'vitest';

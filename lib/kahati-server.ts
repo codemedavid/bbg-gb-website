@@ -1,9 +1,12 @@
 // Hatian (kahati) lifecycle — database side effects.
 //
-// There is no scheduler in this app, so expired counters are resolved lazily:
-// callers invoke sweepExpiredKahatis() when they read the board (public + admin).
-// The auto-open on fill happens inside the checkout transaction (see the orders
-// route) and on admin edits that fill the kit — both through closeFullKahati.
+// There is no scheduler in this app, so counters are resolved lazily: callers
+// invoke sweepKahatis() when they read the board (public + admin). That sweep
+// seals hatians that filled their kit AND resolves ones whose deadline passed.
+// Filling also rolls over eagerly inside the checkout transaction (see the
+// orders route) and on admin edits that fill the kit — both through
+// closeFullKahati — so the sweep is the backstop for a fill that no later
+// checkout or edit ever revisits, not the only path.
 //
 // A hatian succeeds at KAHATI_MIN_VIABLE_VIALS (7), not at the 10-vial cap. An
 // expired hatian at or above the minimum simply closes. Below it, the batch is
@@ -25,6 +28,7 @@ type GroupBuyRow = typeof groupBuys.$inferSelect;
 export type KahatiSweepResult = {
   closed: string[];      // hatian ids that met the minimum
   cancelled: string[];   // hatian ids that fell short
+  rolled: string[];      // hatian ids that filled their kit and were sealed
   ordersCancelled: number;
 };
 
@@ -52,13 +56,53 @@ const expiredUnviable = (now: Date): SQL | undefined => and(
   lt(groupBuys.claimedSlots, KAHATI_MIN_VIABLE_VIALS),
 );
 
-// Resolve OPEN hatians whose close deadline has passed. Both transitions are
-// guarded conditional UPDATEs — the WHERE re-checks status, deadline and
-// viability, and RETURNING decides which rows this sweep actually resolved. A
-// checkout racing the sweep therefore cannot strand a fresh order on a
-// cancelled hatian, and a hatian that just turned viable cannot be cancelled.
-// Idempotent: a repeat sweep matches nothing and releases nobody.
-export async function sweepExpiredKahatis(db: Db, now: Date = new Date()): Promise<KahatiSweepResult> {
+// An OPEN hatian that has reached its vial cap. Its kit is complete, so it must
+// not stay on the board: nobody can join it, and until it is sealed no successor
+// exists for the next customer to join instead.
+const filledToCap = (): SQL | undefined => and(
+  eq(groupBuys.status, 'open'),
+  gte(groupBuys.claimedSlots, groupBuys.totalSlots),
+);
+
+// Seal every hatian that has filled its kit and open its successor. Sealing used
+// to happen only as a side effect of the checkout that landed the final vial or
+// of an admin edit, so a counter that filled and was then left alone stayed open
+// at 10/10 with no successor — full, unjoinable, and still listed on the board.
+// This is the rule stated on its own: reaching the cap completes the kit, and a
+// fresh counter opens, every time, no matter what caused the fill.
+//
+// closeFullKahati's flip is guarded on 'open', so a sweep racing a checkout over
+// the same counter seals it exactly once; the loser skips it and reports nothing.
+async function sweepFullKahatis(db: Db): Promise<string[]> {
+  const candidates = await db.select({ id: groupBuys.id }).from(groupBuys).where(filledToCap());
+
+  const rolled: string[] = [];
+  for (const candidate of candidates) {
+    // Re-read inside the loop: an earlier iteration cannot have touched this row,
+    // but a concurrent checkout can, and closeFullKahati clones from this snapshot.
+    const [row] = await db.select().from(groupBuys).where(eq(groupBuys.id, candidate.id));
+    if (!row || row.status !== 'open') continue;
+    const rollover = await closeFullKahati(db, row);
+    if (rollover) rolled.push(rollover.sealed.id);
+  }
+  return rolled;
+}
+
+// Resolve OPEN hatians that are finished with — either because they filled their
+// kit or because their close deadline passed. Every transition is a guarded
+// conditional UPDATE — the WHERE re-checks status, deadline and viability, and
+// RETURNING decides which rows this sweep actually resolved. A checkout racing
+// the sweep therefore cannot strand a fresh order on a cancelled hatian, and a
+// hatian that just turned viable cannot be cancelled.
+// Idempotent: a repeat sweep matches nothing, seals nobody and releases nobody.
+//
+// Full counters are handled FIRST. A hatian that is both full and expired must
+// roll over rather than merely close: the expiry branch would flip it to 'closed'
+// (10 vials clears the 7-vial minimum) and open no successor, which is the very
+// state this sweep exists to prevent.
+export async function sweepKahatis(db: Db, now: Date = new Date()): Promise<KahatiSweepResult> {
+  const rolled = await sweepFullKahatis(db);
+
   const closed = await db.update(groupBuys).set({ status: 'closed' })
     .where(and(
       eq(groupBuys.status, 'open'),
@@ -85,6 +129,7 @@ export async function sweepExpiredKahatis(db: Db, now: Date = new Date()): Promi
   return {
     closed: closed.map((r) => r.id),
     cancelled,
+    rolled,
     ordersCancelled: notices.length,
   };
 }

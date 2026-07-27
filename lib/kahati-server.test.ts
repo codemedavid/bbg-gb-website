@@ -22,7 +22,7 @@ vi.mock('@/lib/session', () => {
   };
 });
 
-const { sweepExpiredKahatis, closeFullKahati } = await import('./kahati-server');
+const { sweepKahatis, closeFullKahati } = await import('./kahati-server');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { getDb, groupBuys, orders, orderItems, orderStatusHistory, emailLog, products } = await import('@/lib/db');
 const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
@@ -70,13 +70,13 @@ beforeEach(async () => {
   await resetDb();
 });
 
-describe('sweepExpiredKahatis — viability', () => {
+describe('sweepKahatis — viability', () => {
   it('closes an expired hatian that met the 7-vial minimum', async () => {
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1, closesAt: past() });
     const db = await getDb();
     await db.update(groupBuys).set({ claimedSlots: 7 }).where(eq(groupBuys.id, gb.id));
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     expect(await statusOf(gb.id)).toBe('closed');
   });
@@ -85,7 +85,7 @@ describe('sweepExpiredKahatis — viability', () => {
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 6, minVials: 1, closesAt: past() });
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     expect(await statusOf(gb.id)).toBe('cancelled');
   });
@@ -94,7 +94,7 @@ describe('sweepExpiredKahatis — viability', () => {
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 2, closesAt: new Date(Date.now() + DAY) });
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     expect(await statusOf(gb.id)).toBe('open');
   });
@@ -104,14 +104,14 @@ describe('sweepExpiredKahatis — viability', () => {
     const bad = await makeGroupBuy({ totalSlots: 10, claimedSlots: 1, minVials: 1, closesAt: past() });
     const db = await getDb();
 
-    const result = await sweepExpiredKahatis(db);
+    const result = await sweepKahatis(db);
 
     expect(result.closed).toContain(good.id);
     expect(result.cancelled).toContain(bad.id);
   });
 });
 
-describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
+describe('sweepKahatis — failed hatian cancellation flow', () => {
   it("cancels every participant's order", async () => {
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
     const a = await joinKahati(gb.id, 2);
@@ -119,7 +119,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     expect(await statusOf(gb.id)).toBe('cancelled');
     expect(await orderStatus(a.order.id)).toBe('cancelled');
@@ -132,7 +132,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     const history = await db.select().from(orderStatusHistory)
       .where(and(eq(orderStatusHistory.orderId, order.id), eq(orderStatusHistory.status, 'cancelled')));
@@ -147,7 +147,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     const sent = await db.select().from(emailLog).where(eq(emailLog.kind, 'kahati_cancelled'));
     expect(sent.map((e) => e.toEmail).sort()).toEqual([a.user.email, b.user.email].sort());
@@ -164,7 +164,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     const [row] = await db.select().from(products).where(eq(products.id, product.id));
     expect(row.stock).toBe(46); // the 4 drawn at checkout stay drawn
@@ -198,7 +198,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     ]);
     await expire(gb.id);
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     const [row] = await db.select().from(products).where(eq(products.id, product.id));
     expect(row.stock).toBe(50); // 46 + the 4 returned by the cancellation
@@ -211,7 +211,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     expect(await statusOf(gb.id)).toBe('closed');
     expect(await orderStatus(order.id)).toBe('proof_review');
@@ -224,8 +224,8 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
+    await sweepKahatis(db);
 
     const [row] = await db.select().from(products).where(eq(products.id, product.id));
     // The on-hand lines now live on their own order, which the sweep never
@@ -246,7 +246,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(failing.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     expect(await orderStatus(other.order.id)).toBe('proof_review');
     expect(await statusOf(healthy.id)).toBe('open');
@@ -258,7 +258,7 @@ describe('sweepExpiredKahatis — failed hatian cancellation flow', () => {
     await expire(gb.id);
     const db = await getDb();
 
-    await sweepExpiredKahatis(db);
+    await sweepKahatis(db);
 
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
     expect(lines.length).toBeGreaterThan(0);

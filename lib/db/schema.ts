@@ -1,6 +1,6 @@
 import {
   pgTable, uuid, text, varchar, integer, numeric, boolean,
-  timestamp, jsonb, pgEnum, index, uniqueIndex, pgSequence,
+  timestamp, jsonb, pgEnum, index, uniqueIndex, pgSequence, check,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -95,7 +95,14 @@ export const groupBuys = pgTable('group_buys', {
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  // The ceiling lives in the database, not only in application code — that is the
+  // difference between "cannot exceed the kit" and "usually does not". A hatian
+  // holds one kit, so 11/10 or 13/10 is not a state any path may write: checkout,
+  // admin edit, a script or a console query all hit this same wall. Overflow
+  // becomes the next counter (lib/kahati-server.ts closeFullKahati) instead.
+  withinCap: check('group_buys_claimed_within_cap', sql`${t.claimedSlots} <= ${t.totalSlots}`),
+}));
 
 // ---- Group Buy (MOQ) campaigns ----------------------------------------
 // Distinct from group_buys (Kahati). A campaign is one BATCH: it holds customer

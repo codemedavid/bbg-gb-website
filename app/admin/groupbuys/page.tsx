@@ -4,7 +4,7 @@ import { useAdminGroupBuys, useAdminGroupBuyCommitments, useMutate } from '@/lib
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
-import { KAHATI_MAX_VIALS, kahatiProgressPercent } from '@/lib/kahati';
+import { KAHATI_MAX_VIALS, kahatiProgressPercent, kahatiClaimedDisplay } from '@/lib/kahati';
 import type { GroupBuy, HatianCommitment, PaymentState } from '@/lib/types';
 
 // A brand-new hatian starts empty and fills exactly one kit.
@@ -189,7 +189,10 @@ export default function AdminGroupBuysPage() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? <div className="text-ink-muted">Loading…</div> : gbs.map((g) => {
-          const progress = kahatiProgressPercent(g.claimedSlots, g.totalSlots);
+          // Clamped so a row written before the database cap existed reads
+          // "10/10 vials", never the "13/10" the business says cannot happen.
+          const claimed = kahatiClaimedDisplay(g.claimedSlots, g.totalSlots);
+          const progress = kahatiProgressPercent(claimed, g.totalSlots);
           return (
             <div key={g.id} className="rounded-[16px] bg-white p-4 shadow-card">
               <div className="flex items-start justify-between">
@@ -198,7 +201,7 @@ export default function AdminGroupBuysPage() {
               </div>
               <div className="mt-1 text-[12px] text-ink-muted">{php(g.pricePerKitPhp)}/kit · ₱{Number(g.pricePerKitPhp) / 10}/vial</div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf2ea]"><div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${progress}%` }} /></div>
-              <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{g.claimedSlots}/{g.totalSlots} vials</div>
+              <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{claimed}/{g.totalSlots} vials</div>
               <button onClick={() => setViewing(g)}
                 className="mt-2 w-full rounded-[9px] bg-surface-mist py-1.5 text-[12.5px] font-semibold text-ink-body hover:bg-[#eaf0e6]">
                 👥 Participants &amp; payments

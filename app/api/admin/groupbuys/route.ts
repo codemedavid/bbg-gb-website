@@ -4,7 +4,7 @@ import { ok, handler } from '@/lib/api-response';
 import { getDb, groupBuys } from '@/lib/db';
 import { groupBuySchema } from '@/lib/admin-schemas';
 import { getPackingFees } from '@/lib/settings';
-import { sweepExpiredKahatis } from '@/lib/kahati-server';
+import { sweepKahatis } from '@/lib/kahati-server';
 import { KAHATI_MAX_VIALS } from '@/lib/kahati';
 
 export const GET = handler(async () => {
@@ -12,7 +12,7 @@ export const GET = handler(async () => {
   const db = await getDb();
   // Resolve expired counters (cancel unfilled, close full) before listing so the
   // admin board reflects the real lifecycle state on load.
-  await sweepExpiredKahatis(db);
+  await sweepKahatis(db);
   return ok(await db.select().from(groupBuys).orderBy(desc(groupBuys.createdAt)));
 });
 

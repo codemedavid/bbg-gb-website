@@ -40,6 +40,16 @@ export function kahatiProgressPercent(claimedSlots: number, totalSlots: number):
   return Math.min(100, Math.max(0, pct));
 }
 
+// The claimed count as a customer should ever see it. A hatian holds one kit, so
+// "13 / 10 vials" is a number the business says cannot exist — the database now
+// refuses to store one (CHECK claimed_slots <= total_slots), but rows written
+// before that constraint, or by hand, must not render one either. Clamped at
+// both ends; a missing or nonsensical cap yields 0 rather than a negative bar.
+export function kahatiClaimedDisplay(claimedSlots: number, totalSlots: number): number {
+  if (!(totalSlots > 0)) return 0;
+  return Math.min(totalSlots, Math.max(0, claimedSlots));
+}
+
 export type KahatiStatus = 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
 
 // Board badge for a hatian. It counts toward the 7-vial minimum rather than the

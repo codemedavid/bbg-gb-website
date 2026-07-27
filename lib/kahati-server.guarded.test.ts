@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 
-const { cancelExpiredKahati, sweepExpiredKahatis } = await import('./kahati-server');
+const { cancelExpiredKahati, sweepKahatis } = await import('./kahati-server');
 const { getDb, groupBuys, orders } = await import('@/lib/db');
 const { resetDb, makeGroupBuy } = await import('@/lib/test/harness');
 
@@ -75,7 +75,7 @@ describe('sweep resolves by the guarded transitions', () => {
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7, minVials: 1, closesAt: past() });
     const db = await getDb();
 
-    const result = await sweepExpiredKahatis(db);
+    const result = await sweepKahatis(db);
 
     expect(result.closed).toContain(gb.id);
     expect(result.cancelled).not.toContain(gb.id);
