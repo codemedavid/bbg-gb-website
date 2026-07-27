@@ -3,6 +3,7 @@
 // then gives each test a clean database plus fixture builders.
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { getDb, users, categories, products, groupBuys, moqCampaigns, moqProducts, paymentMethods } from '@/lib/db';
@@ -97,17 +98,27 @@ export async function makeGroupBuy(
 }
 
 export async function makeMoqCampaign(
-  overrides: Partial<{ moq: number; committed: number; perCustomerMin: number; pricePerKitPhp: number; status: 'open' | 'approved' | 'cancelled' }> = {},
-): Promise<{ id: string; moq: number; committed: number; perCustomerMin: number }> {
+  overrides: Partial<{
+    moq: number; committed: number; perCustomerMin: number; pricePerKitPhp: number;
+    status: 'open' | 'approved' | 'completed' | 'cancelled';
+    // A batch later in an existing series; omitted, the campaign is batch #1 of
+    // its own series, which is what the create route writes.
+    seriesId: string; batchNo: number; deadline: Date | null;
+  }> = {},
+): Promise<{ id: string; moq: number; committed: number; perCustomerMin: number; seriesId: string }> {
   const db = await getDb();
   const moq = overrides.moq ?? 10;
   const committed = overrides.committed ?? 0;
   const perCustomerMin = overrides.perCustomerMin ?? 1;
+  const id = randomUUID();
+  const seriesId = overrides.seriesId ?? id;
   const [row] = await db.insert(moqCampaigns).values({
+    id, seriesId, batchNo: overrides.batchNo ?? 1,
     name: 'Test Campaign', pricePerKitPhp: String(overrides.pricePerKitPhp ?? 10400),
     moq, committed, perCustomerMin, status: overrides.status ?? 'open',
+    deadline: overrides.deadline ?? null,
   }).returning();
-  return { id: row.id, moq, committed, perCustomerMin };
+  return { id: row.id, moq, committed, perCustomerMin, seriesId };
 }
 
 export async function makeMoqProduct(

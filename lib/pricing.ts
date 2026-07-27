@@ -251,23 +251,43 @@ export function validateMoqQty(
   return { ok: true };
 }
 
+// A group buy batch is one supplier consignment and holds at most this many
+// kits. Not admin-editable: 10/10 is the largest a batch can ever read, and a
+// commitment beyond it opens the next batch (see lib/moq-batch-server.ts).
+export const MOQ_BATCH_MAX_KITS = 10;
+
+// How many kits a batch accepts: its admin-set MOQ, bounded by the hard ceiling
+// — a legacy row carrying moq = 25 still caps at 10 — and floored at 1, so a
+// zero MOQ cannot make a batch nothing fits into.
+export function batchCapacity(moq: number): number {
+  if (!Number.isFinite(moq)) return MOQ_BATCH_MAX_KITS;
+  return Math.max(1, Math.min(Math.floor(moq), MOQ_BATCH_MAX_KITS));
+}
+
 export type GroupBuyMoqStatus = {
+  // Clamped to the capacity: no batch may report more kits than it can hold,
+  // so a row over-committed before the cap existed still reads 10/10, not 13/10.
   committed: number;
+  capacity: number;
   moq: number;
   remaining: number;
   progress: number; // 0..1
   reached: boolean;
+  full: boolean;
 };
 
-// MOQ progress for a group buy campaign. progress is clamped to [0, 1];
-// remaining floors at 0 once MOQ is met or exceeded.
+// MOQ progress for one group buy batch. progress is clamped to [0, 1];
+// remaining floors at 0 once the batch is full.
 export function groupBuyMoqStatus(committed: number, moq: number): GroupBuyMoqStatus {
-  const reached = committed >= moq;
+  const capacity = batchCapacity(moq);
+  const held = Math.max(0, Math.min(committed, capacity));
   return {
-    committed,
+    committed: held,
+    capacity,
     moq,
-    remaining: Math.max(0, moq - committed),
-    progress: moq > 0 ? Math.min(1, committed / moq) : 0,
-    reached,
+    remaining: Math.max(0, capacity - held),
+    progress: Math.min(1, held / capacity),
+    reached: committed >= moq,
+    full: held >= capacity,
   };
 }

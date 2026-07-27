@@ -2,20 +2,28 @@
 import { php } from '@/lib/format';
 import type { MoqCampaign } from '@/lib/types';
 
-// A Group Buy (MOQ) campaign on the storefront board.
+// One Group Buy (MOQ) batch on the storefront board.
 //
-// Deliberately not a variant of GroupBuyCard: a hatian fills a fixed 10-vial kit
-// and locks at the cap, whereas a campaign chases a supplier minimum it may
-// overshoot, and carries a lifecycle (approve below MOQ / extend / cancel with
-// refunds) that the hatian board has no concept of. Sharing one component would
-// mean branching on kind in every line.
+// Deliberately not a variant of GroupBuyCard: a hatian splits a 10-vial kit
+// between people, whereas a batch pools whole kits and carries a lifecycle
+// (approve below MOQ / extend / cancel with refunds) the hatian board has no
+// concept of. Sharing one component would mean branching on kind in every line.
 
-type OutcomeStyle = { label: string; className: string };
+type Badge = { label: string; className: string };
 
-const OUTCOME: Record<MoqCampaign['outcome'], OutcomeStyle> = {
+const OUTCOME: Record<MoqCampaign['outcome'], Badge> = {
   awaiting_moq: { label: 'Awaiting MOQ', className: 'bg-warn-softbg text-[#8a6400]' },
   processing: { label: 'Processing', className: 'bg-[#e8f5db] text-brand-greendark' },
   refunded: { label: 'Cancelled — refunded', className: 'bg-[#fdeaea] text-[#a33]' },
+};
+
+// The batch's own state, shown next to the outcome: the outcome answers "what
+// happens to my money", this answers "can I still join THIS batch".
+const STATUS: Record<MoqCampaign['status'], Badge> = {
+  open: { label: 'Open', className: 'bg-[#e8f5db] text-brand-greendark' },
+  completed: { label: 'Completed', className: 'bg-[#dbe8f5] text-brand-navy' },
+  approved: { label: 'Approved', className: 'bg-[#dbe8f5] text-brand-blue' },
+  cancelled: { label: 'Cancelled', className: 'bg-line text-ink-body' },
 };
 
 const deadlineLabel = (iso: string | null): string | null => {
@@ -28,9 +36,10 @@ const deadlineLabel = (iso: string | null): string | null => {
 export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: MoqCampaign) => void }) {
   const isOpen = c.status === 'open';
   const outcome = OUTCOME[c.outcome];
+  const status = STATUS[c.status];
   const closes = deadlineLabel(c.deadline);
-  // A campaign may exceed its MOQ, so the bar caps at 100% while the count does
-  // not — "14 / 10 kits" is the honest number and reads as momentum.
+  // A batch cannot exceed its capacity, so the count and the bar agree: the
+  // fullest this ever reads is 10 / 10 kits, and the overflow is batch #2.
   const barWidth = `${Math.min(1, c.progress) * 100}%`;
 
   return (
@@ -39,31 +48,40 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
         <div>
           <h3 className="m-0 font-display text-[15px] font-bold leading-tight text-ink">{c.name}</h3>
           <p className="mt-0.5 text-[12px] text-ink-muted">
-            {php(c.pricePerKitPhp)} per kit
+            Batch #{c.batchNo} · {php(c.pricePerKitPhp)} per kit
           </p>
         </div>
-        <span className={`flex-none rounded-full px-2.5 py-1 text-[11px] font-bold ${outcome.className}`}>
-          {outcome.label}
-        </span>
+        <div className="flex flex-none flex-col items-end gap-1">
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${status.className}`}>
+            {status.label}
+          </span>
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${outcome.className}`}>
+            {outcome.label}
+          </span>
+        </div>
       </header>
 
       <div>
         <div className="mb-1 flex items-baseline justify-between text-[12.5px]">
-          <span className="font-bold text-ink">{c.committed} / {c.moq} kits</span>
+          <span className="font-bold text-ink">{c.committed} / {c.capacity} kits</span>
           <span className="text-ink-muted">
-            {c.reached ? 'MOQ reached 🎉' : `${c.remaining} more to unlock`}
+            {c.full
+              ? 'Batch full 🎉'
+              : isOpen
+                ? `${c.remaining} slot${c.remaining === 1 ? '' : 's'} left`
+                : `${c.remaining} unfilled`}
           </span>
         </div>
         <div
           role="progressbar"
-          aria-label={`${c.name} MOQ progress`}
+          aria-label={`Batch #${c.batchNo} of ${c.name} — kits committed`}
           aria-valuenow={c.committed}
           aria-valuemin={0}
-          aria-valuemax={c.moq}
+          aria-valuemax={c.capacity}
           className="h-2 w-full overflow-hidden rounded-full bg-surface-mist"
         >
           <div
-            className={`h-full rounded-full transition-[width] duration-300 ${c.reached ? 'bg-brand-green' : 'bg-brand-blue'}`}
+            className={`h-full rounded-full transition-[width] duration-300 ${c.full ? 'bg-brand-green' : 'bg-brand-blue'}`}
             style={{ width: barWidth }}
           />
         </div>
@@ -83,7 +101,7 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
           onClick={() => onCommit(c)}
           className="rounded-full bg-brand-blue px-4 py-2 text-[12.5px] font-bold text-white transition-colors hover:bg-brand-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-faint"
         >
-          {isOpen ? 'Commit kits' : 'Closed'}
+          {isOpen ? 'Commit kits' : c.status === 'completed' ? 'Batch full' : 'Closed'}
         </button>
       </footer>
     </article>

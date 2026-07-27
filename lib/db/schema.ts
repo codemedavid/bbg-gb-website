@@ -1,6 +1,6 @@
 import {
   pgTable, uuid, text, varchar, integer, numeric, boolean,
-  timestamp, jsonb, pgEnum, index, pgSequence,
+  timestamp, jsonb, pgEnum, index, uniqueIndex, pgSequence,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -12,7 +12,9 @@ export const orderNoSeq = pgSequence('order_no_seq', { startWith: 2418 });
 export const roleEnum = pgEnum('user_role', ['customer', 'admin']);
 export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati', 'group_buy', 'moq']);
 // Group Buy (MOQ) campaign lifecycle. 'reached' is derived (committed >= moq), not stored.
-export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['open', 'approved', 'cancelled']);
+// 'completed' = the batch filled to its 10-kit cap and closed itself; further
+// commitments go to the successor batch the fill opened (see lib/moq-batch-server.ts).
+export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['open', 'approved', 'completed', 'cancelled']);
 export const orderStatusEnum = pgEnum('order_status', [
   'proof_review',      // 0 Proof under review
   'payment_confirmed', // 1 Payment confirmed
@@ -96,14 +98,23 @@ export const groupBuys = pgTable('group_buys', {
 });
 
 // ---- Group Buy (MOQ) campaigns ----------------------------------------
-// Distinct from group_buys (Kahati). A campaign holds customer commitments until
-// its MOQ (in kits) is reached or the admin approves/extends/cancels it.
+// Distinct from group_buys (Kahati). A campaign is one BATCH: it holds customer
+// commitments until it fills its MOQ (in kits, capped at MOQ_BATCH_MAX_KITS) or
+// the admin approves/extends/cancels it. Filling completes and closes the batch
+// and opens a successor, so a batch can never hold more kits than its MOQ —
+// overflow becomes batch #2, #3, … of the same series.
 export const moqCampaigns = pgTable('moq_campaigns', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 160 }).notNull(),
   pricePerKitPhp: numeric('price_per_kit_php', { precision: 12, scale: 2 }).notNull(),
-  moq: integer('moq').notNull().default(10),               // kits target
+  moq: integer('moq').notNull().default(10),               // kits this batch holds
   committed: integer('committed').notNull().default(0),    // kits committed so far
+  // Successive batches of one campaign. `seriesId` is the id of batch #1 (its
+  // own id for a first batch), so every batch of a series is one indexed read
+  // away — which is how a commitment against a completed batch finds the open
+  // one instead of opening a duplicate.
+  seriesId: uuid('series_id'),
+  batchNo: integer('batch_no').notNull().default(1),
   perCustomerMin: integer('per_customer_min').notNull().default(1),
   // Pasabay packing fee (local shipping included); admin-editable per campaign.
   shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('300'),
@@ -114,7 +125,14 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  seriesIdx: index('moq_campaigns_series_idx').on(t.seriesId),
+  // One batch number per series, enforced by the database. Two customers whose
+  // commitments fill the same batch at the same instant both try to open its
+  // successor; this is what stops them minting two "batch #2"s and splitting
+  // the series in half — the loser joins the winner's batch.
+  seriesBatchIdx: uniqueIndex('moq_campaigns_series_batch_idx').on(t.seriesId, t.batchNo),
+}));
 
 // ---- MOQ products ------------------------------------------------------
 // The MOQ shelf: a small, curated set of bulk items sold on their own page with

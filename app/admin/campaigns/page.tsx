@@ -4,6 +4,7 @@ import { useCampaigns, useAdminProducts, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
+import { MOQ_BATCH_MAX_KITS } from '@/lib/pricing';
 import type { CampaignPayload, IncludedProduct, MoqCampaign } from '@/lib/types';
 
 type Draft = Partial<MoqCampaign>;
@@ -33,6 +34,8 @@ function validate(f: Draft): string | null {
   if ((f.name ?? '').trim().length < 2) return 'Name must be at least 2 characters.';
   if (!(Number(f.pricePerKitPhp) > 0)) return 'Price / kit must be greater than 0.';
   if (!Number.isInteger(Number(f.moq)) || Number(f.moq) < 1) return 'MOQ must be a whole number of 1 or more.';
+  // The API refuses anything larger; say so here rather than letting the save fail.
+  if (Number(f.moq) > MOQ_BATCH_MAX_KITS) return `A batch holds at most ${MOQ_BATCH_MAX_KITS} kits — bigger runs continue as batch #2.`;
   if (Number(f.shippingPhp) < 0) return 'Shipping cannot be negative.';
   return null;
 }
@@ -84,7 +87,7 @@ function CampaignForm({ initial, onClose }: { initial: Draft; onClose: () => voi
         <div className="col-span-2"><Labeled label="Name"><input className={field} value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} /></Labeled></div>
         <Labeled label="Price / kit ₱"><input className={field} type="number" value={f.pricePerKitPhp as any} onChange={(e) => setF({ ...f, pricePerKitPhp: e.target.value })} /></Labeled>
         <Labeled label="Packing fee ₱ (local shipping incl.)"><input className={field} type="number" value={f.shippingPhp as any} onChange={(e) => setF({ ...f, shippingPhp: e.target.value })} /></Labeled>
-        <Labeled label="MOQ (kits)"><input className={field} type="number" value={f.moq ?? 10} onChange={(e) => setF({ ...f, moq: Number(e.target.value) })} /></Labeled>
+        <Labeled label={`Batch size (kits, max ${MOQ_BATCH_MAX_KITS})`}><input className={field} type="number" min={1} max={MOQ_BATCH_MAX_KITS} value={f.moq ?? MOQ_BATCH_MAX_KITS} onChange={(e) => setF({ ...f, moq: Number(e.target.value) })} /></Labeled>
         <Labeled label="Deadline"><input className={field} type="datetime-local" value={toLocalInput(f.deadline)} onChange={(e) => setF({ ...f, deadline: toIso(e.target.value) })} /></Labeled>
         <Labeled label="Arrival group">
           <select className={field} value={f.arrivalGroup} onChange={(e) => setF({ ...f, arrivalGroup: e.target.value as MoqCampaign['arrivalGroup'] })}>
@@ -149,6 +152,8 @@ function ExtendModal({ campaign, onClose }: { campaign: MoqCampaign; onClose: ()
 const STATUS_STYLE: Record<MoqCampaign['status'], string> = {
   open: 'bg-[#e8f5db] text-brand-greendark',
   approved: 'bg-[#dbe8f5] text-brand-blue',
+  // Reached its 10-kit cap and closed itself; its successor is already open.
+  completed: 'bg-[#dbe8f5] text-brand-navy',
   cancelled: 'bg-line text-ink-body',
 };
 
@@ -195,12 +200,12 @@ export default function AdminCampaignsPage() {
           return (
             <div key={c.id} className="rounded-[16px] bg-white p-4 shadow-card">
               <div className="flex items-start justify-between gap-2">
-                <div className="font-bold text-ink">{c.name}</div>
+                <div className="font-bold text-ink">{c.name} <span className="text-ink-muted">· Batch #{c.batchNo}</span></div>
                 <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold ${STATUS_STYLE[c.status]}`}>{c.status}</span>
               </div>
               <div className="mt-1 text-[12px] text-ink-muted">{php(c.pricePerKitPhp)}/kit · {OUTCOME_LABEL[c.outcome]}</div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf2ea]"><div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${Math.min(pct, 100)}%` }} /></div>
-              <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{c.committed}/{c.moq} kits{c.reached ? ' · MOQ reached' : ` · ${c.remaining} to go`}</div>
+              <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{c.committed}/{c.capacity} kits{c.full ? ' · batch full' : ` · ${c.remaining} slot${c.remaining === 1 ? '' : 's'} left`}</div>
               {c.deadline && <div className="mt-1 text-[11px] text-ink-muted">Deadline: {new Date(c.deadline).toLocaleString()}</div>}
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -208,8 +213,13 @@ export default function AdminCampaignsPage() {
                 {c.status === 'open' && <>
                   <button onClick={() => campaignAction.mutate({ id: c.id, action: 'approve' })} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-brand-greendark disabled:opacity-50" disabled={busy}>Approve</button>
                   <button onClick={() => setExtending(c)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-ink-body disabled:opacity-50" disabled={busy}>Extend</button>
-                  <button onClick={() => handleCancel(c)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-warn-fg disabled:opacity-50" disabled={busy}>Cancel</button>
                 </>}
+                {/* A full batch needs no approval and accepts no extension, but a
+                    supplier can still fall through after it closed — so cancel
+                    stays available on a completed batch. */}
+                {(c.status === 'open' || c.status === 'completed') && (
+                  <button onClick={() => handleCancel(c)} className="flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold text-warn-fg disabled:opacity-50" disabled={busy}>Cancel</button>
+                )}
                 <button onClick={() => handleDelete(c)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b] disabled:opacity-50" disabled={busy}>✕</button>
               </div>
             </div>

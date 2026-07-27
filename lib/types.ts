@@ -34,14 +34,20 @@ export type MoqProduct = {
 
 export type IncludedProduct = { productId: string; name: string; outOfStock?: boolean };
 
+// One BATCH of a group buy. A campaign that outgrows its 10-kit cap continues as
+// batch #2, #3, … of the same series, so the board lists batches, not campaigns.
 export type MoqCampaign = {
   id: string; name: string; pricePerKitPhp: string; moq: number; committed: number;
-  shippingPhp: string; status: 'open' | 'approved' | 'cancelled';
+  shippingPhp: string; status: 'open' | 'approved' | 'completed' | 'cancelled';
   deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null; createdAt: string;
+  // Which batch of which series this row is. seriesId resolves to the row's own
+  // id for a first batch, so grouping by it always yields the whole series.
+  seriesId: string; batchNo: number;
   // Derived server-side.
-  progress: number; // 0..1
-  remaining: number; reached: boolean;
+  capacity: number;  // kits this batch holds — the denominator the UI shows
+  progress: number;  // 0..1
+  remaining: number; reached: boolean; full: boolean;
   outcome: 'awaiting_moq' | 'processing' | 'refunded';
 };
 

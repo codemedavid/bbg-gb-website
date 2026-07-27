@@ -15,7 +15,8 @@ const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   shippingPhp: '300.00', status: 'open', deadline: null,
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
-  progress: 0.4, remaining: 6, reached: false, outcome: 'awaiting_moq',
+  seriesId: 'c1', batchNo: 1,
+  capacity: 10, progress: 0.4, remaining: 6, reached: false, full: false, outcome: 'awaiting_moq',
   ...o,
 });
 

@@ -17,7 +17,8 @@ const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   shippingPhp: '300.00', status: 'open', deadline: '2026-08-01T00:00:00Z',
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
-  progress: 0.4, remaining: 6, reached: false, outcome: 'awaiting_moq',
+  seriesId: 'c1', batchNo: 1,
+  capacity: 10, progress: 0.4, remaining: 6, reached: false, full: false, outcome: 'awaiting_moq',
   ...o,
 });
 
@@ -35,10 +36,16 @@ describe('CampaignCard', () => {
     expect(screen.getByText(/4 \/ 10 kits/)).toBeInTheDocument();
   });
 
-  it('tells an under-target campaign how many kits are still needed', () => {
+  it('tells an under-filled batch how many slots are still open', () => {
     render(<CampaignCard c={campaign({ committed: 4, moq: 10, remaining: 6 })} onCommit={vi.fn()} />);
 
-    expect(screen.getByText(/6 more/i)).toBeInTheDocument();
+    expect(screen.getByText(/6 slots left/i)).toBeInTheDocument();
+  });
+
+  it('names the batch it is showing, so a series reads as #1, #2, #3', () => {
+    render(<CampaignCard c={campaign({ batchNo: 3 })} onCommit={vi.fn()} />);
+
+    expect(screen.getByText(/Batch #3/)).toBeInTheDocument();
   });
 
   it('exposes progress to assistive tech as a labelled progressbar', () => {
@@ -49,17 +56,30 @@ describe('CampaignCard', () => {
     expect(bar).toHaveAttribute('aria-valuemax', '10');
   });
 
-  it('shows a campaign that cleared its MOQ as good to go', () => {
-    render(<CampaignCard c={campaign({ committed: 12, moq: 10, remaining: 0, reached: true, progress: 1, outcome: 'processing' })} onCommit={vi.fn()} />);
+  it('shows a filled batch as full and closed to new commitments', () => {
+    render(<CampaignCard c={campaign({
+      committed: 10, moq: 10, remaining: 0, reached: true, full: true, progress: 1,
+      status: 'completed', outcome: 'processing',
+    })} onCommit={vi.fn()} />);
 
-    expect(screen.getByText(/MOQ reached/i)).toBeInTheDocument();
+    expect(screen.getByText(/Batch full 🎉/)).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /batch full/i })).toBeDisabled();
   });
 
-  it('does not clamp a campaign that overshot its MOQ back to the target', () => {
-    // Unlike a hatian, which locks at 10 vials, a campaign may exceed its MOQ.
-    render(<CampaignCard c={campaign({ committed: 14, moq: 10, remaining: 0, reached: true, progress: 1 })} onCommit={vi.fn()} />);
+  // The rule this card exists to make visible: a batch tops out at its capacity.
+  // It used to render the raw count, so an oversubscribed campaign read "14 / 10
+  // kits" — the number the client called impossible. The overflow is batch #2 now.
+  it('never renders more kits than the batch can hold', () => {
+    render(<CampaignCard c={campaign({
+      committed: 10, capacity: 10, moq: 10, remaining: 0, reached: true, full: true, progress: 1,
+    })} onCommit={vi.fn()} />);
 
-    expect(screen.getByText(/14 \/ 10 kits/)).toBeInTheDocument();
+    expect(screen.getByText(/10 \/ 10 kits/)).toBeInTheDocument();
+    expect(screen.queryByText(/1[1-9] \/ 10/)).not.toBeInTheDocument();
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '10');
+    expect(bar).toHaveAttribute('aria-valuemax', '10');
   });
 
   it('marks an admin-approved campaign as proceeding even below MOQ', () => {

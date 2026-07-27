@@ -71,6 +71,13 @@
       "when": 1785065287116,
       "tag": "0009_curious_captain_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785131920702,
+      "tag": "0010_striped_northstar",
+      "breakpoints": true
     }
   ]
 }

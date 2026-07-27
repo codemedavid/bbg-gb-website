@@ -1,37 +1,34 @@
+import { randomUUID } from 'node:crypto';
 import { desc } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { moqCampaignSchema } from '@/lib/moq-schemas';
-import { groupBuyMoqStatus } from '@/lib/pricing';
 import { getPackingFees } from '@/lib/settings';
-import { campaignOutcome } from '@/lib/group-buy';
+import { describeBatch } from '@/lib/group-buy';
 
-// Public: list campaigns with derived MOQ progress and lifecycle outcome.
+// Public: list batches with derived MOQ progress and lifecycle outcome.
 export const GET = handler(async () => {
   const db = await getDb();
   const rows = await db.select().from(moqCampaigns).orderBy(desc(moqCampaigns.createdAt));
-  const data = rows.map((c) => {
-    const status = groupBuyMoqStatus(c.committed, c.moq);
-    return {
-      ...c,
-      progress: status.progress,
-      remaining: status.remaining,
-      reached: status.reached,
-      outcome: campaignOutcome(c.status, c.committed, c.moq),
-    };
-  });
-  return ok(data);
+  return ok(rows.map(describeBatch));
 });
 
-// Admin: create a campaign.
+// Admin: create a campaign — batch #1 of its own series.
 export const POST = handler(async (req: Request) => {
   await requireAdmin();
   const b = moqCampaignSchema.parse(await req.json());
   const db = await getDb();
   // New campaigns default to the global pasabay packing fee unless overridden.
   const defaultFee = (await getPackingFees()).group_buy;
+  // The id is minted here rather than by the database so the row can point its
+  // series at itself in the same INSERT: every batch of a series, including the
+  // first, is reachable by one indexed read on series_id.
+  const id = randomUUID();
   const [row] = await db.insert(moqCampaigns).values({
+    id,
+    seriesId: id,
+    batchNo: 1,
     name: b.name,
     pricePerKitPhp: String(b.pricePerKitPhp),
     moq: b.moq,

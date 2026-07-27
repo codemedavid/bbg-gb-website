@@ -3,8 +3,7 @@ import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { moqCampaignSchema } from '@/lib/moq-schemas';
-import { groupBuyMoqStatus } from '@/lib/pricing';
-import { campaignOutcome } from '@/lib/group-buy';
+import { describeBatch } from '@/lib/group-buy';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -14,14 +13,7 @@ export const GET = handler(async (_req: Request, ctx: Ctx) => {
   const db = await getDb();
   const [c] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, id));
   if (!c) throw new ApiError(404, 'Campaign not found.');
-  const status = groupBuyMoqStatus(c.committed, c.moq);
-  return ok({
-    ...c,
-    progress: status.progress,
-    remaining: status.remaining,
-    reached: status.reached,
-    outcome: campaignOutcome(c.status, c.committed, c.moq),
-  });
+  return ok(describeBatch(c));
 });
 
 // Admin: edit campaign fields (mid-campaign price/MOQ edits apply to new joins).
