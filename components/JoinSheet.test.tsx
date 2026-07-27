@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { GroupBuy } from '@/lib/types';
-import { useCart } from '@/lib/store/cart';
+import { useCart, maxQtyFor } from '@/lib/store/cart';
 import { JoinSheet } from './JoinSheet';
 
 const push = vi.fn();
@@ -51,25 +51,37 @@ describe('JoinSheet (Kahati commit)', () => {
     expect(push).toHaveBeenCalledWith('/checkout');
   });
 
-  it('passes the kit cap so the cart allows overflow that rolls into a fresh batch', () => {
-    // The cart caps a kahati line at one kit, not the current counter's
-    // remainder, so a customer can commit past what is open and let checkout
-    // roll the excess into the auto-opened sibling.
+  it('leaves the kahati line uncapped so the cart never clamps a multi-kit commitment', () => {
+    // A kahati line is not limited by the counter's remainder nor by one kit:
+    // checkout fills counters of 10 and opens fresh ones until the whole
+    // commitment has landed, so the cart must not clamp what the server accepts.
     render(<JoinSheet g={gb} onClose={vi.fn()} />);
     screen.getByRole('button', { name: /commit/i }).click();
 
-    expect(useCart.getState().items[0].stock).toBe(gb.totalSlots);
+    expect(useCart.getState().items[0].stock).toBeUndefined();
+    expect(maxQtyFor(useCart.getState().items[0])).toBe(Infinity);
   });
 
-  it('lets the customer commit more than the vials currently open in this counter', () => {
-    // 3 open, but the kit holds 10 — the customer may commit up to the kit cap.
+  it('lets the customer commit more vials than a single kit holds', () => {
+    // 3 open and a kit of 10, yet the stepper must keep climbing: 13 vials fill
+    // this counter, seal it, and roll the rest into the counters that open next.
     const nearlyFull = { ...gb, remaining: 3, totalSlots: 10, minVials: 1, claimedSlots: 7 } as GroupBuy;
     render(<JoinSheet g={nearlyFull} onClose={vi.fn()} />);
     const plus = screen.getByRole('button', { name: /add one/i });
     for (let i = 0; i < 12; i += 1) fireEvent.click(plus);
     fireEvent.click(screen.getByRole('button', { name: /commit/i }));
 
-    expect(useCart.getState().items[0].qty).toBe(10); // capped at the kit, well above the 3 open
+    expect(useCart.getState().items[0].qty).toBe(13); // starts at the 1-vial min, +12
+  });
+
+  it('never lets the stepper fall below the hatian’s per-person minimum', () => {
+    const minThree = { ...gb, minVials: 3, remaining: 8, claimedSlots: 2 } as GroupBuy;
+    render(<JoinSheet g={minThree} onClose={vi.fn()} />);
+    const minus = screen.getByRole('button', { name: /remove one/i });
+    for (let i = 0; i < 5; i += 1) fireEvent.click(minus);
+    fireEvent.click(screen.getByRole('button', { name: /commit/i }));
+
+    expect(useCart.getState().items[0].qty).toBe(3);
   });
 
   it('disables the commit and explains when fewer vials remain than the minimum', () => {
