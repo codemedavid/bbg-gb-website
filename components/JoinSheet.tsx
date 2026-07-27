@@ -9,23 +9,24 @@ import { useToast } from '@/lib/store/toast';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
   const router = useRouter();
-  const [qty, setQty] = useState(Math.min(g.totalSlots, Math.max(g.minVials, 1)));
+  const [qty, setQty] = useState(Math.max(g.minVials, 1));
   const add = useCart((s) => s.add);
   const toast = useToast((s) => s.show);
 
-  // Cap a single commitment at one kit, not the current counter's remainder: a
-  // customer may commit past what is open, and checkout rolls the overflow into
-  // the fresh sibling that filling this counter auto-opens.
-  const clamp = (n: number) => Math.min(g.totalSlots, Math.max(g.minVials, n));
+  // Only the per-person minimum bounds a commitment. The 10-vial cap is the
+  // counter's, not the customer's: checkout fills this counter, seals it, opens
+  // a fresh one and keeps rolling for as many kits as the commitment needs, so
+  // clamping the stepper here would refuse quantities the server accepts.
+  const clamp = (n: number) => Math.max(g.minVials, n);
   // Fewer vials open than this hatian's per-person minimum: the server would
   // reject the commit, so don't let the customer attempt it.
   const belowMinimum = g.remaining < g.minVials;
   const confirm = () => {
     if (belowMinimum) return;
-    // `stock` carries the kit cap (one kit = totalSlots vials) so the cart clamps
-    // repeated Join taps to a full kit, letting the customer commit past what is
-    // currently open — checkout rolls any overflow into the auto-opened sibling.
-    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty, stock: g.totalSlots });
+    // No `stock`: a kahati line has no ceiling for the cart to clamp to. Vials
+    // are not drawn from a shelf — checkout keeps opening counters of 10 until
+    // the commitment has all landed, so any qty at or above the minimum is valid.
+    add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty });
     toast('Kahati claimed! Bayaran na ang downpayment.');
     onClose();
     // Send the buyer straight to checkout to pay the reservation downpayment,

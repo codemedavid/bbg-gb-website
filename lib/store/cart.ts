@@ -18,8 +18,8 @@ export type CartItem = {
   minQty: number;                 // 1 for on-hand, the group buy's minVials for kahati, the product's minOrderQty for MOQ
   packingFeePhp?: number;         // kahati and MOQ — the listing's admin-editable packing fee
   // How much is left. On-hand stock is counted in vials, so a kit line consumes
-  // VIALS_PER_KIT per qty; an MOQ line consumes one per qty; a kahati line's
-  // figure is the hatian's remaining open vials at join time.
+  // VIALS_PER_KIT per qty; an MOQ line consumes one per qty. Kahati lines carry
+  // none — they are uncapped (see maxQtyFor).
   unit?: OnHandUnit;
   stock?: number;
 };
@@ -27,12 +27,15 @@ export type CartItem = {
 // Largest qty of this line the remaining stock allows. A line without a known
 // stock figure is uncapped here — the server is the real gate.
 export const maxQtyFor = (item: CartItem): number => {
+  // Kahati lines have no ceiling: vials are not drawn from a shelf. Checkout
+  // fills the counter, seals it at 10, opens a fresh one and keeps rolling for
+  // as many kits as the commitment needs — so any qty at or above the minimum is
+  // valid. Checked before `stock` so a cart persisted while the line still
+  // carried a kit cap stops clamping too.
+  if (item.kind === 'group_buy') return Infinity;
   if (item.stock == null) return Infinity;
   // MOQ lines are sold by the unit, so stock caps quantity directly.
   if (item.kind === 'moq_product') return item.stock;
-  // Kahati lines cap at the hatian's remaining vials, so repeated Join taps
-  // clamp instead of accumulating a commitment checkout would reject.
-  if (item.kind === 'group_buy') return item.stock;
   if (item.kind !== 'product') return Infinity;
   return Math.floor(item.stock / vialsFor(item.unit ?? 'piece', 1));
 };

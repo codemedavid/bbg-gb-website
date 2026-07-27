@@ -51,6 +51,44 @@ describe('packingFeeFor', () => {
   });
 });
 
+describe('kahati cart lines are uncapped', () => {
+  beforeEach(() => useCart.getState().clear());
+
+  // Vials are not drawn from a shelf: checkout fills counters of 10 and opens a
+  // fresh one for whatever is left, so a kahati line has no ceiling to clamp to.
+  it('places no limit on a kahati line', () => {
+    expect(maxQtyFor(kahati())).toBe(Infinity);
+  });
+
+  it('ignores a stale kit cap left in a cart persisted before the multi-kit rule', () => {
+    // localStorage outlives a deploy. A line saved when the cart still carried
+    // `stock: 10` must not keep clamping the customer to a single kit.
+    expect(maxQtyFor(kahati({ stock: 10 }))).toBe(Infinity);
+
+    useCart.getState().add(kahati({ stock: 10, qty: 25 }));
+    expect(useCart.getState().items[0].qty).toBe(25);
+  });
+
+  it('still holds a kahati line at its per-person minimum', () => {
+    useCart.getState().add(kahati({ minQty: 3, qty: 1 }));
+    expect(useCart.getState().items[0].qty).toBe(3);
+  });
+
+  it('accumulates repeated Join taps instead of clamping them to one kit', () => {
+    useCart.getState().add(kahati({ qty: 7 }));
+    useCart.getState().add(kahati({ qty: 7 }));
+
+    expect(useCart.getState().items[0].qty).toBe(14);
+  });
+
+  it('keeps a manual quantity edit above one kit', () => {
+    useCart.getState().add(kahati({ qty: 2 }));
+    useCart.getState().setQty('gb:g1', 99);
+
+    expect(useCart.getState().items[0].qty).toBe(99);
+  });
+});
+
 describe('cart clearing after checkout', () => {
   beforeEach(() => useCart.getState().clear());
 
@@ -129,35 +167,3 @@ describe('MOQ cart lines', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Kahati lines and the hatian's remaining vials.
-//
-// A kahati line's ceiling is the hatian's remaining open vials, passed in as
-// `stock` when the customer joins. Without it the cart treated kahati lines as
-// uncapped, so repeated Join taps accumulated a quantity checkout would reject.
-// ---------------------------------------------------------------------------
-describe('kahati lines clamp to the hatian’s remaining vials', () => {
-  beforeEach(() => useCart.getState().clear());
-
-  it('caps a kahati line at the remaining vials when they are known', () => {
-    expect(maxQtyFor(kahati({ stock: 4 }))).toBe(4);
-  });
-
-  it('keeps a kahati line without a known remainder uncapped (server is the gate)', () => {
-    expect(maxQtyFor(kahati())).toBe(Infinity);
-  });
-
-  it('clamps repeated Join taps to the remaining vials instead of accumulating', () => {
-    useCart.getState().add(kahati({ stock: 5, qty: 3 }));
-    useCart.getState().add(kahati({ stock: 5, qty: 3 }));
-
-    expect(useCart.getState().items[0].qty).toBe(5);
-  });
-
-  it('clamps a manual quantity edit the same way', () => {
-    useCart.getState().add(kahati({ stock: 6, qty: 2 }));
-    useCart.getState().setQty('gb:g1', 99);
-
-    expect(useCart.getState().items[0].qty).toBe(6);
-  });
-});

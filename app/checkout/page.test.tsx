@@ -19,12 +19,16 @@ vi.mock('@/lib/useAuth', () => ({
     loading: false,
   }),
 }));
+// The kahati commitments the customer already holds. Mutable so a test can put
+// the page in the "already committed, nothing to pay" state.
+const kahatiCommitments: { current: unknown } = { current: undefined };
 vi.mock('@/lib/queries', () => ({
   usePaymentMethods: () => ({
     data: [{ id: 'pm1', label: 'GCash', accountName: 'BBG', accountNumber: '0917', qrUrl: null }],
   }),
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300 } }),
   useKahatiDownpayment: () => ({ data: 150 }),
+  useKahatiCommitments: () => ({ data: kahatiCommitments.current }),
 }));
 
 const CheckoutPage = (await import('./page')).default;
@@ -54,6 +58,8 @@ const attachProof = async () => {
 
 beforeEach(() => {
   replace.mockReset();
+  push.mockReset();
+  kahatiCommitments.current = undefined;
   useCart.getState().clear();
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:preview');
   vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -185,6 +191,88 @@ describe('CheckoutPage', () => {
     const keys = fetchMock.mock.calls.map((c) => ((c as unknown[])[1] as { body: FormData }).body.get('idempotencyKey'));
     expect(keys[0]).toBeTruthy();
     expect(keys[1]).toBe(keys[0]);
+  });
+});
+
+// A customer who already holds a live kahati commitment has paid their
+// downpayment; joining another hatian must not ask for it a second time. That
+// checkout owes nothing, so the whole payment apparatus — method, QR, proof —
+// is beside the point and comes off the screen. What replaces it is the running
+// total of what they already have on order.
+describe('CheckoutPage with a kahati commitment already live', () => {
+  const seedKahatiCart = () => {
+    useCart.setState({
+      items: [{
+        key: 'gb:g2', kind: 'group_buy', refId: 'g2', name: 'Tirze 30mg — kahati',
+        spec: 'Kahati · min 1 vials', unitPricePhp: 900, qty: 2, minQty: 1,
+      }],
+    });
+  };
+  const alreadyCommitted = {
+    downpaymentWaived: true,
+    commitments: [],
+    summary: {
+      groups: [{ kahatiName: 'Reta 20mg', vials: 5, totalPhp: 4500, orderNos: ['BBG-2418', 'BBG-2419'] }],
+      vials: 5, totalPhp: 4500, orderCount: 2,
+    },
+  };
+
+  beforeEach(() => {
+    kahatiCommitments.current = alreadyCommitted;
+    seedKahatiCart();
+  });
+
+  it('asks for no payment method and no proof of payment', () => {
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.queryByRole('button', { name: 'GCash' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/proof of payment/i)).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('shows no downpayment due', () => {
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.queryByText(/downpayment due now/i)).not.toBeInTheDocument();
+  });
+
+  it('lists the orders the customer already holds on their hatians', () => {
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.getByText('Reta 20mg')).toBeInTheDocument();
+    expect(screen.getByText(/BBG-2418/)).toBeInTheDocument();
+    expect(screen.getByText(/BBG-2419/)).toBeInTheDocument();
+  });
+
+  it('places the order with no proof attached', async () => {
+    render(<CheckoutPage />, { wrapper });
+
+    const confirm = screen.getByRole('button', { name: /confirm order/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    confirm.click();
+
+    await waitFor(() => expect(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+    const body = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].body as FormData;
+    expect(body.get('proof')).toBeNull();
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/success/BBG-2500'));
+  });
+
+  it('still collects payment when the cart also holds an on-hand item', () => {
+    // The waiver covers the kahati downpayment only — on-hand stock is paid for
+    // now, so the payment section has to stay.
+    useCart.setState({
+      items: [
+        ...useCart.getState().items,
+        {
+          key: 'product:p1:piece', kind: 'product', refId: 'p1', name: 'Test Peptide',
+          spec: '10mg', unitPricePhp: 550, qty: 1, minQty: 1, unit: 'piece', stock: 100,
+        },
+      ],
+    });
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.getByRole('button', { name: 'GCash' })).toBeInTheDocument();
+    expect(screen.getByText(/proof of payment/i)).toBeInTheDocument();
   });
 });
 

@@ -185,24 +185,25 @@ export const POST = handler(async (req: Request) => {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
         if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
-        // Validate the whole commitment up front. Overflow rolls into freshly
-        // opened sibling counters, so the ceiling is one kit (totalSlots), not
-        // the current counter's remaining vials. Honour the group buy's
-        // admin-editable per-person minimum, not just the global default.
+        // Validate the whole commitment up front. The 10-vial cap belongs to the
+        // counter, not to the customer: overflow fills this counter, seals it,
+        // and rolls into the sibling that opens — repeatedly, for as many kits as
+        // the commitment needs. So there is no per-commitment ceiling here beyond
+        // the schema's qty bound; only the group buy's admin-editable per-person
+        // minimum applies.
         if (!Number.isInteger(it.qty) || it.qty < g.minVials) {
           throw new ApiError(400, `Minimum kahati commitment is ${g.minVials} vials.`);
-        }
-        if (it.qty > g.totalSlots) {
-          throw new ApiError(400, `A single kahati commitment can be at most ${g.totalSlots} vials.`);
         }
 
         // Claim across counters. Fill the current counter; when it caps, that
         // fill closes it and auto-opens a fresh sibling (the "reset" the client
         // asked for), and the remainder rolls into that sibling instead of being
-        // rejected. Each claim is guarded in its UPDATE, so concurrent commits
-        // can never oversell a counter or push one past its cap. Both fragments
-        // are the same (kahati) mode, so they check out under a single packing
-        // fee — one fee per parcel, regardless of how many counters it spans.
+        // rejected. The loop repeats for as many kits as the commitment spans, so
+        // 25 vials seals three counters and leaves the fourth holding 2 — no
+        // counter ever goes past 10. Each claim is guarded in its UPDATE, so
+        // concurrent commits can never oversell a counter or push one past its
+        // cap. Every fragment is the same (kahati) mode, so they check out under
+        // a single packing fee — one fee per parcel, however many counters it spans.
         const now = new Date();
         let current = g;
         let remaining = it.qty;
