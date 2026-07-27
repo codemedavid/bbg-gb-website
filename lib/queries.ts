@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
-import type { Category, CheckoutPaymentMethod, GroupBuy, MoqCampaign, MoqProduct, Order, Product, SettlementPreview } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -16,6 +16,18 @@ export const useKahatiDownpayment = () =>
     queryKey: ['kahati-downpayment'],
     queryFn: () => apiGet<{ kahatiDownpayment: number }>('/settings').then((d) => d.kahatiDownpayment),
     staleTime: 5 * 60 * 1000,
+  });
+
+// The kahati commitments this customer already holds, and whether that covers
+// the reservation downpayment. Never cached stale: a hatian sealing flips the
+// waiver, and showing "nothing to pay" for a checkout the server then charges
+// for is the failure to avoid.
+export const useKahatiCommitments = (enabled = true) =>
+  useQuery({
+    queryKey: ['kahati-commitments'],
+    queryFn: () => apiGet<KahatiCommitments>('/kahati/commitments'),
+    enabled,
+    staleTime: 0,
   });
 
 // Whether the MOQ page is live. The nav reads this to decide if the MOQ tab

@@ -4,11 +4,13 @@ import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moq
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
-  computeTotals, perVialPrice, splitKahatiDownpayment, round2,
+  computeTotals, perVialPrice, round2,
   onHandUnitPrice, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
 import { closeFullKahati } from '@/lib/kahati-server';
+import { listKahatiCommitments } from '@/lib/kahati-commitment-server';
+import { hasOpenKahatiCommitment, kahatiDownpaymentDue } from '@/lib/kahati-commitment';
 import { splitCartIntoOrders } from '@/lib/order-modes';
 import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
@@ -75,9 +77,20 @@ export const POST = handler(async (req: Request) => {
     if (replayed) return ok(replayed, 201);
   }
 
+  // Is this customer's place in the next parcel already paid for? The kahati
+  // downpayment is charged once while a commitment is live, not once per hatian
+  // joined (see lib/kahati-commitment.ts). Read before the transaction opens:
+  // it must reflect the orders that existed BEFORE this checkout, never the one
+  // being placed.
+  const downpaymentWaived = hasOpenKahatiCommitment(await listKahatiCommitments(db, session.sub));
+  // A cart that is nothing but waived kahati lines owes nothing at all now, so
+  // there is no payment to prove. Any other cart — an on-hand item alongside it,
+  // or a first commitment — is paid for at checkout and must carry its proof.
+  const confirmOnly = downpaymentWaived && body.items.every((i) => i.kind === 'group_buy');
+
   // Store the proof before opening the transaction — it is an external side effect.
   // A rolled-back order leaves an orphaned object, which is harmless.
-  const proofKey = await validateAndStoreProof(form.get('proof'));
+  const proofKey = confirmOnly ? null : await validateAndStoreProof(form.get('proof'));
   // Global packing-fee defaults; the on-hand fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
   const packingFees = await getPackingFees();
@@ -286,12 +299,19 @@ export const POST = handler(async (req: Request) => {
       const buyType = draft.mode as 'solo' | 'kahati' | 'moq';
 
       // Only kahati orders carry a reservation downpayment; on-hand pays in full.
+      // A customer already holding a live commitment has paid theirs, so this
+      // one owes nothing up front.
       const downpayment = buyType === 'kahati'
-        ? splitKahatiDownpayment(totals.total, kahatiDownpaymentSetting).downpayment
+        ? kahatiDownpaymentDue(totals.total, kahatiDownpaymentSetting, downpaymentWaived)
         : 0;
 
+      // Nothing was paid and no proof exists, so there is nothing for an admin
+      // to verify — parking it in 'proof_review' would queue a review that can
+      // never resolve. The commitment is simply confirmed.
+      const status = confirmOnly ? 'payment_confirmed' : 'proof_review';
+
       const [order] = await tx.insert(orders).values({
-        orderNo, userId: session.sub, status: 'proof_review', buyType,
+        orderNo, userId: session.sub, status, buyType,
         subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
         totalPhp: String(totals.total), downpaymentPhp: String(downpayment), totalUsd: String(totalUsd),
         shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
@@ -312,7 +332,13 @@ export const POST = handler(async (req: Request) => {
         unitPricePhp: String(p.unitPricePhp), unitPriceUsd: p.unitPriceUsd != null ? String(p.unitPriceUsd) : null,
         qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),
       })));
-      await tx.insert(orderStatusHistory).values({ orderId: order.id, status: 'proof_review', note: 'Order placed' });
+      await tx.insert(orderStatusHistory).values({
+        orderId: order.id,
+        status,
+        note: confirmOnly
+          ? 'Order confirmed — no downpayment due, this customer already has a kahati commitment in progress'
+          : 'Order placed',
+      });
 
       created.push({ order, orderNo, totals, lineCount: lines.length });
     }
@@ -342,7 +368,7 @@ export const POST = handler(async (req: Request) => {
   // totals, downpayments and delivery timelines, so a single combined notice would
   // misstate what the customer owes on each.
   for (const { order, orderNo, totals, lineCount } of created) {
-    await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp) }), kind: 'order_placed' });
+    await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp), confirmed: confirmOnly }), kind: 'order_placed' });
     await captureEvent({
       event: 'order_placed',
       distinctId: session.sub,

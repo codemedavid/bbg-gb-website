@@ -272,7 +272,7 @@ describe('CheckoutPage with a kahati commitment already live', () => {
     render(<CheckoutPage />, { wrapper });
 
     expect(screen.getByRole('button', { name: 'GCash' })).toBeInTheDocument();
-    expect(screen.getByText(/proof of payment/i)).toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).not.toBeNull();
   });
 });
 

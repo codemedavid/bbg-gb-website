@@ -16,7 +16,11 @@ export default function CartPage() {
 
   return (
     <OverlayShell>
-      <BackHeader title={`Cart · ${count}`} />
+      {/* An explicit destination, not router.back(). Checkout's back button
+          leads here, so falling through to history walked straight back into
+          checkout — the two screens pointed at each other and the only way out
+          was the bottom nav. Back from the cart means "keep shopping". */}
+      <BackHeader title={`Cart · ${count}`} onBack={() => router.push('/')} />
       <div className="mx-auto w-full max-w-xl p-4">
         {!items.length && (
           <div className="px-5 py-16 text-center text-ink-muted">

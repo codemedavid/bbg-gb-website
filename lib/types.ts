@@ -105,6 +105,26 @@ export type SettlementOrder = {
   packingFee: PaymentState; createdAt: string;
 };
 
+// What GET /api/kahati/commitments answers: the kahati lines this customer
+// already holds, and whether an open one among them means the reservation
+// downpayment is already covered (see lib/kahati-commitment.ts).
+export type KahatiCommitments = {
+  commitments: KahatiCommitment[];
+  summary: {
+    groups: { kahatiName: string; vials: number; totalPhp: number; orderNos: string[] }[];
+    vials: number;
+    totalPhp: number;
+    orderCount: number;
+  };
+  downpaymentWaived: boolean;
+};
+
+export type KahatiCommitment = {
+  orderId: string; orderNo: string;
+  kahatiId: string; kahatiName: string; kahatiStatus: string;
+  qty: number; lineTotalPhp: number; placedAt: string;
+};
+
 // The whole final checkout: every settleable order, and the ONE packing fee
 // charged for the parcel no matter how many hatians it spans.
 export type SettlementPreview = {

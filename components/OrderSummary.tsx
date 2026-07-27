@@ -4,7 +4,11 @@ import { useCart, packingFeeFor } from '@/lib/store/cart';
 import { useKahatiDownpayment, usePackingFees } from '@/lib/queries';
 import { KAHATI_DOWNPAYMENT_PHP, PACKING_FEE_PHP, splitKahatiDownpayment } from '@/lib/pricing';
 
-export function useOrderTotals() {
+// `downpaymentWaived` says this customer already holds a live kahati
+// commitment, so their reservation deposit is paid and this one owes none. It
+// is passed in rather than fetched here because the server decides it — see
+// lib/kahati-commitment.ts and GET /api/kahati/commitments.
+export function useOrderTotals(downpaymentWaived = false) {
   const items = useCart((s) => s.items);
   const subtotal = useCart((s) => s.subtotal());
   const hasOnHand = useCart((s) => s.hasOnHand());
@@ -17,14 +21,14 @@ export function useOrderTotals() {
   const total = subtotal + packingFee;
   // Kahati carts reserve slots with a downpayment; the balance is settled after
   // the kahati ends. Mirrors the server split at checkout.
-  const { downpayment, balance } = hasKahati
+  const { downpayment, balance } = hasKahati && !downpaymentWaived
     ? splitKahatiDownpayment(total, downpaymentSetting ?? KAHATI_DOWNPAYMENT_PHP)
     : { downpayment: 0, balance: total };
-  return { subtotal, packingFee, total, hasOnHand, hasKahati, downpayment, balance };
+  return { subtotal, packingFee, total, hasOnHand, hasKahati, downpayment, balance, downpaymentWaived };
 }
 
-export function OrderSummary() {
-  const { subtotal, packingFee, total, hasKahati, downpayment, balance } = useOrderTotals();
+export function OrderSummary({ downpaymentWaived = false }: { downpaymentWaived?: boolean } = {}) {
+  const { subtotal, packingFee, total, hasKahati, downpayment, balance } = useOrderTotals(downpaymentWaived);
   const Row = ({ label, value }: { label: string; value: number }) => (
     <div className="mb-1.5 flex justify-between text-[13px] text-ink-body"><span>{label}</span><span>{php(value)}</span></div>
   );
@@ -35,7 +39,20 @@ export function OrderSummary() {
       <div className="mt-1 flex justify-between border-t border-line-soft pt-2.5 text-[16px] font-bold text-ink">
         <span>Total</span><span className="font-display">{php(total)}</span>
       </div>
-      {hasKahati && downpayment > 0 && (
+      {hasKahati && downpaymentWaived && (
+        // Their deposit is already held against an ongoing hatian, so this
+        // commitment collects nothing. Say so plainly — a total with no
+        // "due now" line beneath it otherwise reads as the amount to send.
+        <div className="mt-2.5 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5">
+          <div className="flex justify-between text-[13px] font-bold text-brand-greendark">
+            <span>Due now</span><span className="font-display">{php(0)}</span>
+          </div>
+          <div className="mt-1 text-[12px] leading-relaxed text-ink-body">
+            May ongoing kahati ka na — walang bagong downpayment. Babayaran ang buo sa huling checkout.
+          </div>
+        </div>
+      )}
+      {hasKahati && !downpaymentWaived && downpayment > 0 && (
         <div className="mt-2.5 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5">
           <div className="flex justify-between text-[13px] font-bold text-brand-greendark">
             <span>Downpayment due now</span><span className="font-display">{php(downpayment)}</span>

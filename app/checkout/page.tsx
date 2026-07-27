@@ -8,7 +8,8 @@ import { OrderSummary, useOrderTotals } from '@/components/OrderSummary';
 import { useCart } from '@/lib/store/cart';
 import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
-import { usePaymentMethods } from '@/lib/queries';
+import { useKahatiCommitments, usePaymentMethods } from '@/lib/queries';
+import { KahatiCommitmentsCard } from '@/components/KahatiCommitmentsCard';
 import { php } from '@/lib/format';
 import { friendlyCheckoutError, staleCheckoutLine } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
@@ -20,7 +21,18 @@ export default function CheckoutPage() {
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
   const removeLine = useCart((s) => s.remove);
-  const { total, hasKahati, downpayment } = useOrderTotals();
+  // The kahati commitments this customer already holds. An open one among them
+  // means their reservation downpayment is already paid, so this commitment
+  // owes nothing (see lib/kahati-commitment.ts) — mirrors the server rule that
+  // decides what is actually charged.
+  const { data: kahatiHeld } = useKahatiCommitments();
+  const downpaymentWaived = !!kahatiHeld?.downpaymentWaived;
+  // A cart of nothing but waived kahati lines owes nothing at all: no
+  // downpayment, and so no payment method, no proof, nothing to review. Any
+  // on-hand or MOQ line alongside it is still paid for now.
+  const confirmOnly = downpaymentWaived && items.length > 0 && items.every((i) => i.kind === 'group_buy');
+
+  const { total, hasKahati, downpayment } = useOrderTotals(downpaymentWaived);
   // Kahati carts pay only the reservation downpayment now; the balance is
   // collected after the kahati ends.
   const amountDueNow = hasKahati && downpayment > 0 ? downpayment : total;
@@ -61,7 +73,7 @@ export default function CheckoutPage() {
   };
 
   const place = async () => {
-    if (!proof || !items.length || submitting) return;
+    if ((!proof && !confirmOnly) || !items.length || submitting) return;
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -69,9 +81,9 @@ export default function CheckoutPage() {
       fd.append('shipName', name);
       fd.append('shipPhone', phone);
       fd.append('shipAddress', address);
-      if (selectedMethod) fd.append('paymentMethod', selectedMethod.label);
+      if (selectedMethod && !confirmOnly) fd.append('paymentMethod', selectedMethod.label);
       fd.append('courier', courier);
-      fd.append('proof', proof);
+      if (proof) fd.append('proof', proof);
       if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
       fd.append('idempotencyKey', idempotencyKey.current);
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
@@ -101,6 +113,9 @@ export default function CheckoutPage() {
       clear();
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });
+      // This checkout is itself a commitment, so the next one must not read a
+      // cached "no commitments yet" and ask for a downpayment already covered.
+      qc.invalidateQueries({ queryKey: ['kahati-commitments'] });
 
       // A mixed cart becomes one order per mode. Carry the siblings through so
       // the success screen names every order, not just the first.
@@ -114,8 +129,8 @@ export default function CheckoutPage() {
     }
   };
 
-  const methodChosen = methods.length === 0 || !!selectedMethod;
-  const canPlace = !!proof && items.length > 0 && !!name && !!phone && !!address && methodChosen;
+  const methodChosen = confirmOnly || methods.length === 0 || !!selectedMethod;
+  const canPlace = (!!proof || confirmOnly) && items.length > 0 && !!name && !!phone && !!address && methodChosen;
 
   return (
     <OverlayShell>
@@ -147,6 +162,12 @@ export default function CheckoutPage() {
           </div>
         </div>
 
+        {/* A commitment that owes nothing has no payment to choose, prove or
+            review. What the customer needs instead is what they already hold —
+            the running total this join is being added to. */}
+        {confirmOnly ? (
+          <KahatiCommitmentsCard summary={kahatiHeld!.summary} />
+        ) : (
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-3 text-[13px] leading-relaxed text-ink-body">
             Choose a payment method, send your payment, then upload a screenshot of your proof of payment. We&apos;ll confirm your order once we receive it.
@@ -190,7 +211,9 @@ export default function CheckoutPage() {
             </div>
           )}
         </div>
+        )}
 
+        {!confirmOnly && (
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-2.5 text-[13px] font-bold text-ink">Proof of payment <span className="text-[#d33]">*</span></div>
           <label className="block cursor-pointer rounded-[12px] border-[1.5px] border-dashed border-[#a9c88f] bg-[#fbfdf9] p-[18px] text-center">
@@ -209,16 +232,17 @@ export default function CheckoutPage() {
             )}
           </label>
         </div>
+        )}
         </div>
 
         <div className="flex flex-col gap-3.5 lg:sticky lg:top-[72px]">
-        <div className="rounded-[14px] bg-white p-4 shadow-card"><OrderSummary /></div>
+        <div className="rounded-[14px] bg-white p-4 shadow-card"><OrderSummary downpaymentWaived={downpaymentWaived} /></div>
         <div className="text-[11.5px] leading-relaxed text-ink-muted">
           🛬 Tip: white powder peptides ship first; salt forms, blends &amp; liquids arrive 3–5 days later — place them in separate orders to avoid delays.
         </div>
         <button onClick={place} disabled={!canPlace || submitting}
           className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${canPlace && !submitting ? 'bg-brand-green active:scale-[.99]' : 'bg-[#b9c6b4]'}`}>
-          {submitting ? 'Placing…' : proof ? 'Place order' : 'Upload proof to place order'}
+          {submitting ? 'Placing…' : confirmOnly ? 'Confirm order' : proof ? 'Place order' : 'Upload proof to place order'}
         </button>
         </div>
       </div>

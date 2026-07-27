@@ -46,10 +46,24 @@ const wrap = (title: string, body: string) => `
     </div>
   </div>`;
 
-export function orderPlacedEmail(o: { name: string; orderNo: string; total: number; downpayment?: number }) {
+// `confirmed` marks a commitment that owed nothing at checkout, because the
+// customer already had a kahati commitment in progress. Promising to "verify
+// your payment proof" there would be a review of a payment nobody made.
+export function orderPlacedEmail(o: {
+  name: string; orderNo: string; total: number; downpayment?: number; confirmed?: boolean;
+}) {
   const downpaymentLine = o.downpayment && o.downpayment > 0
     ? `<p>Downpayment received: <strong>${php(o.downpayment)}</strong> · Balance after the kahati ends: <strong>${php(o.total - o.downpayment)}</strong></p>`
     : '';
+  if (o.confirmed) {
+    return {
+      subject: `Order ${o.orderNo} confirmed - no payment needed now`,
+      html: wrap(`Salamat, ${o.name}!`, `
+        <p>Order <strong>${o.orderNo}</strong> for <strong>${php(o.total)}</strong> is confirmed.</p>
+        <p>Walang bayad muna: may kahati ka nang ongoing, kaya hindi na kailangan ng panibagong downpayment.
+        Isang bayad na lang sa huling checkout kapag tapos na ang lahat ng hatian mo.</p>`),
+    };
+  }
   return {
     subject: `Order ${o.orderNo} received - payment under review`,
     html: wrap(`Salamat, ${o.name}!`, `
