@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KAHATI_MAX_VIALS, KAHATI_MIN_VIABLE_VIALS, isKahatiFull, isKahatiViable,
   resolveExpiredKahatiStatus, nextKahatiClosesAt, kahatiProgressPercent, kahatiBadge,
+  kahatiClaimedDisplay,
 } from './kahati';
 
 describe('KAHATI_MAX_VIALS', () => {
@@ -42,6 +43,26 @@ describe('isKahatiViable', () => {
   });
   it('is false on an empty hatian', () => {
     expect(isKahatiViable(0)).toBe(false);
+  });
+});
+
+describe('kahatiClaimedDisplay', () => {
+  it('shows the real count while the counter has room', () => {
+    expect(kahatiClaimedDisplay(3, 10)).toBe(3);
+    expect(kahatiClaimedDisplay(10, 10)).toBe(10);
+  });
+  it('never renders past the cap — a legacy 13/10 row reads 10/10', () => {
+    // The client's rule is that 13/10 is impossible. The database now refuses to
+    // store one, but rows written before that constraint must not display one either.
+    expect(kahatiClaimedDisplay(13, 10)).toBe(10);
+    expect(kahatiClaimedDisplay(11, 10)).toBe(10);
+  });
+  it('never renders below zero', () => {
+    expect(kahatiClaimedDisplay(-2, 10)).toBe(0);
+  });
+  it('is zero when the cap is missing or nonsensical', () => {
+    expect(kahatiClaimedDisplay(5, 0)).toBe(0);
+    expect(kahatiClaimedDisplay(5, -1)).toBe(0);
   });
 });
 
