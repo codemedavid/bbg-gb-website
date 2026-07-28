@@ -1,13 +1,15 @@
-// Committing to a Group Buy campaign is not "add to cart".
+// Committing to a Group Buy campaign IS "add to cart".
 //
-// A hatian vial goes through the cart and the shared checkout. A campaign
-// commitment posts straight to /api/campaigns/:id/commit with its own shipping
-// details and payment proof, because the commitment IS the order — that is the
-// separate business logic the client asked for in feedback #2.
+// It used to be its own payment path: the sheet collected shipping details and
+// a payment proof and posted straight to /api/campaigns/:id/commit, so a
+// customer could not put two group buys in one basket, could not keep shopping,
+// and paid a packing fee per commitment. The sheet now only picks a quantity —
+// the cart holds the commitment and the shared checkout takes the payment.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CommitSheet } from './CommitSheet';
+import { useCart, maxQtyFor } from '@/lib/store/cart';
 import type { MoqCampaign } from '@/lib/types';
 
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
@@ -27,109 +29,85 @@ vi.mock('@/lib/useAuth', () => ({
   }),
 }));
 
-const attachProof = () => {
-  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-  const file = new File([Buffer.from('proof')], 'proof.png', { type: 'image/png' });
-  Object.defineProperty(input, 'files', { value: [file], configurable: true });
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-};
-
-const okFetch = () => vi.fn(async () => ({
-  ok: true,
-  json: async () => ({ success: true, data: { order: { orderNo: 'BBG-3001' } } }),
-})) as unknown as typeof fetch;
-
 beforeEach(() => {
-  globalThis.URL.createObjectURL = vi.fn(() => 'blob:preview');
-  vi.stubGlobal('fetch', okFetch());
+  useCart.getState().clear();
+  vi.stubGlobal('fetch', vi.fn());
 });
 
 describe('CommitSheet', () => {
-  it('prefills the buyer’s saved shipping details', () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
-
-    expect(screen.getByPlaceholderText(/full name/i)).toHaveValue('Ana Reyes');
-    expect(screen.getByPlaceholderText(/mobile/i)).toHaveValue('09171234567');
-  });
-
   it('starts at one kit — group buys have no minimum', () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
     expect(screen.getByTestId('commit-qty')).toHaveTextContent('1');
   });
 
-  it('will not go below one kit', async () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
+  it('starts at the campaign’s per-customer minimum when it sets one', () => {
+    render(<CommitSheet c={campaign({ perCustomerMin: 3 })} onClose={vi.fn()} onAdded={vi.fn()} />);
+
+    expect(screen.getByTestId('commit-qty')).toHaveTextContent('3');
+  });
+
+  it('will not go below the minimum', async () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
     await userEvent.click(screen.getByRole('button', { name: /decrease/i }));
 
     expect(screen.getByTestId('commit-qty')).toHaveTextContent('1');
   });
 
-  it('prices the commitment as kits × price plus the packing fee', async () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
+  it('adds the kits to the cart instead of taking payment', async () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
     await userEvent.click(screen.getByRole('button', { name: /increase/i }));
+    await userEvent.click(screen.getByRole('button', { name: /add to cart/i }));
 
-    // 2 kits × ₱9,000 + ₱300 packing = ₱18,300
-    expect(screen.getByText(/18,300/)).toBeInTheDocument();
+    const items = useCart.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'moq_campaign', refId: 'c1', qty: 2, minQty: 1 });
+    expect(items[0].packingFeePhp).toBe(300);
   });
 
-  it('blocks submission until a payment proof is attached', () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
+  it('takes no payment of its own — the cart is the only way to pay', async () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
-    expect(screen.getByRole('button', { name: /upload proof/i })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: /add to cart/i }));
+
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('posts the commitment to the campaign commit endpoint', async () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
-    attachProof();
+  it('asks for no shipping details or payment proof', () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /commit/i }));
-
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe('/api/campaigns/c1/commit');
-    expect(init.method).toBe('POST');
-
-    const body = init.body as FormData;
-    expect(body.get('qty')).toBe('1');
-    expect(body.get('shipName')).toBe('Ana Reyes');
-    expect(body.get('shipAddress')).toBe('12 Mabini St');
-    expect(body.get('proof')).toBeInstanceOf(File);
+    expect(screen.queryByPlaceholderText(/full name/i)).toBeNull();
+    expect(screen.queryByPlaceholderText(/mobile/i)).toBeNull();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 
-  it('reports the campaign’s own rejection rather than a generic failure', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: false,
-      json: async () => ({ success: false, error: 'This campaign is cancelled and no longer accepting commitments.' }),
-    })));
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
-    attachProof();
+  it('leaves the campaign line uncapped so a multi-batch commitment is not clamped', async () => {
+    // Overflow seals the batch and opens its successor, so any quantity at or
+    // above the minimum is valid — the cart must not clamp what checkout takes.
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /commit/i }));
+    await userEvent.click(screen.getByRole('button', { name: /add to cart/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/no longer accepting/i);
+    expect(maxQtyFor(useCart.getState().items[0])).toBe(Infinity);
   });
 
-  it('hands the placed order back to the page on success', async () => {
-    const onCommitted = vi.fn();
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={onCommitted} />);
-    attachProof();
+  it('tells the customer the packing fee is charged once at checkout', () => {
+    render(<CommitSheet c={campaign()} onClose={vi.fn()} onAdded={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /commit/i }));
-
-    await waitFor(() => expect(onCommitted).toHaveBeenCalledWith('BBG-3001'));
+    expect(screen.getByText(/checkout/i)).toBeInTheDocument();
+    expect(screen.queryByText(/total to send now/i)).toBeNull();
   });
 
-  it('does not fire a second request while the first is in flight', async () => {
-    render(<CommitSheet c={campaign()} onClose={vi.fn()} onCommitted={vi.fn()} />);
-    attachProof();
+  it('closes the sheet and reports back so the page can toast', async () => {
+    const onClose = vi.fn();
+    const onAdded = vi.fn();
+    render(<CommitSheet c={campaign()} onClose={onClose} onAdded={onAdded} />);
 
-    const button = await screen.findByRole('button', { name: /commit/i });
-    await userEvent.click(button);
-    await userEvent.click(button);
+    await userEvent.click(screen.getByRole('button', { name: /add to cart/i }));
 
-    await waitFor(() => expect((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1));
+    expect(onAdded).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 });

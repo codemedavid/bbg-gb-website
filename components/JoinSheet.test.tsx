@@ -44,11 +44,22 @@ describe('JoinSheet (Kahati commit)', () => {
     expect(items[0]).toMatchObject({ kind: 'group_buy', refId: 'gb1' });
   });
 
-  it('redirects straight to the payment page after committing', () => {
+  it('leaves the customer on the board instead of pushing them into checkout', () => {
+    // Payment is reachable only from the cart. Sending the buyer straight to
+    // the payment page after one join is what stopped them joining a second
+    // hatian, or adding anything else, before paying.
     render(<JoinSheet g={gb} onClose={vi.fn()} />);
     screen.getByRole('button', { name: /commit/i }).click();
 
-    expect(push).toHaveBeenCalledWith('/checkout');
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('closes the sheet so the customer can keep browsing', () => {
+    const onClose = vi.fn();
+    render(<JoinSheet g={gb} onClose={onClose} />);
+    screen.getByRole('button', { name: /commit/i }).click();
+
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('leaves the kahati line uncapped so the cart never clamps a multi-kit commitment', () => {

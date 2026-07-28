@@ -17,6 +17,11 @@ const kahati = (o: Partial<CartItem> = {}): CartItem => ({
   spec: 'Kahati · min 1 vials', unitPricePhp: 900, qty: 1, minQty: 1, ...o,
 });
 
+const campaign = (o: Partial<CartItem> = {}): CartItem => ({
+  key: 'gbuy:c1', kind: 'moq_campaign', refId: 'c1', name: 'Reta 20mg — group buy',
+  spec: 'Group buy · batch #1', unitPricePhp: 10000, qty: 1, minQty: 1, packingFeePhp: 300, ...o,
+});
+
 describe('packingFeeFor', () => {
   it('falls back to the code defaults when no admin fees are supplied', () => {
     expect(packingFeeFor([onHand()])).toBe(PACKING_FEE_PHP.solo);
@@ -48,6 +53,55 @@ describe('packingFeeFor', () => {
 
   it('charges nothing for an empty cart', () => {
     expect(packingFeeFor([])).toBe(0);
+  });
+
+  it('charges one group buy fee however many group buys are in the cart', () => {
+    // "Packing fee per checkout, hindi per product" applied to the group buy
+    // board: three campaigns bought together ship as one parcel.
+    const items = [
+      campaign({ key: 'gbuy:a', refId: 'a' }),
+      campaign({ key: 'gbuy:b', refId: 'b' }),
+      campaign({ key: 'gbuy:c', refId: 'c' }),
+    ];
+    expect(packingFeeFor(items)).toBe(300);
+  });
+
+  it('charges the largest per-campaign fee when they differ', () => {
+    const items = [
+      campaign({ key: 'gbuy:a', refId: 'a', packingFeePhp: 250 }),
+      campaign({ key: 'gbuy:b', refId: 'b', packingFeePhp: 400 }),
+    ];
+    expect(packingFeeFor(items)).toBe(400);
+  });
+
+  it('falls back to the admin group buy fee when a campaign carries none', () => {
+    const fees = { solo: 200, kahati: 150, group_buy: 350, moq: 300 };
+    expect(packingFeeFor([campaign({ packingFeePhp: undefined })], fees)).toBe(350);
+  });
+
+  it('adds one fee per mode when a group buy shares the cart with on-hand stock', () => {
+    // Different modes ship as different parcels and check out as different
+    // orders, so each carries its own fee.
+    const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
+    expect(packingFeeFor([campaign(), onHand()], fees)).toBe(500);
+  });
+
+  it('charges no group buy fee for a line whose fee is already paid', () => {
+    // A repeat order in a group buy the customer already has an order in joins
+    // the parcel they already paid to have packed.
+    expect(packingFeeFor([campaign({ packingFeePhp: 0 })])).toBe(0);
+  });
+});
+
+describe('group buy cart lines are uncapped', () => {
+  // A commitment beyond the batch's room seals it and rolls into the successor
+  // the fill opens, so there is no ceiling for the cart to clamp to.
+  it('places no limit on a campaign line', () => {
+    expect(maxQtyFor(campaign())).toBe(Infinity);
+  });
+
+  it('ignores a stale stock figure persisted on a campaign line', () => {
+    expect(maxQtyFor(campaign({ stock: 4 }))).toBe(Infinity);
   });
 });
 

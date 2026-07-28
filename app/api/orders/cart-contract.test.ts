@@ -33,8 +33,9 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
-const { useCart, moqCartLine } = await import('@/lib/store/cart');
-const { resetDb, makeUser, makeProduct, makeGroupBuy, makeMoqProduct, SHIPPING } = await import('@/lib/test/harness');
+const { useCart, moqCartLine, campaignCartLine } = await import('@/lib/store/cart');
+const { resetDb, makeUser, makeProduct, makeGroupBuy, makeMoqCampaign, makeMoqProduct, SHIPPING } =
+  await import('@/lib/test/harness');
 
 // Byte-for-byte what app/checkout/page.tsx builds and sends.
 function checkoutRequestFromCart(): Request {
@@ -105,6 +106,27 @@ describe('every cart line kind is accepted by checkout', () => {
     });
 
     expect((await POST(checkoutRequestFromCart())).status).toBe(201);
+  });
+
+  it('checks out a group buy line added the way the commit sheet adds it', async () => {
+    await signIn();
+    const c = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10400 });
+
+    // The exact line CommitSheet pushes into the cart, built by the production
+    // helper — the seam this file exists to guard.
+    useCart.getState().add(campaignCartLine({
+      id: c.id, name: 'Reta 20mg', pricePerKitPhp: '10400.00', moq: c.moq, committed: 0,
+      perCustomerMin: 1, shippingPhp: '300.00', status: 'open', deadline: null,
+      includedProducts: [], arrivalGroup: 'white_powder', description: null,
+      createdAt: '2026-07-01T00:00:00Z', seriesId: c.seriesId, batchNo: 1,
+      capacity: 10, progress: 0, remaining: 10, reached: false, full: false, outcome: 'awaiting_moq',
+    }));
+
+    const res = await POST(checkoutRequestFromCart());
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.data.order.buyType).toBe('group_buy');
   });
 
   it('checks out a mixed cart, splitting it into one order per mode', async () => {
