@@ -89,6 +89,28 @@ describe('CheckoutPage', () => {
     expect(useCart.getState().count()).toBe(0);
   });
 
+  it('drops the cached commitment waivers, since this checkout is itself a commitment', async () => {
+    // Both waivers turn on orders that existed BEFORE this checkout. Leaving
+    // either cached lets the next cart price itself off a stale answer — quoting
+    // a kahati downpayment already covered, or a group buy packing fee the
+    // server will no longer charge.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    seedCart();
+    render(<CheckoutPage />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await attachProof();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['kahati-commitments'] }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['campaign-commitments'] });
+  });
+
   it('sends the customer to the success page for the new order', async () => {
     seedCart();
     render(<CheckoutPage />, { wrapper });

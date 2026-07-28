@@ -52,6 +52,18 @@ describe('staleCheckoutLine', () => {
       .toEqual({ kahatiName: 'Reta 20mg' });
   });
 
+  it('extracts the refId from a deleted group buy campaign', () => {
+    expect(staleCheckoutLine('Campaign not found: abc-123')).toEqual({ refId: 'abc-123' });
+  });
+
+  it('recognizes a group buy the admin ended while the cart sat open', () => {
+    // A cancelled or approved campaign rejects every retry, and the cart is
+    // persisted — without this the line loops the same 400 forever and takes
+    // the rest of the basket down with it.
+    expect(staleCheckoutLine('Group buy no longer accepting commitments: abc-123'))
+      .toEqual({ refId: 'abc-123' });
+  });
+
   it('leaves recoverable rejections alone — the customer can fix quantity themselves', () => {
     expect(staleCheckoutLine('Only 3 vials left in this kahati.')).toBeNull();
     expect(staleCheckoutLine('Only 2 left in stock for Tirzepatide 15mg.')).toBeNull();

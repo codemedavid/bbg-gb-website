@@ -85,10 +85,34 @@ Keyed by **series**, not batch: a batch that fills opens a successor on the same
 | 25 | One group buy fee however many campaign lines (client side) | `lib/store/cart.test.ts:charges one group buy fee however many group buys` | unit | PASS |
 | 26 | The cart empties on success and survives failure | `app/checkout/page.test.tsx` (pre-existing, still green) | component | PASS |
 
+## Code-review round (post-GREEN)
+
+`/code-review` over `origin/main...HEAD` raised four defects. All four reproduced as failing tests before being fixed.
+
+| # | Severity | Defect | Fix |
+|---|---|---|---|
+| 1 | HIGH | Neither new rejection (`Campaign not found`, and the campaign-status refusal) was matched by `staleCheckoutLine`, so an admin cancelling a campaign left a persisted cart line looping the same 400 forever — taking the rest of the basket down with it, including items that were fine. | Both rejections now end `: <refId>`, and `STALE_BY_REF` became a built alternation listing every such message, so the next one added is harder to forget. |
+| 2 | MEDIUM | `groupBuyFeeWaived` used `some`, so a cart holding a paid series *and* a new one told the customer "walang bagong singil" over a total that did charge the new series' fee. | Changed to `every`. |
+| 3 | MEDIUM | `resolveOpenBatch` returned the completed batch when a series had no open one, which `allocateCommitment` reads as "roll forward" — so a cart line held since before the admin cancelled batch #2 minted an **open** batch #3 and took payment for a group buy that was deliberately shut down. Pre-existing logic, but a persisted cart line makes a days-old stale reference the normal case rather than an impossible one. | Falls back to the series' *latest* batch, so the caller's lifecycle check sees how the series actually ended and refuses. |
+| 4 | LOW | `['campaign-commitments']` was not invalidated after checkout, unlike its kahati counterpart — the next cart could paint once with a fee the server would no longer charge. | Invalidated alongside `['kahati-commitments']`. |
+
+The review also noted the client-side `paidSeriesIds` branch in `packingFeeFor` had no direct unit coverage (it was only exercised through `packingFeePhp: 0`). Four cases added, including the successor-batch case that proves the waiver keys on series rather than batch.
+
+Finding 3 is the one worth remembering: it is the only defect here that took money for something the admin had cancelled, and no test in the pre-existing suite could have caught it, because the old commit route was only reachable from a live board card that disables itself for non-open batches.
+
+| # | What is now guaranteed | Test | Result |
+|---|---|---|---|
+| 27 | A dead group buy line names itself so the cart can drop it | `campaign-checkout.test.ts:names the dead line so the persisted cart can drop it` | PASS |
+| 28 | A deleted campaign does the same | `campaign-checkout.test.ts:names a campaign that no longer exists at all` | PASS |
+| 29 | A cancelled series is refused, not revived as a fresh batch | `campaign-checkout.test.ts:refuses a commitment to a series the admin has cancelled` | PASS |
+| 30 | The waiver note is not shown when another group buy is still charged | `OrderSummary.test.tsx:does not promise "no new charge"` | PASS |
+| 31 | Both commitment caches drop after checkout | `app/checkout/page.test.tsx:drops the cached commitment waivers` | PASS |
+| 32 | The client waives by series, matching the server (4 cases) | `lib/store/cart.test.ts` | PASS |
+
 ## Validation commands actually run
 
 ```
-npm test                → Test Files 91 passed (91) · Tests 843 passed (843)
+npm test                → Test Files 92 passed (92) · Tests 856 passed (856)
 npx tsc --noEmit        → clean
 npx next build          → succeeded (all routes compiled)
 npx vitest run --coverage
@@ -112,3 +136,4 @@ npx vitest run --coverage
 |---|---|---|
 | RED | `d93c84c` | Route answered `items.0.kind: Invalid enum value`; `lib/campaign-commitment.ts` did not exist; CommitSheet still posted to the commit endpoint; JoinSheet still pushed `/checkout`. 28 failing / 44 passing across 6 files. |
 | GREEN | `bcc29cc` | 843 passing, `tsc --noEmit` clean, `next build` succeeded. |
+| REVIEW | (this commit) | 4 review defects reproduced RED, then fixed. 856 passing, `tsc --noEmit` clean, `next build` succeeded. |

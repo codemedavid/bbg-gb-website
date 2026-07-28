@@ -219,7 +219,11 @@ export const POST = handler(async (req: Request) => {
         // campaigns are genuinely finished and still refuse.
         const target = await resolveOpenBatch(tx, c);
         if (!canCommit(target.status) && target.status !== 'completed') {
-          throw new ApiError(400, `This campaign is ${target.status} and no longer accepting commitments.`);
+          // Named by refId, not just by reason: the cart is persisted, so a line
+          // the shop has stopped selling loops this same 400 on every retry and
+          // takes the rest of the basket with it. staleCheckoutLine matches on
+          // the id and the checkout page drops the line.
+          throw new ApiError(400, `Group buy no longer accepting commitments: ${it.refId}`);
         }
 
         // Claim across batches. A commitment larger than the room left fills the

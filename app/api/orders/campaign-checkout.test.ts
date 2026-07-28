@@ -32,6 +32,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
+const { staleCheckoutLine } = await import('@/lib/checkout-error');
 const { getDb, moqCampaigns, orders, orderItems, products } = await import('@/lib/db');
 const { resetDb, makeUser, makeMoqCampaign, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
@@ -186,6 +187,45 @@ describe('batch splitting survives the move to the cart', () => {
     const [first, second] = await batchesOf(c.seriesId);
     expect(first).toMatchObject({ committed: 10, status: 'completed' });
     expect(second).toMatchObject({ batchNo: 2, committed: 4, status: 'open' });
+  });
+
+  it('names the dead line so the persisted cart can drop it', async () => {
+    // The cart lives in localStorage: a line the shop can no longer sell loops
+    // the same 400 on every retry and takes the whole basket down with it. The
+    // rejection has to carry the refId for staleCheckoutLine to match on.
+    await signIn();
+    const dead = await makeMoqCampaign({ moq: 10, status: 'cancelled' });
+
+    const { body } = await checkout([campaignLine(dead.id)]);
+
+    expect(staleCheckoutLine(body.error)).toEqual({ refId: dead.id });
+  });
+
+  it('names a campaign that no longer exists at all', async () => {
+    await signIn();
+    const gone = '00000000-0000-4000-8000-000000000000';
+
+    const { body } = await checkout([campaignLine(gone)]);
+
+    expect(staleCheckoutLine(body.error)).toEqual({ refId: gone });
+  });
+
+  it('refuses a commitment to a series the admin has cancelled, rather than opening a fresh batch', async () => {
+    // Batch #1 filled and sealed, #2 opened, the admin cancelled #2. A cart line
+    // still pointing at #1 must not roll forward into a brand-new open batch #3
+    // — that revives a group buy the admin deliberately ended, and takes money
+    // for it.
+    await signIn();
+    const c = await makeMoqCampaign({ moq: 10, committed: 9 });
+    await checkout([campaignLine(c.id)]);            // fills #1, opens #2
+    const [, second] = await batchesOf(c.seriesId);
+    const db = await getDb();
+    await db.update(moqCampaigns).set({ status: 'cancelled' }).where(eq(moqCampaigns.id, second.id));
+
+    const { res } = await checkout([campaignLine(c.id)]);
+
+    expect(res.status).toBe(400);
+    expect(await batchesOf(c.seriesId)).toHaveLength(2);
   });
 
   it('refuses a cancelled campaign and rolls back the rest of the cart', async () => {

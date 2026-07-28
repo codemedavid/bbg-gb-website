@@ -114,8 +114,10 @@ export default function CheckoutPage() {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });
       // This checkout is itself a commitment, so the next one must not read a
-      // cached "no commitments yet" and ask for a downpayment already covered.
+      // cached "no commitments yet" and ask for a downpayment already covered —
+      // nor quote a group buy packing fee this order has just paid.
       qc.invalidateQueries({ queryKey: ['kahati-commitments'] });
+      qc.invalidateQueries({ queryKey: ['campaign-commitments'] });
 
       // A mixed cart becomes one order per mode. Carry the siblings through so
       // the success screen names every order, not just the first.

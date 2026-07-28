@@ -36,7 +36,15 @@ export const seriesOf = (batch: BatchRow): string => batch.seriesId ?? batch.id;
 // campaigns are genuinely finished; the caller's canCommit check refuses those.
 export async function resolveOpenBatch(db: Db, batch: BatchRow): Promise<BatchRow> {
   if (batch.status !== 'completed') return batch;
-  return (await findOpenBatch(db, seriesOf(batch))) ?? batch;
+  const open = await findOpenBatch(db, seriesOf(batch));
+  if (open) return open;
+  // No open batch anywhere in the series. Answer with its LATEST batch rather
+  // than the completed one the caller aimed at, so the caller's lifecycle check
+  // sees how the series actually ended. Returning the completed row instead
+  // reads as "full, roll into a successor" — and a cart line held since before
+  // the admin cancelled batch #2 would mint an open batch #3 and take money for
+  // a group buy that was deliberately shut down.
+  return (await latestBatch(db, seriesOf(batch))) ?? batch;
 }
 
 export type BatchRollover = { sealed: BatchRow; opened: BatchRow };

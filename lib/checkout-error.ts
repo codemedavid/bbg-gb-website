@@ -22,7 +22,18 @@ export function friendlyCheckoutError(status: number, serverMessage: string): st
 // the customer can fix those by editing the quantity.
 export type StaleCheckoutLine = { refId: string } | { kahatiName: string };
 
-const STALE_BY_REF = /^(?:Product not available|MOQ product not available|Group buy not found): (\S+)$/;
+// Every rejection naming a line the shop can no longer sell ends `: <refId>`,
+// so one pattern covers them all. A new one must be added here as well as
+// thrown — a 400 the cart cannot match is a 400 it loops forever.
+const STALE_BY_REF = new RegExp(
+  '^(?:' + [
+    'Product not available',
+    'MOQ product not available',
+    'Group buy not found',            // a deleted hatian
+    'Campaign not found',             // a deleted group buy batch
+    'Group buy no longer accepting commitments', // cancelled or approved by the admin
+  ].join('|') + '): (\\S+)$',
+);
 const STALE_KAHATI = /^Kahati "(.+)" (?:is already closed|has already closed)/;
 
 export function staleCheckoutLine(serverMessage: string): StaleCheckoutLine | null {

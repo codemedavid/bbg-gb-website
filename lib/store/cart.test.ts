@@ -91,6 +91,31 @@ describe('packingFeeFor', () => {
     // the parcel they already paid to have packed.
     expect(packingFeeFor([campaign({ packingFeePhp: 0 })])).toBe(0);
   });
+
+  // The client half of the client/server fee agreement: the cart must show ₱0
+  // exactly where campaignPackingFeeDue will charge ₱0, and nowhere else.
+  it('waives the fee for a line whose series the customer already has a parcel in', () => {
+    expect(packingFeeFor([campaign({ seriesId: 's1' })], PACKING_FEE_PHP, new Set(['s1']))).toBe(0);
+  });
+
+  it('still charges for a series the customer has no parcel in', () => {
+    expect(packingFeeFor([campaign({ seriesId: 's2' })], PACKING_FEE_PHP, new Set(['s1']))).toBe(300);
+  });
+
+  it('charges the unwaived group buy when the cart mixes a paid series with a new one', () => {
+    const items = [
+      campaign({ key: 'gbuy:a', refId: 'a', seriesId: 's1' }),
+      campaign({ key: 'gbuy:b', refId: 'b', seriesId: 's2', packingFeePhp: 400 }),
+    ];
+    expect(packingFeeFor(items, PACKING_FEE_PHP, new Set(['s1']))).toBe(400);
+  });
+
+  it('waives by series, so a successor batch is not charged again', () => {
+    // Batch #2 is a different row with the same seriesId; the fee follows the
+    // series, not the batch.
+    const items = [campaign({ key: 'gbuy:b2', refId: 'b2', spec: 'Group buy · batch #2', seriesId: 's1' })];
+    expect(packingFeeFor(items, PACKING_FEE_PHP, new Set(['s1']))).toBe(0);
+  });
 });
 
 describe('group buy cart lines are uncapped', () => {

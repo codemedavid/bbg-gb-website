@@ -31,10 +31,15 @@ export function useOrderTotals(downpaymentWaived = false) {
   return {
     subtotal, packingFee, total, hasOnHand, hasKahati, hasGroupBuy,
     downpayment, balance, downpaymentWaived,
-    // The cart holds a group buy whose parcel is already paid for, so the fee
-    // line reads ₱0 and needs saying out loud — a missing fee otherwise reads
-    // as one the customer dodged and will be surprised by later.
-    groupBuyFeeWaived: hasGroupBuy && items.some((i) => i.kind === 'moq_campaign' && i.seriesId && paidSeriesIds?.has(i.seriesId)),
+    // EVERY group buy in the cart is already paid for, so the fee line reads ₱0
+    // and needs saying out loud — a missing fee otherwise reads as one the
+    // customer dodged and will be surprised by later. `every`, not `some`: one
+    // unwaived group buy alongside still adds its fee to the total, and a note
+    // promising "no new charge" over a total that carries one is exactly the
+    // client/server disagreement these rules exist to avoid.
+    groupBuyFeeWaived: hasGroupBuy && items.every(
+      (i) => i.kind !== 'moq_campaign' || (!!i.seriesId && !!paidSeriesIds?.has(i.seriesId)),
+    ),
   };
 }
 
