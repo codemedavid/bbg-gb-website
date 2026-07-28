@@ -38,6 +38,8 @@ export type IncludedProduct = { productId: string; name: string; outOfStock?: bo
 // batch #2, #3, … of the same series, so the board lists batches, not campaigns.
 export type MoqCampaign = {
   id: string; name: string; pricePerKitPhp: string; moq: number; committed: number;
+  // Admin-set floor on one customer's commitment; the cart seeds the line here.
+  perCustomerMin: number;
   shippingPhp: string; status: 'open' | 'approved' | 'completed' | 'cancelled';
   deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null; createdAt: string;

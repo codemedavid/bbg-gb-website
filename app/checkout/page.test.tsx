@@ -29,6 +29,7 @@ vi.mock('@/lib/queries', () => ({
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300 } }),
   useKahatiDownpayment: () => ({ data: 150 }),
   useKahatiCommitments: () => ({ data: kahatiCommitments.current }),
+  useCampaignPackingFeeWaivers: () => ({ data: undefined }),
 }));
 
 const CheckoutPage = (await import('./page')).default;

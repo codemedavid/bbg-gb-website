@@ -30,7 +30,7 @@ vi.mock('@/lib/session', () => {
   };
 });
 
-const { POST: COMMIT } = await import('./[id]/commit/route');
+const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { GET: LIST } = await import('./route');
 const { getDb, moqCampaigns, orders, orderItems } = await import('@/lib/db');
 const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
@@ -65,7 +65,7 @@ describe('a batch never exceeds its capacity', () => {
   it('caps at 10/10 and never records 11/10', async () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 9 });
-    const res = await COMMIT(commitRequest(2), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 2));
     expect(res.status).toBe(201);
 
     const rows = await batchesOf(c.id);
@@ -78,7 +78,7 @@ describe('a batch never exceeds its capacity', () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 0 });
     for (let i = 0; i < 7; i++) {
-      const res = await COMMIT(commitRequest(3), ctx(c.id));
+      const res = await COMMIT(commitRequest(c.id, 3));
       expect(res.status).toBe(201);
     }
     const rows = await batchesOf(c.id);
@@ -93,7 +93,7 @@ describe('example 1 — 8/10 batch receives an order of 5', () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 8 });
 
-    const res = await COMMIT(commitRequest(5), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 5));
     expect(res.status).toBe(201);
 
     const [first, second, ...rest] = await batchesOf(c.id);
@@ -110,7 +110,7 @@ describe('example 1 — 8/10 batch receives an order of 5', () => {
   it('links both fragments to one order, each to the batch that holds it', async () => {
     const user = await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 8, pricePerKitPhp: 10400 });
-    await COMMIT(commitRequest(5), ctx(c.id));
+    await COMMIT(commitRequest(c.id, 5));
 
     const db = await getDb();
     const placed = await db.select().from(orders).where(eq(orders.userId, user.id));
@@ -132,7 +132,7 @@ describe('example 1 — 8/10 batch receives an order of 5', () => {
   it('names each line with its batch so order history shows where the kits went', async () => {
     const user = await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 8 });
-    await COMMIT(commitRequest(5), ctx(c.id));
+    await COMMIT(commitRequest(c.id, 5));
 
     const db = await getDb();
     const [placed] = await db.select().from(orders).where(eq(orders.userId, user.id));
@@ -148,7 +148,7 @@ describe('example 2 — committing against a completed batch', () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 10, status: 'completed' });
 
-    const res = await COMMIT(commitRequest(4), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 4));
     expect(res.status).toBe(201);
 
     const [first, second] = await batchesOf(c.id);
@@ -159,10 +159,10 @@ describe('example 2 — committing against a completed batch', () => {
   it('routes into the series\' already-open batch rather than opening another', async () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 8 });
-    await COMMIT(commitRequest(5), ctx(c.id)); // completes #1, opens #2 at 3
+    await COMMIT(commitRequest(c.id, 5)); // completes #1, opens #2 at 3
 
     // Committing against the completed #1 again must land in #2, not #3.
-    const res = await COMMIT(commitRequest(2), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 2));
     expect(res.status).toBe(201);
 
     const rows = await batchesOf(c.id);
@@ -173,7 +173,7 @@ describe('example 2 — committing against a completed batch', () => {
   it('still refuses a commitment to a cancelled campaign', async () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 2, status: 'cancelled' });
-    const res = await COMMIT(commitRequest(1), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 1));
     expect(res.status).toBe(400);
     expect(await batchesOf(c.id)).toHaveLength(1);
   });
@@ -181,7 +181,7 @@ describe('example 2 — committing against a completed batch', () => {
   it('still refuses a commitment to an admin-approved campaign', async () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 4, status: 'approved' });
-    const res = await COMMIT(commitRequest(1), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 1));
     expect(res.status).toBe(400);
     expect(await batchesOf(c.id)).toHaveLength(1);
   });
@@ -192,7 +192,7 @@ describe('example 3 — 9/10 batch receives an order of 14', () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 9 });
 
-    const res = await COMMIT(commitRequest(14), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 14));
     expect(res.status).toBe(201);
 
     const rows = await batchesOf(c.id);
@@ -206,7 +206,7 @@ describe('example 3 — 9/10 batch receives an order of 14', () => {
   it('writes one line per batch, summing to the ordered quantity', async () => {
     const user = await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 9 });
-    await COMMIT(commitRequest(14), ctx(c.id));
+    await COMMIT(commitRequest(c.id, 14));
 
     const db = await getDb();
     const [placed] = await db.select().from(orders).where(eq(orders.userId, user.id));
@@ -227,7 +227,7 @@ describe('concurrent commitments', () => {
     const responses = [];
     for (const buyer of buyers) {
       session.current = { sub: buyer.id, role: 'customer', email: buyer.email };
-      responses.push(COMMIT(commitRequest(4), ctx(c.id)));
+      responses.push(COMMIT(commitRequest(c.id, 4)));
     }
     const settled = await Promise.all(responses);
     expect(settled.map((r) => r.status)).toEqual([201, 201, 201, 201]);
@@ -249,9 +249,9 @@ describe('concurrent commitments', () => {
     // Two commitments of 3 against 4 remaining slots: one fits, the other has to
     // spill into the successor. Neither may be lost, and neither may push 11/10.
     session.current = { sub: a.id, role: 'customer', email: a.email };
-    const first = await COMMIT(commitRequest(3), ctx(c.id));
+    const first = await COMMIT(commitRequest(c.id, 3));
     session.current = { sub: b.id, role: 'customer', email: b.email };
-    const second = await COMMIT(commitRequest(3), ctx(c.id));
+    const second = await COMMIT(commitRequest(c.id, 3));
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(201);
@@ -266,7 +266,7 @@ describe('the public board', () => {
   it('reports a capped count, the remaining slots and the batch number', async () => {
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, committed: 8 });
-    await COMMIT(commitRequest(5), ctx(c.id));
+    await COMMIT(commitRequest(c.id, 5));
 
     const body = await (await LIST()).json();
     const rows: Array<{ batchNo: number; committed: number; capacity: number; remaining: number; status: string }> =

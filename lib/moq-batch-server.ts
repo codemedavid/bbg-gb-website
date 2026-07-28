@@ -26,6 +26,19 @@ const HARD_CAP = sql.raw(String(MOQ_BATCH_MAX_KITS));
 // this, and the fallback keeps a stale row from stranding its successors).
 export const seriesOf = (batch: BatchRow): string => batch.seriesId ?? batch.id;
 
+// The batch a commitment aimed at `batch` should actually land in.
+//
+// A completed batch is full, not closed for business: the customer picked this
+// group buy off the board, and the kits belong in whichever batch of the series
+// is open. If the fill never opened one (a legacy row, an admin edit),
+// allocation opens it — so this returns the completed row and lets
+// allocateCommitment roll forward rather than refusing. Cancelled and approved
+// campaigns are genuinely finished; the caller's canCommit check refuses those.
+export async function resolveOpenBatch(db: Db, batch: BatchRow): Promise<BatchRow> {
+  if (batch.status !== 'completed') return batch;
+  return (await findOpenBatch(db, seriesOf(batch))) ?? batch;
+}
+
 export type BatchRollover = { sealed: BatchRow; opened: BatchRow };
 
 // The open batch of a series, if it has one. A series holds at most one — every

@@ -1,27 +1,33 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { PACKING_FEE_PHP, isDeferredPackingMode, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
-import type { MoqProduct } from '@/lib/types';
+import type { MoqCampaign, MoqProduct } from '@/lib/types';
 
 // `kind` is the wire contract with POST /api/orders: app/checkout/page.tsx
 // forwards it verbatim, so these values must stay identical to the route's
 // accepted line kinds. They diverged once ('moq' here, 'moq_product' there) and
 // broke every MOQ checkout — see app/api/orders/cart-contract.test.ts.
 export type CartItem = {
-  key: string;                    // stable dedupe key (product:id:unit / gb:id / moq:id)
-  kind: 'product' | 'group_buy' | 'moq_product';
+  key: string;                    // stable dedupe key (product:id:unit / gb:id / gbuy:id / moq:id)
+  kind: 'product' | 'group_buy' | 'moq_campaign' | 'moq_product';
   refId: string;
   name: string;
   spec: string;
   unitPricePhp: number;
   qty: number;
-  minQty: number;                 // 1 for on-hand, the group buy's minVials for kahati, the product's minOrderQty for MOQ
-  packingFeePhp?: number;         // kahati and MOQ — the listing's admin-editable packing fee
+  minQty: number;                 // 1 for on-hand, minVials for kahati, perCustomerMin for a group buy, minOrderQty for MOQ
+  packingFeePhp?: number;         // kahati, group buy and MOQ — the listing's admin-editable packing fee
   // How much is left. On-hand stock is counted in vials, so a kit line consumes
   // VIALS_PER_KIT per qty; an MOQ line consumes one per qty. Kahati lines carry
   // none — they are uncapped (see maxQtyFor).
   unit?: OnHandUnit;
   stock?: number;
+  // Group buy lines only: the batch series this commitment belongs to. The
+  // packing fee is waived per SERIES, not per batch — a batch that fills seals
+  // and opens a successor carrying the same terms, and to the customer that is
+  // still one group buy. Carried on the line so the cart can price the waiver
+  // the same way the server does (lib/campaign-commitment.ts).
+  seriesId?: string;
 };
 
 // Largest qty of this line the remaining stock allows. A line without a known
@@ -33,6 +39,11 @@ export const maxQtyFor = (item: CartItem): number => {
   // valid. Checked before `stock` so a cart persisted while the line still
   // carried a kit cap stops clamping too.
   if (item.kind === 'group_buy') return Infinity;
+  // A group buy line is uncapped for the same reason: a commitment beyond the
+  // batch's room fills it, seals it and rolls into the successor the fill
+  // opens, for as many batches as it takes. Checked before `stock` so a line
+  // persisted with a stale figure stops clamping too.
+  if (item.kind === 'moq_campaign') return Infinity;
   if (item.stock == null) return Infinity;
   // MOQ lines are sold by the unit, so stock caps quantity directly.
   if (item.kind === 'moq_product') return item.stock;
@@ -59,6 +70,7 @@ type CartState = {
   subtotal: () => number;
   hasOnHand: () => boolean;
   hasKahati: () => boolean;
+  hasGroupBuy: () => boolean;
   hasMoq: () => boolean;
 };
 
@@ -89,6 +101,7 @@ export const useCart = create<CartState>()(
       subtotal: () => get().items.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
       hasOnHand: () => get().items.some((i) => i.kind === 'product'),
       hasKahati: () => get().items.some((i) => i.kind === 'group_buy'),
+      hasGroupBuy: () => get().items.some((i) => i.kind === 'moq_campaign'),
       hasMoq: () => get().items.some((i) => i.kind === 'moq_product'),
     }),
     {
@@ -117,12 +130,21 @@ export const useCart = create<CartState>()(
 //
 // `fees` is the admin-editable set fetched at display time; a per-listing fee on
 // a line still wins over its mode default.
-const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_product: 'moq' } as const;
-export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE_PHP): number => {
+const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_campaign: 'group_buy', moq_product: 'moq' } as const;
+export const packingFeeFor = (
+  items: CartItem[],
+  fees: PackingFees = PACKING_FEE_PHP,
+  // Group buy series this customer already has a parcel going in. Lines in one
+  // owe no fee — the parcel was paid for by the order that opened it. Mirrors
+  // campaignPackingFeeDue in lib/campaign-commitment.ts, which is what the
+  // server actually charges.
+  paidSeriesIds: ReadonlySet<string> = new Set(),
+): number => {
   const feeByMode = new Map<PackingMode, number>();
   for (const i of items) {
     const mode = CART_KIND_MODE[i.kind];
     if (isDeferredPackingMode(mode)) continue;
+    if (i.kind === 'moq_campaign' && i.seriesId && paidSeriesIds.has(i.seriesId)) continue;
     const fee = i.packingFeePhp ?? fees[mode];
     feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
   }
@@ -130,6 +152,29 @@ export const packingFeeFor = (items: CartItem[], fees: PackingFees = PACKING_FEE
   for (const fee of feeByMode.values()) total += fee;
   return total;
 };
+
+// Builds the cart line for a Group Buy (MOQ campaign) batch. Lives here for the
+// same reason moqCartLine does: the cart->checkout contract test exercises the
+// exact line the storefront produces instead of restating it.
+//
+// No `stock`: a group buy line has no ceiling for the cart to clamp to — see
+// maxQtyFor. The fee shown is this campaign's; whether the customer actually
+// owes it is the server's call (lib/campaign-commitment.ts), since a repeat
+// order in the same series joins a parcel already paid for.
+export const campaignCartLine = (c: MoqCampaign): CartItem => ({
+  key: `gbuy:${c.id}`,
+  kind: 'moq_campaign',
+  refId: c.id,
+  name: `${c.name} — group buy`,
+  spec: `Group buy · batch #${c.batchNo}`,
+  unitPricePhp: Number(c.pricePerKitPhp),
+  // A campaign's admin-set per-customer minimum is the floor; a line seeded
+  // below it would be rejected by checkout.
+  minQty: Math.max(1, c.perCustomerMin ?? 1),
+  qty: Math.max(1, c.perCustomerMin ?? 1),
+  packingFeePhp: Number(c.shippingPhp),
+  seriesId: c.seriesId,
+});
 
 // Builds the cart line for an MOQ product. Lives here rather than inline in the
 // MOQ board so the cart->checkout contract test can exercise the exact line the

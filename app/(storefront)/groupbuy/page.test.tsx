@@ -1,13 +1,15 @@
 // The Group Buy board page.
 //
-// Written after the fact to close a 0%-coverage gap — and the first thing it
-// caught is the reason the gap mattered: startCommit gated on `user` alone while
-// ignoring `loading`, so a signed-in customer who lands on this page fresh and
-// taps "Commit kits" before /auth/me resolves is thrown onto the login screen.
-// app/checkout/page.tsx already guards with `!loading && !user`; this page did not.
+// It used to gate its CTA on a session, because committing placed a real order
+// straight from this page — and gating on `user` while ignoring `loading` threw
+// signed-in customers onto the login screen before /auth/me resolved. Committing
+// is now add-to-cart against a localStorage cart, so there is nothing to gate:
+// the board matches the Kahati board and the shop, and checkout asks for the
+// session itself.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useCart } from '@/lib/store/cart';
 import type { MoqCampaign } from '@/lib/types';
 
 const push = vi.fn();
@@ -27,6 +29,7 @@ const GroupBuyPage = (await import('./page')).default;
 
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4,
+  perCustomerMin: 1,
   shippingPhp: '300.00', status: 'open', deadline: null,
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
@@ -43,40 +46,45 @@ beforeEach(() => {
   push.mockReset();
   authState = anonymous;
   campaignState = { data: [], isLoading: false };
+  useCart.getState().clear();
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:preview');
 });
 
-describe('GroupBuyPage — auth gating on commit', () => {
-  it('sends a genuinely anonymous visitor to log in', async () => {
+const openSheet = async () => {
+  render(<GroupBuyPage />);
+  await userEvent.click(screen.getByRole('button', { name: /add to cart/i }));
+};
+
+describe('GroupBuyPage — committing kits', () => {
+  it('opens the sheet for an anonymous visitor rather than sending them to log in', async () => {
+    // The cart is local. Nothing reaches the database until checkout, which
+    // requires the session itself.
     authState = anonymous;
     campaignState = { data: [campaign()], isLoading: false };
-    render(<GroupBuyPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: /commit kits/i }));
+    await openSheet();
 
-    expect(push).toHaveBeenCalledWith('/login');
-  });
-
-  it('does not bounce a signed-in customer to login while auth is still resolving', async () => {
-    // The window between first paint and /auth/me returning. The customer HAS a
-    // session; the client just does not know it yet.
-    authState = stillLoading;
-    campaignState = { data: [campaign()], isLoading: false };
-    render(<GroupBuyPage />);
-
-    await userEvent.click(screen.getByRole('button', { name: /commit kits/i }));
-
+    expect(await screen.findByRole('dialog', { name: /commit to retatrutide/i })).toBeInTheDocument();
     expect(push).not.toHaveBeenCalledWith('/login');
   });
 
-  it('opens the commit sheet once the session is known', async () => {
-    authState = signedIn;
+  it('opens the sheet while auth is still resolving', async () => {
+    authState = stillLoading;
     campaignState = { data: [campaign()], isLoading: false };
-    render(<GroupBuyPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: /commit kits/i }));
+    await openSheet();
 
     expect(await screen.findByRole('dialog', { name: /commit to retatrutide/i })).toBeInTheDocument();
+  });
+
+  it('puts the kits in the cart and keeps the customer on the board', async () => {
+    authState = signedIn;
+    campaignState = { data: [campaign()], isLoading: false };
+    await openSheet();
+
+    await userEvent.click(await screen.findByRole('button', { name: /add to cart ·/i }));
+
+    expect(useCart.getState().items).toMatchObject([{ kind: 'moq_campaign', refId: 'c1' }]);
     expect(push).not.toHaveBeenCalled();
   });
 });

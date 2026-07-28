@@ -30,6 +30,18 @@ export const useKahatiCommitments = (enabled = true) =>
     staleTime: 0,
   });
 
+// The group buys this customer already has a parcel going in, so the cart can
+// show ₱0 packing fee exactly where the server will charge none. Never cached
+// stale, for the same reason as the kahati waiver above.
+export const useCampaignPackingFeeWaivers = (enabled = true) =>
+  useQuery({
+    queryKey: ['campaign-commitments'],
+    queryFn: () => apiGet<{ paidSeriesIds: string[] }>('/campaigns/commitments')
+      .then((d) => new Set(d.paidSeriesIds)),
+    enabled,
+    staleTime: 0,
+  });
+
 // Whether the MOQ page is live. The nav reads this to decide if the MOQ tab
 // exists at all, so it must not advertise a route that 404s.
 export const useMoqPageEnabled = () =>

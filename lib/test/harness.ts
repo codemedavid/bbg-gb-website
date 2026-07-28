@@ -193,17 +193,18 @@ export function settlementRequest(
   return new Request('http://localhost/api/settlements', { method: 'POST', body: form });
 }
 
-// Builds the multipart Request a campaign-commit route handler expects.
-export function commitRequest(qty: number, opts: { withProof?: boolean } = {}): Request {
-  const form = new FormData();
-  form.set('qty', String(qty));
-  form.set('shipName', SHIPPING.shipName);
-  form.set('shipPhone', SHIPPING.shipPhone);
-  form.set('shipAddress', SHIPPING.shipAddress);
-  if (opts.withProof !== false) {
-    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
-  }
-  return new Request('http://localhost/api/campaigns/x/commit', { method: 'POST', body: form });
+// Builds the checkout Request for a Group Buy (MOQ campaign) commitment.
+//
+// A commitment is an ordinary cart line now, so this is checkoutRequest with
+// the single line filled in — kept as its own helper because most campaign
+// tests commit kits and do not care about cart shape. There is no separate
+// commit endpoint any more: /api/orders is the only route that takes payment.
+export function commitRequest(
+  campaignId: string,
+  qty: number,
+  opts: { withProof?: boolean; idempotencyKey?: string } = {},
+): Request {
+  return checkoutRequest([{ kind: 'moq_campaign', refId: campaignId, qty }], opts);
 }
 
 export { signToken };

@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import type { GroupBuy } from '@/lib/types';
 import { php } from '@/lib/format';
 import { KAHATI_MIN_VIABLE_VIALS, isKahatiViable } from '@/lib/kahati';
@@ -8,7 +7,6 @@ import { useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
-  const router = useRouter();
   const [qty, setQty] = useState(Math.max(g.minVials, 1));
   const add = useCart((s) => s.add);
   const toast = useToast((s) => s.show);
@@ -27,11 +25,11 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
     // are not drawn from a shelf — checkout keeps opening counters of 10 until
     // the commitment has all landed, so any qty at or above the minimum is valid.
     add({ key: `gb:${g.id}`, kind: 'group_buy', refId: g.id, name: `${g.name} — kahati`, spec: `Kahati · min ${g.minVials} vials`, unitPricePhp: g.perVialPhp, minQty: g.minVials, packingFeePhp: Number(g.repackFeePhp), qty });
-    toast('Kahati claimed! Bayaran na ang downpayment.');
+    toast('Nasa cart na ang kahati mo — pwede ka pang mamili.');
+    // Deliberately no navigation. Payment is reachable only from the cart:
+    // pushing the buyer into checkout on their first join is what stopped them
+    // joining a second hatian, or adding anything else, before paying.
     onClose();
-    // Send the buyer straight to checkout to pay the reservation downpayment,
-    // rather than leaving the commitment sitting in the cart.
-    router.push('/checkout');
   };
 
   return (

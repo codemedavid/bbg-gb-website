@@ -26,7 +26,7 @@ export default function CartPage() {
           <div className="px-5 py-16 text-center text-ink-muted">
             <div className="mb-2.5 text-4xl">🛒</div>
             <div className="mb-1 font-bold text-ink-body">Wala pang laman</div>
-            <div className="text-[13px]">Join a kahati or add from the shop.</div>
+            <div className="text-[13px]">Join a kahati, add a group buy, or shop the shelf.</div>
           </div>
         )}
         <div className="flex flex-col gap-2.5">

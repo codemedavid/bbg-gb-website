@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqProducts, paymentMethods, settlements } from '@/lib/db';
+import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
@@ -11,6 +11,10 @@ import { isKahatiFull } from '@/lib/kahati';
 import { closeFullKahati } from '@/lib/kahati-server';
 import { listKahatiCommitments } from '@/lib/kahati-commitment-server';
 import { hasOpenKahatiCommitment, kahatiDownpaymentDue } from '@/lib/kahati-commitment';
+import { listCampaignCommitments } from '@/lib/campaign-commitment-server';
+import { campaignPackingFeeDue, seriesWithPaidPackingFee } from '@/lib/campaign-commitment';
+import { canCommit } from '@/lib/group-buy';
+import { BatchAllocationError, allocateCommitment, resolveOpenBatch, seriesOf } from '@/lib/moq-batch-server';
 import { splitCartIntoOrders } from '@/lib/order-modes';
 import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
 import { validateAndStoreProof } from '@/lib/proof';
@@ -20,7 +24,7 @@ import { captureEvent } from '@/lib/posthog';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 const itemSchema = z.object({
-  kind: z.enum(['product', 'group_buy', 'moq_product']),
+  kind: z.enum(['product', 'group_buy', 'moq_campaign', 'moq_product']),
   refId: z.string().uuid(),
   qty: z.number().int().positive().max(9999),
   // On-hand lines only: 'piece' (single vial) or 'kit' (VIALS_PER_KIT vials).
@@ -40,18 +44,18 @@ const checkoutSchema = z.object({
   idempotencyKey: z.string().min(8).max(64).optional(),
 });
 
-// Checkout persists on-hand ('product'), kahati ('group_buy') and MOQ-shelf
-// ('moq_product') lines. The Group Buy (MOQ campaign) mode still commits through
-// /api/campaigns/:id/commit, so Priced narrows PriceableItem's kind to the line
-// kinds this route can actually write.
-type Priced = Omit<PriceableItem, 'kind'> & {
-  kind: 'product' | 'group_buy' | 'moq_product';
+// Checkout persists every purchasing mode: on-hand ('product'), kahati
+// ('group_buy'), Group Buy campaigns ('moq_campaign') and the MOQ shelf
+// ('moq_product'). This is the only route that takes payment — there is no
+// second path a commitment can be paid for through.
+type Priced = PriceableItem & {
   nameSnapshot: string;
   specSnapshot: string;
   // USD unit price snapshot for the weekly report; null when the line has no USD price.
   unitPriceUsd?: number | null;
   productId?: string;
   groupBuyId?: string;
+  moqCampaignId?: string;
   moqProductId?: string;
 };
 
@@ -83,6 +87,12 @@ export const POST = handler(async (req: Request) => {
   // it must reflect the orders that existed BEFORE this checkout, never the one
   // being placed.
   const downpaymentWaived = hasOpenKahatiCommitment(await listKahatiCommitments(db, session.sub));
+  // Which group buys this customer already has a parcel going in. The packing
+  // fee buys the parcel, not the commitment, so a further order in the same
+  // series joins one already paid for (see lib/campaign-commitment.ts). Read
+  // before the transaction for the same reason as the kahati waiver above: it
+  // must reflect the orders that existed BEFORE this checkout.
+  const packedSeriesIds = seriesWithPaidPackingFee(await listCampaignCommitments(db, session.sub));
   // A cart that is nothing but waived kahati lines owes nothing at all now, so
   // there is no payment to prove. Any other cart — an on-hand item alongside it,
   // or a first commitment — is paid for at checkout and must carry its proof.
@@ -194,6 +204,53 @@ export const POST = handler(async (req: Request) => {
           specSnapshot: `MOQ · min ${m.minOrderQty}`,
           moqProductId: m.id,
         });
+      } else if (it.kind === 'moq_campaign') {
+        const [c] = await tx.select().from(moqCampaigns).where(eq(moqCampaigns.id, it.refId));
+        if (!c) throw new ApiError(400, `Campaign not found: ${it.refId}`);
+
+        // The client enforces the per-customer minimum for the sake of the UI,
+        // but only the server decides what may be committed.
+        if (!Number.isInteger(it.qty) || it.qty < c.perCustomerMin) {
+          throw new ApiError(400, `${c.name}: minimum commitment is ${c.perCustomerMin} kit(s).`);
+        }
+
+        // A filled batch is full, not closed for business — the kits belong in
+        // whichever batch of the series is open. Cancelled and approved
+        // campaigns are genuinely finished and still refuse.
+        const target = await resolveOpenBatch(tx, c);
+        if (!canCommit(target.status) && target.status !== 'completed') {
+          throw new ApiError(400, `This campaign is ${target.status} and no longer accepting commitments.`);
+        }
+
+        // Claim across batches. A commitment larger than the room left fills the
+        // open batch, seals it, opens its successor and continues there — for as
+        // many batches as it takes. Every claim is a guarded UPDATE, so racing
+        // commitments can never push a batch past its cap. Running inside `tx`
+        // means a failure anywhere in the cart releases these kits too.
+        const fragments = await allocateCommitment(tx, target, it.qty)
+          .catch((err) => {
+            if (err instanceof BatchAllocationError) throw new ApiError(409, err.message);
+            throw err;
+          });
+
+        const unitPrice = Number(c.pricePerKitPhp);
+        // The fee is charged per parcel: nothing if this customer already has an
+        // order standing in this series. Every fragment carries the same figure
+        // — packingFeeFor bills a mode once, so a split batch is still one fee.
+        const packingFeePhp = campaignPackingFeeDue(seriesOf(c), Number(c.shippingPhp), packedSeriesIds);
+
+        for (const f of fragments) {
+          priced.push({
+            kind: 'moq_campaign',
+            unitPricePhp: unitPrice,
+            unitPriceUsd: null, // group buy kits are priced in PHP only
+            qty: f.qty,
+            packingFeePhp,
+            nameSnapshot: `${f.batch.name} — group buy (Batch #${f.batch.batchNo})`,
+            specSnapshot: `Group Buy · Batch #${f.batch.batchNo} · proceeds at MOQ or admin approval`,
+            moqCampaignId: f.batch.id,
+          });
+        }
       } else {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
@@ -294,9 +351,8 @@ export const POST = handler(async (req: Request) => {
       const totalUsd = round2(lines.reduce((s, p) => s + (p.unitPriceUsd ?? 0) * p.qty, 0));
       const orderNo = await nextOrderNo(tx);
 
-      // Checkout persists on-hand, kahati and MOQ-shelf orders; the Group Buy
-      // (MOQ campaign) mode commits through /api/campaigns/:id/commit instead.
-      const buyType = draft.mode as 'solo' | 'kahati' | 'moq';
+      // Every mode checks out here, so a draft's mode is always a buy type.
+      const buyType = draft.mode;
 
       // Only kahati orders carry a reservation downpayment; on-hand pays in full.
       // A customer already holding a live commitment has paid theirs, so this
@@ -327,7 +383,7 @@ export const POST = handler(async (req: Request) => {
 
       await tx.insert(orderItems).values(lines.map((p) => ({
         orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,
-        moqProductId: p.moqProductId ?? null,
+        moqCampaignId: p.moqCampaignId ?? null, moqProductId: p.moqProductId ?? null,
         nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,
         unitPricePhp: String(p.unitPricePhp), unitPriceUsd: p.unitPriceUsd != null ? String(p.unitPriceUsd) : null,
         qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),

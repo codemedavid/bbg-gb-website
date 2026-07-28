@@ -19,6 +19,7 @@ vi.mock('@/lib/queries', () => ({
   useKahatiDownpayment: () => ({ data: 150 }),
   useKahatiCommitments: () => ({ data: undefined }),
   useMoqPageEnabled: () => ({ data: false }),
+  useCampaignPackingFeeWaivers: () => ({ data: undefined }),
 }));
 
 const CartPage = (await import('./page')).default;

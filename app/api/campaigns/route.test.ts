@@ -26,7 +26,7 @@ vi.mock('@/lib/session', () => {
 
 const { GET: LIST, POST: CREATE } = await import('./route');
 const { POST: ACTION } = await import('./[id]/action/route');
-const { POST: COMMIT } = await import('./[id]/commit/route');
+const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { getDb, moqCampaigns, orders } = await import('@/lib/db');
 const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
 
@@ -103,7 +103,7 @@ describe('POST /api/campaigns/[id]/commit (customer)', () => {
   it('records a commitment, increments committed, and creates a held group_buy order with proof', async () => {
     const user = await signIn('customer');
     const c = await makeMoqCampaign({ moq: 10, committed: 0, perCustomerMin: 1, pricePerKitPhp: 10400 });
-    const res = await COMMIT(commitRequest(3), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 3));
     const body = await res.json();
     expect(res.status).toBe(201);
     expect(body.data.totals).toMatchObject({ subtotal: 31200, packingFee: 300, total: 31500 });
@@ -119,27 +119,27 @@ describe('POST /api/campaigns/[id]/commit (customer)', () => {
   it('rejects a commitment with no payment proof', async () => {
     await signIn('customer');
     const c = await makeMoqCampaign();
-    const res = await COMMIT(commitRequest(2, { withProof: false }), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 2, { withProof: false }));
     expect(res.status).toBe(400);
   });
 
   it('accepts a commitment of any positive quantity — group buys have no per-customer minimum', async () => {
     await signIn('customer');
     const c = await makeMoqCampaign({ moq: 10 });
-    const res = await COMMIT(commitRequest(1), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 1));
     expect(res.status).toBe(201);
   });
 
   it('rejects a commitment to a non-open campaign', async () => {
     await signIn('customer');
     const c = await makeMoqCampaign({ status: 'approved' });
-    const res = await COMMIT(commitRequest(2), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 2));
     expect(res.status).toBe(400);
   });
 
   it('requires authentication', async () => {
     const c = await makeMoqCampaign();
-    const res = await COMMIT(commitRequest(2), ctx(c.id));
+    const res = await COMMIT(commitRequest(c.id, 2));
     expect(res.status).toBe(401);
   });
 });

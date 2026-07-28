@@ -93,7 +93,11 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
         <span className="text-[11.5px] text-ink-muted">
           {closes ? `Closes ${closes}` : 'No deadline set'}
           {' · '}
-          {php(c.shippingPhp)} packing fee
+          {/* The fee is not charged here, and not necessarily charged at all —
+              a customer already holding an order in this group buy joins the
+              parcel they paid for. Quote when it lands, not a figure the cart
+              may then not show. */}
+          {php(c.shippingPhp)} packing fee at checkout
         </span>
         <button
           type="button"
@@ -101,7 +105,7 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
           onClick={() => onCommit(c)}
           className="rounded-full bg-brand-blue px-4 py-2 text-[12.5px] font-bold text-white transition-colors hover:bg-brand-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-faint"
         >
-          {isOpen ? 'Commit kits' : c.status === 'completed' ? 'Batch full' : 'Closed'}
+          {isOpen ? 'Add to cart' : c.status === 'completed' ? 'Batch full' : 'Closed'}
         </button>
       </footer>
     </article>

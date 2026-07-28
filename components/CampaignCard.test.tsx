@@ -13,7 +13,7 @@ import { CampaignCard } from './CampaignCard';
 import type { MoqCampaign } from '@/lib/types';
 
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
-  id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4,
+  id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4, perCustomerMin: 1,
   shippingPhp: '300.00', status: 'open', deadline: '2026-08-01T00:00:00Z',
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
@@ -95,10 +95,12 @@ describe('CampaignCard', () => {
   });
 
   it('invites a commitment while the campaign is open', async () => {
+    // The CTA fills the cart rather than opening a payment form — a campaign
+    // commitment is paid for at the shared checkout like everything else.
     const onCommit = vi.fn();
     render(<CampaignCard c={campaign({ status: 'open' })} onCommit={onCommit} />);
 
-    await userEvent.click(screen.getByRole('button', { name: /commit/i }));
+    await userEvent.click(screen.getByRole('button', { name: /add to cart/i }));
 
     expect(onCommit).toHaveBeenCalledTimes(1);
   });

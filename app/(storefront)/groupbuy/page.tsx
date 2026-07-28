@@ -5,7 +5,6 @@ import { SectionHeader } from '@/components/headers';
 import { CampaignCard } from '@/components/CampaignCard';
 import { CommitSheet } from '@/components/CommitSheet';
 import { useCampaigns } from '@/lib/queries';
-import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import type { MoqCampaign } from '@/lib/types';
 
@@ -18,31 +17,23 @@ import type { MoqCampaign } from '@/lib/types';
 // Different money, different rules, different page.
 
 const STEPS = [
-  'Pick a group buy and commit whole kits — no splitting, no per-vial math.',
-  'Pay in full and upload your proof. Your payment is held against the campaign.',
-  'Once the MOQ is met, the batch is ordered from the supplier and we ship to you.',
-  'Short of MOQ at the deadline? The admin can still approve it, extend it, or cancel it — and a cancelled group buy refunds everyone in full.',
+  'Pick a group buy and add whole kits to your cart — no splitting, no per-vial math.',
+  'Keep shopping: add more group buys or anything else, then pay for the lot in one checkout.',
+  'One packing fee per checkout, however many group buys you bought — and none at all if you already have an order going in the same group buy.',
+  'Once the MOQ is met, the batch is ordered from the supplier and we ship to you. A cancelled group buy refunds everyone in full.',
 ];
 
 export default function GroupBuyPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
   const { data: campaigns = [], isLoading } = useCampaigns();
   const [committing, setCommitting] = useState<MoqCampaign | null>(null);
   const toast = useToast((s) => s.show);
 
-  // Committing places a real order, so an anonymous visitor is sent to log in
-  // rather than filling a form that cannot succeed.
-  //
-  // `authLoading` has to be checked first: between first paint and /auth/me
-  // returning, a signed-in customer still looks anonymous, and redirecting on
-  // that would throw them onto the login screen mid-session. Swallow the click
-  // instead — auth settles in milliseconds and the tap can be repeated.
-  const startCommit = (c: MoqCampaign) => {
-    if (authLoading) return;
-    if (!user) { router.push('/login'); return; }
-    setCommitting(c);
-  };
+  // No login gate. Committing used to place a real order from this page, so an
+  // anonymous visitor had to sign in first; it now only puts a line in a
+  // localStorage cart, exactly like the Kahati board and the shop. Checkout is
+  // where the session is required, and it redirects there itself.
+  const startCommit = (c: MoqCampaign) => setCommitting(c);
 
   const open = campaigns.filter((c) => c.status === 'open');
   const closed = campaigns.filter((c) => c.status !== 'open');
@@ -105,11 +96,9 @@ export default function GroupBuyPage() {
         <CommitSheet
           c={committing}
           onClose={() => setCommitting(null)}
-          onCommitted={(orderNo) => {
-            setCommitting(null);
-            toast('Committed! Nakareserve na ang kits mo.');
-            router.push(`/success/${orderNo}`);
-          }}
+          // Added to the cart, not ordered — so no success screen and no
+          // navigation. The customer stays on the board and keeps shopping.
+          onAdded={(c) => toast(`${c.name} added to cart — pwede ka pang mamili.`)}
         />
       )}
     </>

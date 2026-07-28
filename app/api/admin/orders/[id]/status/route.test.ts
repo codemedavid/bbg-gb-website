@@ -24,7 +24,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { PATCH } = await import('./route');
-const { POST: COMMIT } = await import('@/app/api/campaigns/[id]/commit/route');
+const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { getDb, moqCampaigns } = await import('@/lib/db');
 const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
 
@@ -35,7 +35,7 @@ const statusReq = (status: string) =>
 async function commitAs(role: 'customer', campaignId: string, qty: number) {
   const user = await makeUser({ role });
   session.current = { sub: user.id, role, email: user.email };
-  const res = await COMMIT(commitRequest(qty), ctx(campaignId));
+  const res = await COMMIT(commitRequest(campaignId, qty));
   return (await res.json()).data.order.id as string;
 }
 
