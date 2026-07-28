@@ -85,7 +85,13 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
           <div className="mb-1 text-[12px] font-semibold text-ink-body">Payment proof</div>
           {proofUrl
             ? <a href={proofUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border border-line px-3 py-2 text-[13px] font-semibold text-brand-blue">🧾 View uploaded proof →</a>
-            : <span className="text-[13px] text-ink-muted">No proof attached.</span>}
+            // A kahati order whose downpayment was waived collected nothing, so
+            // no proof exists to attach. Said plainly, or this reads as a
+            // customer who skipped payment and sends the admin chasing a
+            // screenshot that was never supposed to exist.
+            : order.buyType === 'kahati' && Number(order.downpaymentPhp ?? 0) === 0
+              ? <span className="text-[13px] text-ink-muted">No payment was due — this customer already had a kahati commitment in progress, so no downpayment was collected. The full amount is billed at their final checkout.</span>
+              : <span className="text-[13px] text-ink-muted">No proof attached.</span>}
         </div>
 
         <div className="mt-4 rounded-[10px] border border-line-soft p-3">
