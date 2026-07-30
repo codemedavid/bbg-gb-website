@@ -30,7 +30,10 @@ const relative = (path: string) => path.slice(sectionDir.length);
 
 // Everything the section may pull out of the shared admin API. Anything else is
 // a workflow reaching into another workflow.
-const ALLOWED_ADMIN_API = ['useCampaigns', 'useCampaign', 'useMutate', 'useAdminProducts'];
+// useCampaignParticipants reads this section's OWN participants endpoint
+// (/api/admin/campaigns/:id/commitments), not the hatian one — the hatian
+// equivalent, useAdminGroupBuyCommitments, stays in FOREIGN_MUTATIONS below.
+const ALLOWED_ADMIN_API = ['useCampaigns', 'useCampaign', 'useCampaignParticipants', 'useMutate', 'useAdminProducts'];
 
 // Mutations that belong to Hatian or Product Management.
 const FOREIGN_MUTATIONS = [
