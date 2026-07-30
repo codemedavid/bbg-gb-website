@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
+import type { HatianCommitment } from '@/lib/types';
 
 // Destructive actions route through the shared ConfirmProvider, so the page
 // must render inside it.
@@ -15,20 +16,26 @@ const saveMutate = vi.fn();
 // Participants of the open hatian. Deferring the packing fee to a final checkout
 // means a committed customer is not necessarily a paid-up one, so each of the
 // three payments is tracked apart.
-const commitments = {
+//
+// Typed as HatianCommitment so this fixture cannot drift from the feed it stands
+// in for. It once did: the feed renamed balancePhp to orderBalancePhp and this
+// mock kept the old name, so the panel read undefined, php() threw on it and
+// clicking "Participants & payments" blanked the admin with a client-side
+// exception — while every test here stayed green.
+const commitments: { current: HatianCommitment[] } = {
   current: [
     {
       orderId: 'o1', orderNo: 'BBG-2418', orderStatus: 'payment_confirmed',
       customerName: 'Ana Cruz', customerEmail: 'ana@example.com', customerPhone: '09171234567',
       vials: 3, committedAt: new Date('2026-07-01T14:30:00Z').toISOString(),
-      balancePhp: 2550, downpaymentPhp: 150,
+      orderBalancePhp: 2550, spansOtherHatians: false, downpaymentPhp: 150,
       downpayment: 'paid', finalPayment: 'unpaid', packingFee: 'unpaid', settledAt: null,
     },
     {
       orderId: 'o2', orderNo: 'BBG-2419', orderStatus: 'batch_filling',
       customerName: 'Ben Reyes', customerEmail: 'ben@example.com', customerPhone: null,
       vials: 2, committedAt: new Date('2026-07-02T09:00:00Z').toISOString(),
-      balancePhp: 1650, downpaymentPhp: 150,
+      orderBalancePhp: 1650, spansOtherHatians: true, downpaymentPhp: 150,
       downpayment: 'paid', finalPayment: 'paid', packingFee: 'paid',
       settledAt: new Date('2026-07-10').toISOString(),
     },
@@ -123,6 +130,55 @@ describe('hatian participants panel', () => {
     await openPanel();
     // Date AND time — "who committed first" is settled by the clock, not the day.
     expect(screen.getByTestId('committed-at-o1').textContent).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  // An admin opening this panel is looking at one counter among several that
+  // share a name, price and cap. Which one they are chasing payments for has to
+  // be on the screen — the participant list alone does not say.
+  it('heads the panel with the group buy details', async () => {
+    await openPanel();
+    const details = screen.getByTestId('group-buy-details');
+    expect(details).toHaveTextContent(/campaign name/i);
+    expect(details).toHaveTextContent('Bioglutide');
+    expect(details).toHaveTextContent(/status/i);
+    expect(details).toHaveTextContent('open');
+    expect(details).toHaveTextContent(/current progress/i);
+    expect(details).toHaveTextContent('5/10 vials');
+  });
+
+  // The details are a property of the hatian, not of its participant list — an
+  // empty counter is exactly when an admin needs to confirm they opened the
+  // right one.
+  it('shows the details for a hatian nobody has joined yet', async () => {
+    const joined = commitments.current;
+    commitments.current = [];
+    try {
+      render(<Page />);
+      fireEvent.click(screen.getByRole('button', { name: /participants/i }));
+      const details = await screen.findByTestId('group-buy-details');
+      expect(details).toHaveTextContent('Bioglutide');
+      expect(screen.getByText(/walang sumali pa/i)).toBeInTheDocument();
+    } finally {
+      commitments.current = joined;
+    }
+  });
+
+  // The panel used to read a field the feed no longer sends. php(undefined)
+  // throws rather than degrading, so the whole admin tree unmounted into Next's
+  // "client-side exception" screen the moment a hatian had one participant.
+  it('shows what each participant still owes', async () => {
+    await openPanel();
+    expect(screen.getByTestId('balance-o1')).toHaveTextContent('₱2,550');
+    expect(screen.getByTestId('balance-o2')).toHaveTextContent('₱1,650');
+  });
+
+  // An overflow commitment holds lines against two counters, but the balance is
+  // a property of the whole ORDER — the same figure appears under both hatians.
+  // Unflagged, an admin adding the column up chases money that does not exist.
+  it('flags a balance that is shared with another hatian', async () => {
+    await openPanel();
+    expect(screen.getByTestId('balance-o2')).toHaveTextContent(/also in another hatian/i);
+    expect(screen.getByTestId('balance-o1')).not.toHaveTextContent(/also in another hatian/i);
   });
 
   it('shows the three payments separately for each participant', async () => {

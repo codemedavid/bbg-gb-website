@@ -102,13 +102,56 @@ const commitStamp = (iso: string): string =>
 // Who is in this hatian and what each of them still owes. The packing fee is no
 // longer collected when a customer commits — it is charged once at their final
 // checkout — so an admin chasing money needs the three payments side by side.
+// Which hatian this is, stated before the money. Counters that filled roll into
+// same-named siblings, so "Bioglutide" alone does not identify the one whose
+// participants are listed below — the status and the fill do.
+function GroupBuyDetails({ groupBuy }: { groupBuy: GroupBuy }) {
+  const claimed = kahatiClaimedDisplay(groupBuy.claimedSlots, groupBuy.totalSlots);
+  const progress = kahatiProgressPercent(claimed, groupBuy.totalSlots);
+  return (
+    <section data-testid="group-buy-details" aria-label="Group buy details" className="mb-4 rounded-[12px] border border-line-soft bg-surface-mist px-4 py-3">
+      <h3 className="m-0 mb-2.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">Group buy details</h3>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
+        <Detail label="Campaign name"><span className="font-semibold text-ink">{groupBuy.name}</span></Detail>
+        <Detail label="Status">
+          <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-bold ${groupBuy.status === 'open' ? 'bg-[#e8f5db] text-brand-greendark' : groupBuy.status === 'cancelled' ? 'bg-[#fbe4e4] text-[#b23b3b]' : 'bg-line text-ink-body'}`}>{groupBuy.status}</span>
+        </Detail>
+        <Detail label="Price per vial"><span className="text-ink-body">{php(groupBuy.pricePerKitPhp)}/kit</span></Detail>
+        <div className="col-span-2 sm:col-span-3">
+          <Detail label="Current progress">
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-[#edf2ea]">
+              <div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="mt-1 text-[12px] font-semibold text-brand-greendark">
+              {claimed}/{groupBuy.totalSlots} vials · {progress}% of the kit
+            </div>
+          </Detail>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[11px] uppercase tracking-wide text-ink-muted">{label}</dt>
+      <dd className="m-0 mt-0.5 text-[13px]">{children}</dd>
+    </div>
+  );
+}
+
 function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose: () => void }) {
   const { data: rows = [], isLoading } = useAdminGroupBuyCommitments(groupBuy.id);
   const settled = rows.filter((r: HatianCommitment) => r.finalPayment === 'paid').length;
 
   return (
-    <Modal title={`Participants — ${groupBuy.name}`} onClose={onClose}>
+    <Modal title={`Participants & payments — ${groupBuy.name}`} onClose={onClose}>
       <div className="max-h-[70vh] overflow-y-auto">
+        {/* Outside the loading/empty branches: which hatian this is does not
+            depend on whether anyone has joined it, and an admin who opened the
+            wrong counter needs to see that immediately. */}
+        <GroupBuyDetails groupBuy={groupBuy} />
         {isLoading ? <div className="py-6 text-ink-muted">Loading…</div> : rows.length === 0 ? (
           <div className="py-6 text-[13px] text-ink-muted">Walang sumali pa sa hatian na ito.</div>
         ) : (
@@ -124,7 +167,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
                     <th className="py-2 pr-3">Customer</th>
                     <th className="py-2 pr-3">Vials</th>
                     <th className="py-2 pr-3">Committed</th>
-                    <th className="py-2 pr-3">Balance</th>
+                    <th className="py-2 pr-3">Order balance</th>
                     <th className="py-2 pr-3">Downpayment</th>
                     <th className="py-2 pr-3">Final payment</th>
                     <th className="py-2">Packing fee</th>
@@ -142,7 +185,16 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
                       <td data-testid={`committed-at-${r.orderId}`} className="py-2.5 pr-3 text-ink-body">
                         {commitStamp(r.committedAt)}
                       </td>
-                      <td className="py-2.5 pr-3 font-semibold text-ink">{php(r.balancePhp)}</td>
+                      <td data-testid={`balance-${r.orderId}`} className="py-2.5 pr-3 font-semibold text-ink">
+                        {php(r.orderBalancePhp)}
+                        {/* The figure belongs to the whole order, so an overflow
+                            commitment shows it under both counters. Say so — the
+                            column does not add up, and an admin chasing money
+                            needs to know that before totalling it. */}
+                        {r.spansOtherHatians && (
+                          <div className="text-[11px] font-normal text-ink-muted">also in another hatian</div>
+                        )}
+                      </td>
                       <td className="py-2.5 pr-3"><PaymentBadge state={r.downpayment} testId={`downpayment-${r.orderId}`} /></td>
                       <td className="py-2.5 pr-3"><PaymentBadge state={r.finalPayment} testId={`final-payment-${r.orderId}`} /></td>
                       <td className="py-2.5"><PaymentBadge state={r.packingFee} testId={`packing-fee-${r.orderId}`} /></td>

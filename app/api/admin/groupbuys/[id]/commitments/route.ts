@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, groupBuys, orderItems, orders, settlements, users } from '@/lib/db';
 import { downpaymentState, finalPaymentState, orderBalance, packingFeeState } from '@/lib/settlement';
+import type { HatianCommitment } from '@/lib/types';
 
 // Admin: who is in this hatian and what each of them still owes.
 //
@@ -68,7 +69,10 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       : [],
   );
 
-  return ok(rows.map((r) => {
+  // Annotated with the shared contract: the admin panel reads HatianCommitment,
+  // so a field renamed here without renaming it there stops the build instead of
+  // reaching a browser as an undefined the formatter throws on.
+  return ok(rows.map((r): HatianCommitment => {
     const order = {
       id: r.orderId,
       status: r.orderStatus,
@@ -87,7 +91,9 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       customerEmail: r.customerEmail,
       customerPhone: r.customerPhone,
       vials: r.vials,
-      committedAt: r.committedAt,
+      // Serialized here rather than left to JSON.stringify, so the contract's
+      // `string` is what the route actually produces.
+      committedAt: r.committedAt.toISOString(),
       // Named for what it is: the balance of the whole ORDER. When the order also
       // claimed from another counter the same figure appears there too, so it
       // must never be summed down the column without regard to the flag below.
@@ -97,7 +103,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       downpayment: downpaymentState(order),
       finalPayment: finalPaymentState(order, settlementStatus),
       packingFee: packingFeeState(order, settlementStatus),
-      settledAt: r.settlementPaidAt,
+      settledAt: r.settlementPaidAt?.toISOString() ?? null,
     };
   }));
 });
