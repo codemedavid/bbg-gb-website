@@ -44,6 +44,17 @@ export const useAdminPaymentMethods = () => useQuery({ queryKey: ['admin', 'paym
 export const useAdminMoqProducts = () =>
   useQuery({ queryKey: ['admin', 'moq-products'], queryFn: () => apiGet<MoqProduct[]>('/admin/moq-products') });
 export const useCampaigns = () => useQuery({ queryKey: ['admin', 'campaigns'], queryFn: () => apiGet<MoqCampaign[]>('/campaigns') });
+// One campaign, for the Edit screen at /admin/group-buy/campaigns/:id. That URL
+// can be typed, bookmarked or reloaded, so the page cannot assume the list is
+// already in cache. Retry stays off: a 404 here means the campaign is gone, and
+// re-asking three times only delays telling the admin so.
+export const useCampaign = (id: string | null) =>
+  useQuery({
+    queryKey: ['admin', 'campaign', id],
+    queryFn: () => apiGet<MoqCampaign>(`/campaigns/${id}`),
+    enabled: !!id,
+    retry: false,
+  });
 export const useAdminOrders = (status?: string) =>
   useQuery({ queryKey: ['admin', 'orders', status], queryFn: () => apiGet<(Order & { customerEmail: string })[]>(`/admin/orders${qs({ status })}`) });
 export const useAdminOrder = (id: string | null) =>
