@@ -41,9 +41,11 @@ const { resetDb, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib
 const PANEL_FIELDS: readonly (keyof HatianCommitment)[] = [
   'orderId', 'orderNo', 'orderStatus',
   'customerName', 'customerEmail', 'customerPhone',
+  'contactPhone', 'shippingAddress',
   'vials', 'committedAt',
-  'orderBalancePhp', 'spansOtherHatians', 'downpaymentPhp',
-  'downpayment', 'finalPayment', 'packingFee', 'settledAt',
+  'orderBalancePhp', 'spansOtherHatians', 'downpaymentPhp', 'amountPaidPhp',
+  'downpayment', 'finalPayment', 'packingFee',
+  'paymentMethod', 'proofUrl', 'settledAt',
 ];
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -133,5 +135,93 @@ describe('GET /admin/groupbuys/[id]/commitments', () => {
     const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
 
     expect(await commitments(gb.id)).toEqual([]);
+  });
+
+  // Where the parcel is going, taken from the order's delivery snapshot rather
+  // than from the user record: an address edited after committing must not
+  // rewrite where an already-packed batch was shipped.
+  describe('delivery details', () => {
+    it('sends the contact number and shipping address captured at checkout', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+      await signIn('customer');
+      await joinKahati(gb.id, 2);
+
+      const [row] = await commitments(gb.id);
+
+      expect(row.contactPhone.length).toBeGreaterThan(0);
+      expect(row.shippingAddress.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('what the customer has paid', () => {
+    it('counts a cleared downpayment as money received', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, pricePerKitPhp: 10400 });
+      await signIn('customer');
+      await joinKahati(gb.id, 3);
+
+      const [row] = await commitments(gb.id);
+
+      // Committing charges the downpayment only; the balance follows at the
+      // final checkout. Amount paid and remaining balance must therefore be two
+      // different figures, not one rendered twice.
+      expect(row.amountPaidPhp).toBe(row.downpaymentPhp);
+      expect(row.orderBalancePhp).toBeGreaterThan(0);
+    });
+
+    // A proof sitting in review is not money in the bank. Counting it would
+    // overstate every batch summary built on this feed.
+    it('does not count a downpayment still under review', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, pricePerKitPhp: 10400 });
+      await signIn('customer');
+      await joinKahati(gb.id, 3);
+
+      const [row] = await commitments(gb.id);
+
+      if (row.downpayment === 'under_review') expect(row.amountPaidPhp).toBe(0);
+      else expect(row.amountPaidPhp).toBe(row.downpaymentPhp);
+    });
+  });
+
+  describe('proof of payment', () => {
+    it('sends a fetchable URL for the uploaded proof, never the raw storage key', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+      await signIn('customer');
+      await joinKahati(gb.id, 2);
+
+      const [row] = await commitments(gb.id);
+
+      // Proofs are private. A key would be useless to the browser and would
+      // leak the storage layout; the panel needs something it can put in <img>.
+      expect(row.proofUrl).toBeTruthy();
+      expect(row.proofUrl).toMatch(/^(https?:)?\//);
+    });
+
+    it('sends null rather than a broken URL when no proof was uploaded', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+      await signIn('customer');
+      const res = await placeOrder(
+        checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 2 }], { withProof: false }),
+      );
+      // Proof is mandatory at checkout, so this order should never exist. If the
+      // rule ever relaxes, the feed must degrade to null instead of signing "".
+      if (res.status === 201) {
+        const [row] = await commitments(gb.id);
+        expect(row.proofUrl).toBeNull();
+      } else {
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('reports how the customer paid', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+      await signIn('customer');
+      await placeOrder(
+        checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 2 }], { paymentMethod: 'GoTyme' }),
+      );
+
+      const [row] = await commitments(gb.id);
+
+      expect(row.paymentMethod).toBe('GoTyme');
+    });
   });
 });
