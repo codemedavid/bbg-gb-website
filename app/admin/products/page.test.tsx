@@ -2,7 +2,7 @@
 // failure as the group-buy form: the submit awaited mutateAsync with no catch,
 // so a server rejection left the modal open with no explanation.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
 
@@ -58,7 +58,13 @@ describe('AdminProductsPage — group buy configuration', () => {
   const type = (label: RegExp, value: string) =>
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
-  const savedPayload = () => saveMutate.mock.calls[0][0];
+  // Awaited rather than read straight after the click: submit closes the modal
+  // once the mutation resolves, and asserting before that leaves a React state
+  // update running outside the test's act() scope.
+  const savedPayload = async () => {
+    await waitFor(() => expect(saveMutate).toHaveBeenCalled());
+    return saveMutate.mock.calls[0][0];
+  };
 
   const product = (overrides: Record<string, unknown> = {}) => ({
     id: 'p1', code: 'RETA', name: 'Retatrutide', spec: '10mg', pricePhp: '3200', priceUsd: null,
@@ -102,7 +108,7 @@ describe('AdminProductsPage — group buy configuration', () => {
 
     // Same vocabulary as lib/db/schema.ts and GroupBuyConfig: one rename away
     // from a column nobody fills is exactly how this section stayed empty.
-    expect(savedPayload()).toMatchObject({
+    expect(await savedPayload()).toMatchObject({
       isGroupBuy: true,
       gbPricePerKitPhp: 4500,
       gbPricePerPiecePhp: 480,
@@ -149,7 +155,7 @@ describe('AdminProductsPage — group buy configuration', () => {
     // Null means "no minimum of its own" and seeds the global floor. A zero is
     // an invalid minimum the API would reject, and a zero PRICE would read as a
     // free kit — the same distinction onHandKitPhp already makes.
-    expect(savedPayload().gbMinVials).toBeNull();
+    expect((await savedPayload()).gbMinVials).toBeNull();
   });
 
   it('refuses a minimum larger than the batch it has to fit in', async () => {
