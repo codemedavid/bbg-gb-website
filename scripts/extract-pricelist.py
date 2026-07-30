@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Extract products from 'bbg Price list.xlsx' into structured JSON.
+"""Extract products from the BBG price list workbook into structured JSON.
+
+Usage: python3 scripts/extract-pricelist.py [path-to.xlsx]
+With no argument, picks the most recently modified known price list in
+~/Downloads (see CANDIDATES).
 
 Read-only: reads the source workbook and writes data/pricelist.json.
 No database writes, no app code touched. Every record keeps its source
@@ -7,12 +11,31 @@ row/block so questionable entries are traceable back to the spreadsheet.
 """
 import json
 import re
+import sys
 from pathlib import Path
 
 import openpyxl
 
-SOURCE = Path.home() / "Downloads" / "bbg Price list.xlsx"
+# The client re-exports this workbook under whichever name the download lands
+# as, so accept an explicit path first and otherwise take the newest of the
+# known names rather than pinning one spelling that quietly goes stale.
+CANDIDATES = ["Price list.xlsx", "bbg Price list.xlsx"]
 OUT = Path(__file__).resolve().parent.parent / "data" / "pricelist.json"
+
+
+def resolve_source(argv):
+    if len(argv) > 1:
+        return Path(argv[1]).expanduser()
+    found = [p for p in (Path.home() / "Downloads" / n for n in CANDIDATES)
+             if p.exists()]
+    if not found:
+        raise SystemExit(
+            "No price list found. Looked for "
+            + ", ".join(CANDIDATES)
+            + f" in {Path.home() / 'Downloads'}. Pass a path explicitly:\n"
+              "  python3 scripts/extract-pricelist.py <path-to.xlsx>")
+    return max(found, key=lambda p: p.stat().st_mtime)
+
 
 # The Pricelist sheet is a two-column layout: cols A-E are one product
 # list, cols G-K are a second, independent list. (col,) offsets below.
@@ -202,9 +225,11 @@ def extract_on_hand(ws, warnings):
 
 
 def main():
-    if not SOURCE.exists():
-        raise SystemExit(f"Source not found: {SOURCE}")
-    wb = openpyxl.load_workbook(SOURCE, data_only=True)
+    source = resolve_source(sys.argv)
+    if not source.exists():
+        raise SystemExit(f"Source not found: {source}")
+    print(f"Reading {source}")
+    wb = openpyxl.load_workbook(source, data_only=True)
     warnings = []
 
     pl = wb["Pricelist"]
@@ -215,7 +240,7 @@ def main():
     on_hand = extract_on_hand(wb["On Hand"], warnings)
 
     result = {
-        "source": SOURCE.name,
+        "source": source.name,
         "counts": {
             "pricelist": len(pricelist),
             "moq": len(moq),
