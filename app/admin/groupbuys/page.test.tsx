@@ -314,12 +314,14 @@ describe('hatian participants panel', () => {
     expect(screen.getByTestId('packing-fee-o2')).toHaveTextContent(/paid/i);
   });
 
+  // Was a "1 of 2 fully settled" banner above the table. The batch summary now
+  // answers the same question in the same place as every other total, and does
+  // it without conflating a cancelled order with an unpaid one — so the banner
+  // went rather than being kept alongside a second count of the same thing.
   it('counts the participants who have not settled yet', async () => {
     await openPanel();
-    // The count is split across an emphasis element, so assert on the summary's
-    // rendered text rather than on a single text node.
-    const summary = screen.getByTestId('settled-count');
-    expect(summary.textContent).toMatch(/1 of 2\s+participants fully settled/i);
-    expect(summary.textContent).toMatch(/still owe their final payment and packing fee/i);
+    expect(screen.getByTestId('summary-confirmed')).toHaveTextContent('1');
+    expect(screen.getByTestId('summary-pending')).toHaveTextContent('1');
+    expect(screen.getByTestId('summary-participants')).toHaveTextContent('2');
   });
 });

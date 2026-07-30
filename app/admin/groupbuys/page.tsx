@@ -5,6 +5,9 @@ import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS, kahatiProgressPercent, kahatiClaimedDisplay } from '@/lib/kahati';
+import { perVialPrice } from '@/lib/pricing';
+import { hatianBatchSummary } from '@/lib/hatian-batch-summary';
+import { STATUS_LABEL } from '@/lib/order-status';
 import type { GroupBuy, HatianCommitment, PaymentState } from '@/lib/types';
 
 // A brand-new hatian starts empty and fills exactly one kit.
@@ -141,9 +144,117 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
+// A proof the admin can scan down the column, and enlarge when a thumbnail is
+// too small to read a reference number off. Dimensions are explicit: a column of
+// proofs loading at their natural size reflows the table under the cursor.
+const PROOF_THUMB_PX = 44;
+
+function ProofCell({ row, onOpen }: { row: HatianCommitment; onOpen: () => void }) {
+  if (!row.proofUrl) {
+    return (
+      <td data-testid={`proof-cell-${row.orderId}`} className="py-2.5 text-[11px] text-ink-faint">
+        No proof
+      </td>
+    );
+  }
+  return (
+    <td data-testid={`proof-cell-${row.orderId}`} className="py-2.5">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`View proof of payment from ${row.customerName}`}
+        className="block overflow-hidden rounded-[8px] border border-line-soft transition-transform duration-150 ease-out hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+      >
+        <img
+          data-testid={`proof-${row.orderId}`}
+          src={row.proofUrl}
+          alt={`Payment proof from ${row.customerName}`}
+          width={PROOF_THUMB_PX}
+          height={PROOF_THUMB_PX}
+          loading="lazy"
+          className="h-[44px] w-[44px] object-cover"
+        />
+      </button>
+    </td>
+  );
+}
+
+// The enlarged proof. Its own layer above the panel rather than a replacement
+// for it — the admin closes it and is still on the same row of the same batch.
+function ProofLightbox({ row, onClose }: { row: HatianCommitment; onClose: () => void }) {
+  return (
+    <div
+      data-testid="proof-lightbox"
+      role="dialog"
+      aria-label={`Proof of payment from ${row.customerName}`}
+      onClick={onClose}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6"
+    >
+      <figure onClick={(e) => e.stopPropagation()} className="m-0 max-h-full max-w-[min(900px,92vw)] overflow-auto rounded-[14px] bg-white p-3 shadow-card">
+        <img
+          data-testid="proof-lightbox-image"
+          src={row.proofUrl ?? ''}
+          alt={`Payment proof from ${row.customerName}`}
+          className="block max-h-[70vh] w-auto max-w-full rounded-[8px] object-contain"
+        />
+        <figcaption className="mt-2 flex items-center justify-between gap-4 text-[12.5px] text-ink-body">
+          <span>
+            <strong className="text-ink">{row.customerName}</strong> · {row.orderNo}
+            {row.paymentMethod && <> · {row.paymentMethod}</>}
+          </span>
+          <button className={btnGhost} onClick={onClose} aria-label="Close proof">Close proof</button>
+        </figcaption>
+      </figure>
+    </div>
+  );
+}
+
+// What the batch adds up to. The arithmetic lives in lib/hatian-batch-summary —
+// the two traps in it (double-counted shared balances, cancelled orders) are
+// worth a tested module rather than a handful of reduces inline here.
+function BatchSummary({ rows, groupBuy }: { rows: HatianCommitment[]; groupBuy: GroupBuy }) {
+  const s = hatianBatchSummary(rows, {
+    totalSlots: groupBuy.totalSlots,
+    // Derived, not read off the row: the admin feed returns raw group_buys and
+    // never computes perVialPhp, so trusting that field would put undefined
+    // through the money formatter — the exact shape of the crash this panel
+    // was fixed for.
+    perVialPhp: perVialPrice(Number(groupBuy.pricePerKitPhp)),
+  });
+  const figures: { label: string; value: string; testId: string; tone?: string }[] = [
+    { label: 'Total participants', value: String(s.totalParticipants), testId: 'summary-participants' },
+    { label: 'Vials reserved', value: String(s.totalVialsReserved), testId: 'summary-vials-reserved' },
+    { label: 'Vials remaining', value: String(s.remainingVials), testId: 'summary-vials-remaining' },
+    { label: 'Gross income', value: php(s.grossIncomePhp), testId: 'summary-gross-income', tone: 'text-brand-greendark' },
+    { label: 'Confirmed payments', value: String(s.confirmedPayments), testId: 'summary-confirmed', tone: 'text-brand-greendark' },
+    { label: 'Pending payments', value: String(s.pendingPayments), testId: 'summary-pending', tone: 'text-[#8a6d1f]' },
+    { label: 'Cancelled orders', value: String(s.cancelledOrders), testId: 'summary-cancelled', tone: 'text-[#b23b3b]' },
+  ];
+  return (
+    <section data-testid="batch-summary" aria-label="Batch summary" className="mt-4 rounded-[12px] border border-line-soft bg-surface-mist px-4 py-3">
+      <h3 className="m-0 mb-2.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">Batch summary</h3>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        {figures.map((f) => (
+          <div key={f.testId}>
+            <dt className="text-[11px] uppercase tracking-wide text-ink-muted">{f.label}</dt>
+            <dd data-testid={f.testId} className={`m-0 mt-0.5 font-display text-[17px] font-bold ${f.tone ?? 'text-ink'}`}>{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* Said out loud, because it is the difference between ordering 5 vials
+          from the supplier and ordering 9. */}
+      {s.cancelledOrders > 0 && (
+        <p className="mt-2.5 mb-0 text-[11.5px] text-ink-muted">
+          Cancelled orders are excluded from the vials reserved and the gross income.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose: () => void }) {
   const { data: rows = [], isLoading } = useAdminGroupBuyCommitments(groupBuy.id);
-  const settled = rows.filter((r: HatianCommitment) => r.finalPayment === 'paid').length;
+  const [proof, setProof] = useState<HatianCommitment | null>(null);
 
   return (
     <Modal title={`Participants & payments — ${groupBuy.name}`} onClose={onClose}>
@@ -156,35 +267,37 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
           <div className="py-6 text-[13px] text-ink-muted">Walang sumali pa sa hatian na ito.</div>
         ) : (
           <>
-            <div data-testid="settled-count" className="mb-3 rounded-[10px] bg-surface-mist px-3 py-2 text-[12.5px] text-ink-body">
-              <strong>{settled} of {rows.length}</strong> participant{rows.length === 1 ? '' : 's'} fully settled
-              {settled < rows.length && ' — the rest still owe their final payment and packing fee.'}
-            </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-[12.5px]">
+              <table className="w-full min-w-[1100px] text-left text-[12.5px]">
                 <thead className="border-b border-line-soft text-[11px] uppercase tracking-wide text-ink-muted">
                   <tr>
                     <th className="py-2 pr-3">Customer</th>
+                    <th className="py-2 pr-3">Contact</th>
+                    <th className="py-2 pr-3">Shipping address</th>
                     <th className="py-2 pr-3">Vials</th>
-                    <th className="py-2 pr-3">Committed</th>
-                    <th className="py-2 pr-3">Order balance</th>
+                    <th className="py-2 pr-3">Paid</th>
+                    <th className="py-2 pr-3">Balance</th>
+                    <th className="py-2 pr-3">Method</th>
+                    <th className="py-2 pr-3">Order</th>
                     <th className="py-2 pr-3">Downpayment</th>
                     <th className="py-2 pr-3">Final payment</th>
-                    <th className="py-2">Packing fee</th>
+                    <th className="py-2 pr-3">Packing fee</th>
+                    <th className="py-2 pr-3">Committed</th>
+                    <th className="py-2">Proof</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r: HatianCommitment) => (
-                    <tr key={r.orderId} className="border-b border-line-soft/60">
+                    <tr key={r.orderId} className="border-b border-line-soft/60 transition-colors duration-150 hover:bg-surface-mist/60">
                       <td className="py-2.5 pr-3">
                         <div className="font-semibold text-ink">{r.customerName}</div>
                         <div className="text-[11px] text-ink-muted">{r.customerEmail}</div>
                         <div className="text-[11px] text-ink-muted">{r.orderNo}</div>
                       </td>
+                      <td data-testid={`contact-${r.orderId}`} className="py-2.5 pr-3 whitespace-nowrap text-ink-body">{r.contactPhone}</td>
+                      <td data-testid={`address-${r.orderId}`} className="min-w-[180px] max-w-[240px] py-2.5 pr-3 text-[11.5px] text-ink-body">{r.shippingAddress}</td>
                       <td data-testid={`vials-${r.orderId}`} className="py-2.5 pr-3 font-bold text-ink">{r.vials}</td>
-                      <td data-testid={`committed-at-${r.orderId}`} className="py-2.5 pr-3 text-ink-body">
-                        {commitStamp(r.committedAt)}
-                      </td>
+                      <td data-testid={`amount-paid-${r.orderId}`} className="py-2.5 pr-3 font-semibold text-brand-greendark">{php(r.amountPaidPhp)}</td>
                       <td data-testid={`balance-${r.orderId}`} className="py-2.5 pr-3 font-semibold text-ink">
                         {php(r.orderBalancePhp)}
                         {/* The figure belongs to the whole order, so an overflow
@@ -195,20 +308,32 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
                           <div className="text-[11px] font-normal text-ink-muted">also in another hatian</div>
                         )}
                       </td>
+                      <td data-testid={`payment-method-${r.orderId}`} className="py-2.5 pr-3 whitespace-nowrap text-ink-body">
+                        {r.paymentMethod ?? <span className="text-ink-faint">—</span>}
+                      </td>
+                      <td data-testid={`order-status-${r.orderId}`} className="py-2.5 pr-3 whitespace-nowrap text-ink-body">
+                        {STATUS_LABEL[r.orderStatus] ?? r.orderStatus}
+                      </td>
                       <td className="py-2.5 pr-3"><PaymentBadge state={r.downpayment} testId={`downpayment-${r.orderId}`} /></td>
                       <td className="py-2.5 pr-3"><PaymentBadge state={r.finalPayment} testId={`final-payment-${r.orderId}`} /></td>
-                      <td className="py-2.5"><PaymentBadge state={r.packingFee} testId={`packing-fee-${r.orderId}`} /></td>
+                      <td className="py-2.5 pr-3"><PaymentBadge state={r.packingFee} testId={`packing-fee-${r.orderId}`} /></td>
+                      <td data-testid={`committed-at-${r.orderId}`} className="py-2.5 pr-3 whitespace-nowrap text-ink-body">
+                        {commitStamp(r.committedAt)}
+                      </td>
+                      <ProofCell row={r} onOpen={() => setProof(r)} />
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <BatchSummary rows={rows} groupBuy={groupBuy} />
           </>
         )}
       </div>
       <div className="mt-4 flex justify-end">
         <button className={btnGhost} onClick={onClose}>Close</button>
       </div>
+      {proof && <ProofLightbox row={proof} onClose={() => setProof(null)} />}
     </Modal>
   );
 }
