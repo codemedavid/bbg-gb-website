@@ -9,6 +9,19 @@ export type Product = {
   description: string | null; imageEmoji: string | null; soldCount: number;
   isActive?: boolean;
   coaFiles?: CoaFile[];
+  // Group buy terms that belong to the PRODUCT: a hatian or a campaign carrying
+  // it seeds itself from these rather than making the admin retype them per
+  // batch. Named exactly as lib/db/schema.ts and pricing.ts's GroupBuyConfig
+  // name them, so an admin row satisfies that contract with no adapter.
+  //
+  // Optional because the public catalog feeds select a narrower column list —
+  // these are admin-surface fields and the storefront never reads them.
+  isGroupBuy?: boolean;
+  gbPricePerKitPhp?: string | null;
+  gbPricePerPiecePhp?: string | null;
+  gbVialsPerKit?: number | null;
+  gbMinVials?: number | null;
+  gbMaxVialsPerBatch?: number | null;
 };
 export type CoaFile = { id: string; productId: string; batch: string | null; fileName: string; storageKey: string };
 

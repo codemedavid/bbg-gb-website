@@ -34,11 +34,11 @@ const str = (n: number | string | null | undefined): string => (n == null ? '' :
 // already included, otherwise the product's saved defaults.
 export function draftFor(product: Product, entry: IncludedProduct | null): Draft {
   return {
-    pricePerKitPhp: str(entry?.pricePerKitPhp ?? product.groupBuyKitPhp),
-    pricePerPiecePhp: str(entry?.pricePerPiecePhp ?? product.groupBuyPiecePhp),
-    minOrderQty: str(entry?.minOrderQty ?? product.groupBuyMinOrder),
-    maxBatchKits: str(entry?.maxBatchKits ?? product.groupBuyMaxBatch),
-    vialsPerKit: str(entry?.vialsPerKit ?? product.vialsPerKit),
+    pricePerKitPhp: str(entry?.pricePerKitPhp ?? product.gbPricePerKitPhp),
+    pricePerPiecePhp: str(entry?.pricePerPiecePhp ?? product.gbPricePerPiecePhp),
+    minOrderQty: str(entry?.minOrderQty ?? product.gbMinVials),
+    maxBatchKits: str(entry?.maxBatchKits ?? product.gbMaxVialsPerBatch),
+    vialsPerKit: str(entry?.vialsPerKit ?? product.gbVialsPerKit),
     outOfStock: entry?.outOfStock ?? false,
   };
 }

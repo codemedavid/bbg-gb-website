@@ -20,6 +20,21 @@ export const productSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   imageEmoji: z.string().max(8).optional(),
   isActive: z.boolean().optional(),
+
+  // Product-level group buy configuration. These five belong to the product and
+  // seed every listing that carries it (lib/pricing.ts). Nullable throughout:
+  // null is "this product states no figure of its own", which the seeding rules
+  // read as "use the global default" — distinct from 0, which for a price would
+  // mean a free kit and for a count would mean a batch nothing fits in.
+  isGroupBuy: z.boolean().optional(),
+  gbPricePerKitPhp: z.number().nonnegative().nullable().optional(),
+  gbPricePerPiecePhp: z.number().nonnegative().nullable().optional(),
+  gbVialsPerKit: z.number().int().positive().nullable().optional(),
+  gbMinVials: z.number().int().positive().nullable().optional(),
+  // Deliberately uncapped. A hatian fills one kit, but a campaign batch holds
+  // ten of them, so the product may legitimately state 100 vials; the hatian
+  // seeding clamps to KAHATI_MAX_VIALS at the point it matters.
+  gbMaxVialsPerBatch: z.number().int().positive().nullable().optional(),
 });
 
 // A hatian fills exactly one kit, so its vial cap and per-person minimum can
