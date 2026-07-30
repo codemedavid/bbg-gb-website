@@ -33,7 +33,8 @@ vi.mock('@/lib/session', () => {
 
 const { GET } = await import('./route');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
-const { resetDb, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { PATCH: setOrderStatus } = await import('@/app/api/admin/orders/[id]/status/route');
+const { resetDb, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
 
 // Every field the panel reads off a row. Listed here rather than derived from a
 // sample response: a feed that stops sending one of these must fail, and a
@@ -61,6 +62,20 @@ async function joinKahati(groupBuyId: string, qty: number) {
   const body = await res.json();
   if (res.status !== 201) throw new Error(`join failed: ${body.error}`);
   return body.data.order;
+}
+
+// Clears the reservation downpayment the way an admin does: by verifying the
+// uploaded proof. Signs back in as the customer afterwards so a test can keep
+// acting as one.
+async function confirmPayment(orderId: string) {
+  const customer = session.current;
+  await signIn('admin');
+  const res = await setOrderStatus(
+    new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ status: 'payment_confirmed' }) }),
+    ctx(orderId),
+  );
+  if (res.status !== 200) throw new Error(`confirm failed: ${(await res.json()).error}`);
+  session.current = customer;
 }
 
 async function commitments(groupBuyId: string): Promise<HatianCommitment[]> {
@@ -154,31 +169,35 @@ describe('GET /admin/groupbuys/[id]/commitments', () => {
   });
 
   describe('what the customer has paid', () => {
-    it('counts a cleared downpayment as money received', async () => {
+    // A proof sitting in review is not money in the bank. Counting it would
+    // overstate every batch summary built on this feed — and a fresh commitment
+    // is exactly that state, so this is the common case, not the edge.
+    it('counts nothing paid while the proof is still under review', async () => {
       const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, pricePerKitPhp: 10400 });
       await signIn('customer');
       await joinKahati(gb.id, 3);
+
+      const [row] = await commitments(gb.id);
+
+      expect(row.downpayment).toBe('under_review');
+      expect(row.amountPaidPhp).toBe(0);
+      expect(row.downpaymentPhp).toBeGreaterThan(0);
+    });
+
+    it('counts a downpayment as received once the admin confirms it', async () => {
+      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, pricePerKitPhp: 10400 });
+      await signIn('customer');
+      const order = await joinKahati(gb.id, 3);
+      await confirmPayment(order.id);
 
       const [row] = await commitments(gb.id);
 
       // Committing charges the downpayment only; the balance follows at the
-      // final checkout. Amount paid and remaining balance must therefore be two
+      // final checkout. Amount paid and remaining balance are therefore two
       // different figures, not one rendered twice.
       expect(row.amountPaidPhp).toBe(row.downpaymentPhp);
       expect(row.orderBalancePhp).toBeGreaterThan(0);
-    });
-
-    // A proof sitting in review is not money in the bank. Counting it would
-    // overstate every batch summary built on this feed.
-    it('does not count a downpayment still under review', async () => {
-      const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1, pricePerKitPhp: 10400 });
-      await signIn('customer');
-      await joinKahati(gb.id, 3);
-
-      const [row] = await commitments(gb.id);
-
-      if (row.downpayment === 'under_review') expect(row.amountPaidPhp).toBe(0);
-      else expect(row.amountPaidPhp).toBe(row.downpaymentPhp);
+      expect(row.amountPaidPhp).not.toBe(row.orderBalancePhp);
     });
   });
 
@@ -214,10 +233,14 @@ describe('GET /admin/groupbuys/[id]/commitments', () => {
 
     it('reports how the customer paid', async () => {
       const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+      // Checkout only accepts a registered, active method — an unknown label is
+      // rejected rather than snapshotted onto the order.
+      await makePaymentMethod({ label: 'GoTyme' });
       await signIn('customer');
-      await placeOrder(
+      const res = await placeOrder(
         checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 2 }], { paymentMethod: 'GoTyme' }),
       );
+      expect(res.status).toBe(201);
 
       const [row] = await commitments(gb.id);
 

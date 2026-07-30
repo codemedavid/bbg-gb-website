@@ -150,12 +150,22 @@ export type SettlementPreview = {
 export type HatianCommitment = {
   orderId: string; orderNo: string; orderStatus: string;
   customerName: string; customerEmail: string; customerPhone: string | null;
+  // Where the parcel is going, read off the order's delivery snapshot rather
+  // than the user record: an address edited after committing must not rewrite
+  // where an already-packed batch was shipped.
+  contactPhone: string; shippingAddress: string;
   vials: number; committedAt: string;
   // The balance of the whole ORDER, not of this counter's share. A commitment
   // that overflowed into a sibling counter reports the same figure under both,
   // which is what spansOtherHatians warns about.
   orderBalancePhp: number; spansOtherHatians: boolean; downpaymentPhp: number;
+  // What has actually cleared, as opposed to what was quoted. A proof still
+  // under review is not money received, so it counts for nothing here.
+  amountPaidPhp: number;
   downpayment: PaymentState; finalPayment: PaymentState; packingFee: PaymentState;
+  // How they paid, and a URL for the proof they uploaded. Proofs are private, so
+  // the storage key never reaches the browser — only a signed, fetchable URL.
+  paymentMethod: string | null; proofUrl: string | null;
   settledAt: string | null;
 };
 
