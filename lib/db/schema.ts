@@ -68,6 +68,18 @@ export const products = pgTable('products', {
   onHandKitPhp: numeric('on_hand_kit_php', { precision: 12, scale: 2 }),
   onHandPiecePhp: numeric('on_hand_piece_php', { precision: 12, scale: 2 }),
   stock: integer('stock').notNull().default(0),
+  // Admin-editable group buy terms. These belong to the PRODUCT: a hatian or a
+  // campaign that carries it seeds its own fields from them instead of the admin
+  // retyping the terms into every batch (see lib/pricing.ts kahatiDefaultsFor /
+  // campaignDefaultsFor). Every column is nullable and counted in VIALS —
+  // absent means "not configured", which falls back to the global defaults
+  // rather than to zero. A ₱0 group buy price would read as free.
+  isGroupBuy: boolean('is_group_buy').notNull().default(false),
+  gbPricePerKitPhp: numeric('gb_price_per_kit_php', { precision: 12, scale: 2 }),
+  gbPricePerPiecePhp: numeric('gb_price_per_piece_php', { precision: 12, scale: 2 }),
+  gbVialsPerKit: integer('gb_vials_per_kit'),
+  gbMinVials: integer('gb_min_vials'),
+  gbMaxVialsPerBatch: integer('gb_max_vials_per_batch'),
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
   imageEmoji: varchar('image_emoji', { length: 8 }).default('💧'),
@@ -83,6 +95,13 @@ export const products = pgTable('products', {
 export const groupBuys = pgTable('group_buys', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 160 }).notNull(),
+  // The catalog product this hatian is for, once an admin picks one. Nullable
+  // because every hatian written before this column existed is a free-text name
+  // and a price — those rows stay valid and keep working untouched. The link
+  // exists so a new hatian can seed its terms from the product's group buy
+  // configuration; it is not a pricing authority, and the row's own
+  // price_per_kit_php remains what customers are charged.
+  productId: uuid('product_id').references(() => products.id),
   pricePerKitPhp: numeric('price_per_kit_php', { precision: 12, scale: 2 }).notNull(), // admin-editable
   // A hatian counter fills exactly one kit — 10 vials. On reaching this cap it
   // closes and a fresh sibling auto-opens (see lib/kahati-server.ts).
