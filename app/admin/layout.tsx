@@ -11,11 +11,14 @@ const NAV = [
   { href: '/admin/orders', label: 'Orders', icon: '📦' },
   { href: '/admin/reports', label: 'Reports', icon: '📈' },
   { href: '/admin/products', label: 'Products', icon: '🧪' },
-  { href: '/admin/groupbuys', label: 'Group Buys', icon: '🤝' },
+  // 'Hatian' is what this board is called everywhere else in the code and by
+  // the team. It was labelled 'Group Buys', one row away from 'Group Buy
+  // Campaigns', which made the two workflows nearly impossible to tell apart.
+  { href: '/admin/groupbuys', label: 'Hatian', icon: '🤝' },
   { href: '/admin/settlements', label: 'Final Checkouts', icon: '💳' },
-  // Labelled 'Group Buy Campaigns' so 'MOQ' unambiguously means the MOQ shelf
-  // below. The route and table names are unchanged.
-  { href: '/admin/campaigns', label: 'Group Buy Campaigns', icon: '🎯' },
+  // The campaign workflow has its own section now — list, create and edit all
+  // live under /admin/group-buy. /admin/campaigns forwards there.
+  { href: '/admin/group-buy', label: 'Group Buy', icon: '🎯' },
   { href: '/admin/moq-products', label: 'MOQ Products', icon: '🏷️' },
   { href: '/admin/payment-methods', label: 'Payment Methods', icon: '💳' },
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
@@ -42,9 +45,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="mb-6 font-display text-[20px] font-bold text-brand-navy">BBG<span className="text-brand-green"> Admin</span></div>
             <nav className="flex flex-col gap-1">
               {NAV.map((n) => (
-                <Link key={n.href} href={n.href}
+                <Link key={n.href} href={n.href} aria-current={isActive(n) ? 'page' : undefined}
                   className={`flex items-center gap-2.5 rounded-[10px] px-3.5 py-2.5 text-[14px] font-semibold ${isActive(n) ? 'bg-brand-navy text-white' : 'text-ink-body hover:bg-white'}`}>
-                  <span>{n.icon}</span>{n.label}
+                  {/* Decorative. Without this the link announces as
+                      "chart increasing Dashboard". */}
+                  <span aria-hidden="true">{n.icon}</span>{n.label}
                 </Link>
               ))}
             </nav>
@@ -54,9 +59,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <div className="fixed inset-x-0 top-0 z-20 flex gap-1 overflow-x-auto bg-white px-3 py-2 shadow-sm md:hidden">
           {NAV.map((n) => (
-            <Link key={n.href} href={n.href}
+            <Link key={n.href} href={n.href} aria-current={isActive(n) ? 'page' : undefined}
               className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-semibold ${isActive(n) ? 'bg-brand-navy text-white' : 'text-ink-body'}`}>
-              {n.icon} {n.label}
+              <span aria-hidden="true">{n.icon}</span> {n.label}
             </Link>
           ))}
         </div>
