@@ -19,9 +19,10 @@ npx tsx scripts/qa/audit-products.ts   # Phase 1
 npx tsx scripts/qa/e2e-groupbuy.ts     # Phases 2-7 over real HTTP
 ```
 
-`scripts/qa/bootstrap.ts` applies the migration **files** rather than
-`drizzle-kit migrate`, because `drizzle/meta/_journal.json` stops at `0010` —
-see Bug 3.
+`scripts/qa/bootstrap.ts` applies the migration **files** directly. That was
+originally a workaround for the journal stopping at `0010` (Bug 3, since fixed);
+it is kept because a QA bootstrap should depend on as little bookkeeping as
+possible — it is the thing the bookkeeping is checked against.
 
 ## Baseline
 
@@ -141,8 +142,10 @@ GREEN: `53/53`, plus 18 new unit/integration tests.
 and `0013_harsh_mauler.sql` exist on disk but are **not in the journal**, and
 `0012` is missing entirely. `drizzle-kit migrate` therefore skips them silently;
 only `db:push` (diff-based) applies them. This is the mechanism behind Bug 1 and
-will cause the next one. Not fixed here — regenerating the journal touches
-migration history and should be a deliberate, reviewed change.
+will cause the next one.
+
+**Fixed** — and it turned out to run deeper than this. See
+"Bug 3 — migration bookkeeping" at the end of this document.
 
 ## Not defects (expected behaviour, initially mis-asserted by the driver)
 
