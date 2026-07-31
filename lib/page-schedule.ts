@@ -64,10 +64,6 @@ const WEEKDAY_INDEX: Record<string, WeekDay> = {
   Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
 };
 
-export const WEEKDAY_NAMES = [
-  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
-] as const;
-
 // Built once. Constructing a DateTimeFormat is the expensive part of this
 // module, and every storefront request resolves at least one window.
 const manilaParts = new Intl.DateTimeFormat('en-US', {
@@ -101,11 +97,6 @@ export function timeToMinutes(time: string): number {
   const hours = Math.min(23, Number(m[1]));
   const minutes = Math.min(59, Number(m[2]));
   return hours * 60 + minutes;
-}
-
-export function minutesToTime(minutes: number): string {
-  const m = ((Math.floor(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
 /** The configured window as week minutes. */
@@ -169,11 +160,13 @@ export function nextTransition(s: PageSchedule, now: Date): Date | null {
   if (openMinute === closeMinute) return null;
 
   const nowMinute = manilaWeekMinute(now);
+  // Which boundary is ahead follows from which side of it we are on, and the two
+  // are never the same minute: at the opening minute the window is already open
+  // so the close is next, and at the closing minute it is already shut so the
+  // open is next. That is why no zero-distance case is handled below — there
+  // isn't one, and a countdown here can never stall at zero.
   const target = isWithinWindow(openMinute, closeMinute, nowMinute) ? closeMinute : openMinute;
-  // Distance forward around the week. A target equal to now is a full week away,
-  // not zero: this instant's transition has already happened.
-  const ahead = ((target - nowMinute) % MINUTES_PER_WEEK + MINUTES_PER_WEEK) % MINUTES_PER_WEEK
-    || MINUTES_PER_WEEK;
+  const ahead = ((target - nowMinute) % MINUTES_PER_WEEK + MINUTES_PER_WEEK) % MINUTES_PER_WEEK;
   // Truncate to the minute first: the boundary lands on a whole PHT minute, and
   // carrying `now`'s seconds through would put the transition seconds late.
   const flooredNow = Math.floor(now.getTime() / 60_000) * 60_000;
