@@ -108,8 +108,7 @@ Root cause: `0013_harsh_mauler.sql` was authored but never applied to the
 deployed database. Not reproducible locally — the test harness and QA bootstrap
 build their schema from `schema.ts`/the migration files, so both always agree.
 
-**Fix: `npm run db:push` against production.** Not applied here — a production
-schema change is the owner's call.
+**Fixed** — see "Production remediation (applied)" at the end of this document.
 
 ### Bug 2 — HIGH — Group Buy campaigns had no admin participants view
 
