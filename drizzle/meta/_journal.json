@@ -78,6 +78,20 @@
       "when": 1785131920702,
       "tag": "0010_striped_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785135032113,
+      "tag": "0011_kahati_within_cap",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785423256654,
+      "tag": "0012_harsh_mauler",
+      "breakpoints": true
     }
   ]
 }

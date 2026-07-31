@@ -273,3 +273,108 @@ history and should be its own reviewed change.
 `seed.ts` remains destructive-only. Anything the catalog gains from here on has
 the same problem Bug 4 had; `import-missing-products.ts` is the safe path for a
 live database.
+
+---
+
+## Bug 3 — migration bookkeeping — fixed (TDD)
+
+Investigating the fix showed the problem was one layer deeper than first
+reported. Three sources of truth all disagreed:
+
+| Source | State before |
+|---|---|
+| `drizzle/*.sql` on disk | 13 files, numbered `0000`–`0011` and `0013` (no `0012`) |
+| `drizzle/meta/_journal.json` | 11 entries, ending at `0010` |
+| production `drizzle.__drizzle_migrations` | **5 rows**, while the schema was really at `0013` |
+
+So `drizzle-kit migrate` against production would have tried to re-apply
+`0005`–`0013` onto objects that already exist and failed — which is why every
+deploy had been forced onto `db:push`, the diff-based path that does not record
+what it did. That is the loop that produced Bug 1.
+
+### RED
+
+`lib/db/migrations-journal.test.ts` asserts the journal and the directory
+describe each other.
+
+```
+$ npx vitest run lib/db/migrations-journal.test.ts
+ × has an entry for every migration file on disk
+   → expected [ '0011_kahati_within_cap', '0013_harsh_mauler' ] to deeply equal []
+ × leaves no gap in the migration filenames
+ × would not overwrite an existing migration on the next generate
+   → expected [ '0011_kahati_within_cap' ] to deeply equal []
+ Tests  3 failed | 3 passed (6)
+```
+
+The third failure is the one worth pausing on: drizzle-kit names the next
+migration from the journal's **length**, so with an 11-entry journal the next
+`npm run db:generate` would have written `0011_*` directly over the existing
+`0011_kahati_within_cap.sql`. A silent loss of a real migration, one command
+away.
+
+### GREEN
+
+- `0013_harsh_mauler.sql` → `0012_harsh_mauler.sql` (and its snapshot), closing
+  the numbering gap so idx and filename prefix agree.
+- `0011_snapshot.json` restored from `0010`'s — `0011` was hand-written and
+  never had one.
+- Journal entries `11` and `12` added, timestamped from the migration files' own
+  mtimes rather than invented.
+
+```
+$ npx vitest run lib/db/migrations-journal.test.ts
+ Tests  6 passed (6)
+
+$ npx tsx scripts/qa/bootstrap.ts        # fresh database, all 13 apply
+  ok 0011_kahati_within_cap.sql
+  ok 0012_harsh_mauler.sql
+
+$ npx drizzle-kit up
+Everything's fine 🐶🔥
+
+$ npx vitest run
+ Test Files  111 passed (111)   Tests  1056 passed (1056)
+$ npx tsc --noEmit   # exit 0
+```
+
+### Production ledger backfilled
+
+`scripts/qa/repair-migration-ledger.ts` records the 8 migrations that were
+applied but never logged. It writes **only** to `drizzle.__drizzle_migrations`
+and never executes migration SQL, and it refuses to run unless drizzle's own
+hash algorithm (sha256 of the raw file) reproduces the rows already present —
+a backfill computed a different way would mark the wrong migrations as applied.
+
+```
+$ npx tsx scripts/qa/repair-migration-ledger.ts
+ledger rows: 5 | journal entries: 13
+hash algorithm verified against all 5 existing rows.
+missing from the ledger: 8   [0005 … 0012]
+
+$ npx tsx scripts/qa/repair-migration-ledger.ts --apply
+ledger backfilled — now 13 rows.
+
+$ npx drizzle-kit migrate
+[✓] migrations applied successfully!      # a no-op: nothing left to apply
+
+$ npm run db:check
+Database matches schema.ts — no drift.
+```
+
+Data untouched throughout: products 95, orders 37, users 10, group_buys 18,
+order_items 49.
+
+**`npm run db:push` is no longer the only usable deploy path** — `drizzle-kit
+migrate` now works, and the ledger will record what it does.
+
+### Test specification (added)
+
+| # | What is guaranteed | Test | Type | Result |
+|---|--------------------|------|------|--------|
+| 15 | Every migration file has a journal entry | `lib/db/migrations-journal.test.ts` | unit | PASS |
+| 16 | Every journal entry has a file on disk | same | unit | PASS |
+| 17 | Journal indexes are contiguous from zero | same | unit | PASS |
+| 18 | Each index equals its filename prefix | same | unit | PASS |
+| 19 | Migration filenames leave no gap | same | unit | PASS |
+| 20 | The next `db:generate` cannot overwrite an existing migration | same | unit | PASS |
