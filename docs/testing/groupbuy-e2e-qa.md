@@ -208,3 +208,69 @@ $ npx tsx scripts/qa/e2e-groupbuy.ts
 | `lib/admin-api.ts` | `useCampaignParticipants` + its response type |
 | `app/admin/group-buy/isolation.test.ts` | allowlist the new hook, with the reason it is not a hatian crossing |
 | `scripts/qa/bootstrap.ts`, `audit-products.ts`, `e2e-groupbuy.ts` | new — the QA harness above |
+
+---
+
+## Production remediation (applied)
+
+### Bug 1 — fixed
+
+`scripts/qa/apply-0013.ts` applied `0013_harsh_mauler.sql` to production.
+Written rather than `drizzle-kit push` deliberately: push diffs the whole schema
+and decides for itself what to alter, and against a database holding 37 real
+orders a catch-up should apply the one missing migration and nothing else. Every
+statement is `ADD COLUMN IF NOT EXISTS` / guarded `ADD CONSTRAINT`, in one
+transaction.
+
+Pre-flight (`scripts/qa/inspect-prod.ts`) first confirmed none of the 7 columns
+existed, that `0011`'s check constraint was already applied (so it must not be
+re-added), and that no `group_buys` row would violate the cap.
+
+```
+$ npm run db:check
+Database matches schema.ts — no drift.
+```
+
+### Bug 4 — NEW, HIGH — 20 price-list products were never in production. Fixed.
+
+Only visible once Bug 1 stopped the audit from erroring. Production held **75**
+products where the catalog has 95 — missing exactly the 20 rows imported in
+`pricelist-catalog-import.tdd.md`.
+
+Root cause: those 20 were added to the **seed catalog**, and the only thing that
+applies the seed catalog is `scripts/seed.ts`, which deletes products, orders and
+users before inserting. That is unusable against a live database, so the import
+could never have reached production. The gap was invisible because every test
+builds its database *from* the catalog, so catalog and database always agree
+there.
+
+`scripts/qa/import-missing-products.ts` closes it insert-only — no updates, no
+deletes, idempotent on name + size. Values come from the reviewed catalog entry
+rather than the raw workbook row, so specs read "100mg vial" and not "100.0".
+
+```
+$ npx tsx scripts/qa/import-missing-products.ts          # dry run
+Missing from the database : 20   Resolved to a catalog entry: 20   Will insert: 20
+$ npx tsx scripts/qa/import-missing-products.ts --apply
+INSERTED 20 products.
+
+$ npx tsx scripts/qa/audit-products.ts
+Products in database : 95
+FOUND 96 | MISSING 0 | DUPLICATE 0 / 0 / 0
+```
+
+Verified untouched (`scripts/qa/verify-prod.ts`): orders 37, users 10,
+group_buys 18, order_items 49 — all unchanged; products 75 → 95; no product left
+without a category; prices carry the workbook figures exactly
+(Tirzepatide 100mg ₱13,437.50/$215, NAD+ 1000mg ₱4,500/$72).
+
+### Still outstanding
+
+**Bug 3** (`drizzle/meta/_journal.json` stops at `0010`; `0011` and `0013` are
+not in it and `0012` is missing) is unfixed. It is the mechanism that produced
+Bug 1 and will produce the next one. Regenerating the journal rewrites migration
+history and should be its own reviewed change.
+
+`seed.ts` remains destructive-only. Anything the catalog gains from here on has
+the same problem Bug 4 had; `import-missing-products.ts` is the safe path for a
+live database.
