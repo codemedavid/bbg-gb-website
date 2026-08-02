@@ -27,7 +27,7 @@ vi.mock('@/lib/session', () => {
 const { GET } = await import('./[id]/commitments/route');
 const { POST: SETTLE } = await import('../../settlements/route');
 const { POST: CHECKOUT } = await import('../../orders/route');
-const { resetDb, makeUser, makeGroupBuy, checkoutRequest, settlementRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, checkoutRequest, settlementRequest } = await import('@/lib/test/harness');
 const { getDb, groupBuys, orders, settlements } = await import('@/lib/db');
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -46,6 +46,7 @@ async function asAdmin() {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('GET /api/admin/groupbuys/[id]/commitments', () => {

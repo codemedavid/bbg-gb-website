@@ -17,6 +17,7 @@ import { canCommit } from '@/lib/group-buy';
 import { BatchAllocationError, allocateCommitment, resolveOpenBatch, seriesOf } from '@/lib/moq-batch-server';
 import { splitCartIntoOrders } from '@/lib/order-modes';
 import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
+import { requireCommitmentsOpen } from '@/lib/schedule-gate';
 import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
@@ -97,6 +98,19 @@ export const POST = handler(async (req: Request) => {
   // there is no payment to prove. Any other cart — an on-hand item alongside it,
   // or a first commitment — is paid for at checkout and must carry its proof.
   const confirmOnly = downpaymentWaived && body.items.every((i) => i.kind === 'group_buy');
+
+  // Group Buy and Hatian only accept commitments while the shared window is
+  // open. Checked before the proof is stored: a refused checkout must not leave
+  // an uploaded object behind.
+  //
+  // A cart of purely on-hand stock is never gated — closing the boards must not
+  // take ready stock down with it. A MIXED cart is refused whole rather than
+  // part-filled: the customer uploaded proof for one total, and quietly dropping
+  // the closed lines would charge them for a different order than the one they
+  // reviewed. They remove the closed items and check out again.
+  if (body.items.some((i) => i.kind === 'group_buy' || i.kind === 'moq_campaign')) {
+    await requireCommitmentsOpen();
+  }
 
   // Store the proof before opening the transaction — it is an external side effect.
   // A rolled-back order leaves an orphaned object, which is harmless.

@@ -7,9 +7,13 @@
 // state, which is why flagging them all changed nothing a customer could see.
 //
 // This module closes that gap with one rule: absent an explicit group buy kit
-// price, a kit costs what its vials cost in the shop. That is the list price, so
-// it can never sell below cost — the discount is the admin lowering it later,
-// deliberately, per product.
+// price, a kit costs the product's shop price — which is ALREADY a kit price.
+// The source workbook's money column is headed "PER KIT (10 VIALS) PRICE" (see
+// HEADER_LABELS in scripts/extract-pricelist.py), so products.price_php holds
+// what ten vials cost, not one. Multiplying it by the kit size would list every
+// seeded campaign at ten times its price. That shop figure is the list price, so
+// a seeded campaign can never sell below the shop — the discount is the admin
+// lowering it later, deliberately, per product.
 import { describe, it, expect } from 'vitest';
 import { campaignSeedFor, type SeedableProduct } from './campaign-seed';
 
@@ -33,25 +37,28 @@ describe('campaignSeedFor', () => {
     expect(seed?.pricePerKitPhp).toBe(7500);
   });
 
-  it('falls back to the shop price times the kit size when no group buy price is set', () => {
-    // 900 a vial, ten vials to a kit — the list price of the same goods.
+  it('falls back to the shop price as-is, because that price is already per kit', () => {
+    // ₱900 is what a kit of this product costs in the shop, not what one vial
+    // costs. Scaling it by the kit size would list the campaign at ₱9,000.
     const seed = campaignSeedFor(product({ pricePhp: '900' }));
-    expect(seed?.pricePerKitPhp).toBe(9000);
+    expect(seed?.pricePerKitPhp).toBe(900);
   });
 
-  it("uses the product's own kit size for that fallback, not the global ten", () => {
-    const seed = campaignSeedFor(product({ pricePhp: '900', gbVialsPerKit: 5 }));
-    expect(seed?.pricePerKitPhp).toBe(4500);
+  it('does not scale that fallback by the kit size, whatever the kit size is', () => {
+    // The shop price is per kit regardless of how many vials that kit holds, so
+    // a 5-vial kit and a 10-vial kit both seed at the shop's own figure.
+    expect(campaignSeedFor(product({ pricePhp: '900', gbVialsPerKit: 5 }))?.pricePerKitPhp).toBe(900);
+    expect(campaignSeedFor(product({ pricePhp: '900', gbVialsPerKit: 10 }))?.pricePerKitPhp).toBe(900);
   });
 
   it('treats a zero group buy price as unset rather than as a free kit', () => {
     const seed = campaignSeedFor(product({ gbPricePerKitPhp: '0', pricePhp: '900' }));
-    expect(seed?.pricePerKitPhp).toBe(9000);
+    expect(seed?.pricePerKitPhp).toBe(900);
   });
 
   it('rounds a fractional shop price to centavos', () => {
     const seed = campaignSeedFor(product({ pricePhp: '3062.505' }));
-    expect(seed?.pricePerKitPhp).toBe(30625.05);
+    expect(seed?.pricePerKitPhp).toBe(3062.51);
   });
 
   it('refuses to seed a campaign it cannot price rather than opening a free one', () => {

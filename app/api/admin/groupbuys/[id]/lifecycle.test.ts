@@ -35,7 +35,7 @@ const { PATCH, DELETE } = await import('./route');
 const { POST } = await import('../route');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { getDb, groupBuys, orders, orderStatusHistory, emailLog } = await import('@/lib/db');
-const { resetDb, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const patchReq = (body: Record<string, unknown>) =>
@@ -72,6 +72,7 @@ async function orderStatus(id: string): Promise<string> {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('PATCH status=cancelled releases the participants', () => {

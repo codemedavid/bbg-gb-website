@@ -310,6 +310,24 @@ export function groupBuyUnitPrice(c: GroupBuyConfig, unit: GroupBuyUnit): number
   return kit == null ? null : round2(kit / groupBuyVialsPerKit(c));
 }
 
+// The kit price a NEW listing starts at, on EITHER board.
+//
+// The admin's explicit group buy price when the product carries one; otherwise
+// the product's shop price. That shop figure is already a PER-KIT price — the
+// source workbook heads its money column "PER KIT (10 VIALS) PRICE" and it
+// reaches products.price_php unchanged (see lib/db/data/catalog.ts) — so it is
+// never scaled by the kit size. Scaling it listed every seeded campaign at ten
+// times its real price.
+//
+// Both boards seed through this one function, so a kit cannot cost one thing on
+// the Group Buy board and another on the hatian board.
+export function seededKitPrice(
+  c: GroupBuyConfig,
+  shopPricePhp: string | number | null,
+): number | null {
+  return groupBuyUnitPrice(c, 'kit') ?? positiveMoney(shopPricePhp);
+}
+
 // What a NEW hatian starts at when it carries this product. A hatian is
 // vial-native, so the product's figures apply directly — bounded by the rule
 // that a hatian fills exactly one kit.

@@ -4,8 +4,9 @@
 import { eq, inArray } from 'drizzle-orm';
 import { getDb, settings } from '@/lib/db';
 import { KAHATI_DOWNPAYMENT_PHP, PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
+import { isScheduleOpen, type GroupBuySchedule } from '@/lib/schedule';
 
-export type { PackingFees };
+export type { PackingFees, GroupBuySchedule };
 
 const KEY: Record<PackingMode, string> = {
   solo: 'packing_fee_solo',
@@ -62,6 +63,90 @@ export async function setMoqPageEnabled(enabled: boolean): Promise<boolean> {
     .values({ key: MOQ_PAGE_KEY, value })
     .onConflictDoUpdate({ target: settings.key, set: { value } });
   return getMoqPageEnabled();
+}
+
+// ---- The shared Group Buy + Hatian schedule ---------------------------------
+//
+// One window, two modules. The requirement is "configure it once and both boards
+// follow it", which is only guaranteed if there is literally one pair of keys to
+// read — a per-module override is exactly how two schedules quietly drift apart.
+// So these are the only keys, and every consumer reads through isGroupBuyOpenNow.
+const SCHEDULE_KEY = {
+  opensAt: 'group_buy_schedule_opens_at',
+  closesAt: 'group_buy_schedule_closes_at',
+} as const;
+
+/**
+ * The configured window, or nulls when it has never been set.
+ *
+ * Values come back exactly as stored, without repair. A corrupt row is handed
+ * to isScheduleOpen, which fails closed on it — validating here as well would
+ * only hide the corruption from the one place that reports it.
+ */
+export async function getGroupBuySchedule(): Promise<GroupBuySchedule> {
+  const db = await getDb();
+  const rows = await db.select().from(settings)
+    .where(inArray(settings.key, [SCHEDULE_KEY.opensAt, SCHEDULE_KEY.closesAt]));
+  const byKey = new Map(rows.map((r) => [r.key, r.value]));
+  const read = (key: string): string | null => {
+    const v = byKey.get(key);
+    return v != null && v !== '' ? v : null;
+  };
+  return { opensAt: read(SCHEDULE_KEY.opensAt), closesAt: read(SCHEDULE_KEY.closesAt) };
+}
+
+// Anything Date can parse is accepted and written back in one canonical ISO
+// form, so two spellings of the same instant cannot compare as two windows.
+function normaliseInstant(value: string | null | undefined, field: string): string | null {
+  if (value == null || value === '') return null;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) throw new Error(`${field} is not a valid date/time: ${value}`);
+  return new Date(ms).toISOString();
+}
+
+/**
+ * Stores the window and returns it as stored.
+ *
+ * A backwards window is refused at this boundary so the corrupt state never
+ * reaches the database. Only a fully-specified window is checked: clearing one
+ * end is how an admin unsets the schedule, not a mistake. Either end set to null
+ * deletes its row rather than storing an empty string, which keeps "unset" a
+ * single state instead of two.
+ */
+export async function setGroupBuySchedule(window: GroupBuySchedule): Promise<GroupBuySchedule> {
+  const opensAt = normaliseInstant(window.opensAt, 'opensAt');
+  const closesAt = normaliseInstant(window.closesAt, 'closesAt');
+  if (opensAt && closesAt && Date.parse(opensAt) >= Date.parse(closesAt)) {
+    throw new Error('The schedule must close after it opens.');
+  }
+
+  const db = await getDb();
+  // Both ends move together or neither does. A half-written window reads as
+  // CLOSED everywhere downstream, so a save that failed between the two
+  // statements would take both boards dark as a side effect of an error the
+  // admin sees as "nothing was applied".
+  await db.transaction(async (tx) => {
+    const write = async (key: string, value: string | null): Promise<void> => {
+      if (value == null) {
+        await tx.delete(settings).where(eq(settings.key, key));
+        return;
+      }
+      await tx.insert(settings)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } });
+    };
+    await write(SCHEDULE_KEY.opensAt, opensAt);
+    await write(SCHEDULE_KEY.closesAt, closesAt);
+  });
+  return getGroupBuySchedule();
+}
+
+/**
+ * Whether both boards are live right now. The one question every gated route
+ * and server component asks, so none of them can answer it differently.
+ */
+export async function isGroupBuyOpenNow(now: Date = new Date()): Promise<boolean> {
+  return isScheduleOpen(await getGroupBuySchedule(), now);
 }
 
 // Upserts only the provided modes; returns the full resolved fee set.

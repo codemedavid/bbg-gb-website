@@ -41,6 +41,26 @@ export async function resetDb(): Promise<void> {
   await db.execute(sql.raw(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`));
 }
 
+/**
+ * Opens the shared Group Buy + Hatian window around this instant.
+ *
+ * The gate fails closed, so a freshly reset database has BOTH boards shut —
+ * which is the correct production posture but not the precondition of a test
+ * about commitments, rollover or settlement. Those tests call this to say "the
+ * storefront is trading", the same as a real admin would have configured.
+ *
+ * Deliberately not folded into resetDb(): "never configured" is a state the
+ * schedule tests assert on, and seeding it here would make that unreachable.
+ */
+export async function openBoards(): Promise<void> {
+  const DAY = 24 * 60 * 60 * 1000;
+  const { setGroupBuySchedule } = await import('@/lib/settings');
+  await setGroupBuySchedule({
+    opensAt: new Date(Date.now() - DAY).toISOString(),
+    closesAt: new Date(Date.now() + DAY).toISOString(),
+  });
+}
+
 export async function makeUser(
   overrides: { email?: string; role?: 'customer' | 'admin' } = {},
 ): Promise<{ id: string; email: string; role: 'customer' | 'admin' }> {
@@ -55,8 +75,12 @@ export async function makeUser(
 
 export async function makeProduct(
   overrides: Partial<{
-    pricePhp: number; stock: number; name: string;
+    pricePhp: number; stock: number; name: string; spec: string;
     isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
+    // The group buy permission and its terms. Off by default: most tests are
+    // about the shop, and a flagged product auto-lists on both boards.
+    isGroupBuy: boolean; isActive: boolean;
+    gbPricePerKitPhp: number | null; gbMinVials: number | null; gbMaxVialsPerBatch: number | null;
   }> = {},
 ): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
   const db = await getDb();
@@ -69,11 +93,16 @@ export async function makeProduct(
   const onHandPiecePhp = overrides.onHandPiecePhp !== undefined ? overrides.onHandPiecePhp : 550;
   const onHandKitPhp = overrides.onHandKitPhp !== undefined ? overrides.onHandKitPhp : 5000;
   const [row] = await db.insert(products).values({
-    name: overrides.name ?? 'Test Peptide', spec: '10mg', categoryId: cat.id,
-    pricePhp: String(pricePhp), stock: overrides.stock ?? 100, isActive: true,
+    name: overrides.name ?? 'Test Peptide', spec: overrides.spec ?? '10mg', categoryId: cat.id,
+    pricePhp: String(pricePhp), stock: overrides.stock ?? 100,
+    isActive: overrides.isActive ?? true,
     isOnHand: overrides.isOnHand ?? true,
     onHandPiecePhp: onHandPiecePhp != null ? String(onHandPiecePhp) : null,
     onHandKitPhp: onHandKitPhp != null ? String(onHandKitPhp) : null,
+    isGroupBuy: overrides.isGroupBuy ?? false,
+    gbPricePerKitPhp: overrides.gbPricePerKitPhp != null ? String(overrides.gbPricePerKitPhp) : null,
+    gbMinVials: overrides.gbMinVials ?? null,
+    gbMaxVialsPerBatch: overrides.gbMaxVialsPerBatch ?? null,
   }).returning();
   return { id: row.id, pricePhp, onHandPiecePhp, onHandKitPhp };
 }

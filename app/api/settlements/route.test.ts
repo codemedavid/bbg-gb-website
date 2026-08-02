@@ -28,7 +28,7 @@ const { POST } = await import('./route');
 const { GET: PREVIEW } = await import('./preview/route');
 const { POST: CHECKOUT } = await import('../orders/route');
 const {
-  resetDb, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest, settlementRequest,
+  resetDb, openBoards, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest, settlementRequest,
 } = await import('@/lib/test/harness');
 const { getDb, orders, groupBuys, settlements, emailLog } = await import('@/lib/db');
 
@@ -52,6 +52,7 @@ async function committedAndClosedHatian(qty = 3, repackFeePhp = 150): Promise<st
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('GET /api/settlements/preview', () => {

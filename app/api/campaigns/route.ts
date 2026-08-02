@@ -6,9 +6,14 @@ import { getDb, moqCampaigns } from '@/lib/db';
 import { moqCampaignSchema } from '@/lib/moq-schemas';
 import { getPackingFees } from '@/lib/settings';
 import { describeBatch } from '@/lib/group-buy';
+import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
 
 // Public: list batches with derived MOQ progress and lifecycle outcome.
 export const GET = handler(async () => {
+  // The same shared window that gates the hatian board. The admin reads through
+  // it — this endpoint backs the admin campaign list, and locking them out here
+  // would leave no screen from which to open the next window.
+  await requireBoardsOpenOrAdmin();
   const db = await getDb();
   const rows = await db.select().from(moqCampaigns).orderBy(desc(moqCampaigns.createdAt));
   return ok(rows.map(describeBatch));

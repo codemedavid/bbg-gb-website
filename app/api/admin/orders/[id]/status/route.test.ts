@@ -26,7 +26,7 @@ vi.mock('@/lib/session', () => {
 const { PATCH } = await import('./route');
 const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { getDb, moqCampaigns } = await import('@/lib/db');
-const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const statusReq = (status: string) =>
@@ -47,6 +47,7 @@ async function committedOf(id: string) {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('PATCH /api/admin/orders/[id]/status — group-buy commitment release', () => {

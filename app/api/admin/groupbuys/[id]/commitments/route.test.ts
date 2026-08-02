@@ -34,7 +34,7 @@ vi.mock('@/lib/session', () => {
 const { GET } = await import('./route');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { PATCH: setOrderStatus } = await import('@/app/api/admin/orders/[id]/status/route');
-const { resetDb, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
 
 // Every field the panel reads off a row. Listed here rather than derived from a
 // sample response: a feed that stops sending one of these must fail, and a
@@ -88,6 +88,7 @@ async function commitments(groupBuyId: string): Promise<HatianCommitment[]> {
 
 beforeEach(async () => {
   await resetDb();
+  await openBoards();
   session.current = null;
 });
 

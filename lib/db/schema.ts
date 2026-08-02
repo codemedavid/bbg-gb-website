@@ -121,6 +121,20 @@ export const groupBuys = pgTable('group_buys', {
   // admin edit, a script or a console query all hit this same wall. Overflow
   // becomes the next counter (lib/kahati-server.ts closeFullKahati) instead.
   withinCap: check('group_buys_claimed_within_cap', sql`${t.claimedSlots} <= ${t.totalSlots}`),
+  // At most one OPEN counter per product, enforced by the database.
+  //
+  // The hatian board reconciles itself against the product list on read
+  // (app/api/groupbuys/route.ts), and that read is public and polled. Two
+  // requests arriving together both see the product as unlisted before either
+  // INSERT commits, and both insert — a race no amount of application-side
+  // checking closes. This is the wall that does.
+  //
+  // Partial, on `status = 'open'` only: the counters a product has finished are
+  // history and may pile up freely. NULL product_id rows — every hatian written
+  // before the column existed, and any free-text counter an admin makes by hand
+  // — are exempt, because NULLs are distinct in a unique index.
+  oneOpenPerProduct: uniqueIndex('group_buys_one_open_per_product_idx')
+    .on(t.productId).where(sql`${t.status} = 'open'`),
 }));
 
 // ---- Group Buy (MOQ) campaigns ----------------------------------------

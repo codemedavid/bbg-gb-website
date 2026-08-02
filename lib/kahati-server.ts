@@ -197,6 +197,11 @@ export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<KahatiRol
     .returning();
   if (!sealed) return null;
   const [opened] = await db.insert(groupBuys).values({
+    // The product link is inherited like every other seeded column. It is also
+    // what marks the product as represented on the board, so a sibling without
+    // it reads as an unlisted product and earns a duplicate counter on the next
+    // reconcile (app/api/groupbuys/route.ts) — once per fill, compounding.
+    productId: g.productId,
     name: g.name, pricePerKitPhp: g.pricePerKitPhp, totalSlots: g.totalSlots,
     claimedSlots: 0, minVials: g.minVials, repackFeePhp: g.repackFeePhp,
     status: 'open', arrivalGroup: g.arrivalGroup, description: g.description,

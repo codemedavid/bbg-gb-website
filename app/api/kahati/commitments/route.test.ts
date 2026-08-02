@@ -28,7 +28,7 @@ vi.mock('@/lib/session', () => {
 const { GET } = await import('./route');
 const { POST: placeOrder } = await import('../../orders/route');
 const { getDb, groupBuys } = await import('@/lib/db');
-const { resetDb, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn() {
   const user = await makeUser({ role: 'customer' });
@@ -41,6 +41,7 @@ const commitments = async () => (await (await GET()).json()).data;
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('GET /api/kahati/commitments', () => {

@@ -28,7 +28,7 @@ vi.mock('@/lib/session', () => {
 
 const { POST } = await import('./route');
 const { getDb, groupBuys, orders, products, settings } = await import('@/lib/db');
-const { resetDb, makeUser, makeProduct, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeProduct, makeGroupBuy, makePaymentMethod, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
   const user = await makeUser({ role });
@@ -39,6 +39,7 @@ async function signIn(role: 'customer' | 'admin' = 'customer') {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('POST /api/orders', () => {

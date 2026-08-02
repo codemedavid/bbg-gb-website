@@ -26,7 +26,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
-const { resetDb, makeUser, makeProduct, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeProduct, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn() {
   const user = await makeUser({ role: 'customer' });
@@ -37,6 +37,7 @@ async function signIn() {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('mixed cart splits into one order per mode', () => {

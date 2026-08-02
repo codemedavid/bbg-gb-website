@@ -56,7 +56,8 @@ describe('openCampaignsForGroupBuyProducts', () => {
     const rows = await db.select().from(moqCampaigns);
     const byName = new Map(rows.map((r) => [r.name, r]));
     expect(byName.get('Priced 20mg vial')!.pricePerKitPhp).toBe('7500.00');
-    expect(byName.get('Unpriced 20mg vial')!.pricePerKitPhp).toBe('9000.00');
+    // The shop price is already a per-kit figure, so it carries over untouched.
+    expect(byName.get('Unpriced 20mg vial')!.pricePerKitPhp).toBe('900.00');
   });
 
   it('links the product through includedProducts, which is how the board finds it', async () => {

@@ -34,6 +34,8 @@ vi.mock('@/lib/session', () => {
 
 const { GET: LIST_HATIAN } = await import('./groupbuys/route');
 const { GET: LIST_CAMPAIGNS } = await import('./campaigns/route');
+const { GET: ONE_HATIAN } = await import('./groupbuys/[id]/route');
+const { GET: ONE_CAMPAIGN } = await import('./campaigns/[id]/route');
 const { POST: CHECKOUT } = await import('./orders/route');
 const { setGroupBuySchedule } = await import('@/lib/settings');
 const {
@@ -103,6 +105,43 @@ describe('the shared schedule gates both boards together', () => {
     const hatianOpen2 = (await LIST_HATIAN()).status === 200;
     const campaignsOpen2 = (await LIST_CAMPAIGNS()).status === 200;
     expect(hatianOpen2).toBe(campaignsOpen2);
+  });
+});
+
+describe('a closed board hides its individual listings too', () => {
+  // Hiding the list but serving the detail is not hiding anything: the card
+  // URLs are shareable, and a customer who has one from last week would still
+  // see a live-looking listing they cannot buy from.
+  const detailReq = () => new Request('http://localhost/api/detail');
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+
+  it('serves a single hatian and a single campaign while the window is open', async () => {
+    await openNow();
+    const hatian = await makeGroupBuy({ name: 'Open hatian' });
+    const campaign = await makeMoqCampaign();
+
+    expect((await ONE_HATIAN(detailReq(), ctx(hatian.id))).status).toBe(200);
+    expect((await ONE_CAMPAIGN(detailReq(), ctx(campaign.id))).status).toBe(200);
+  });
+
+  it('hides both once the window has closed', async () => {
+    await openNow();
+    const hatian = await makeGroupBuy({ name: 'Open hatian' });
+    const campaign = await makeMoqCampaign();
+    await closedNow();
+
+    expect((await ONE_HATIAN(detailReq(), ctx(hatian.id))).status).toBe(404);
+    expect((await ONE_CAMPAIGN(detailReq(), ctx(campaign.id))).status).toBe(404);
+  });
+
+  it('still lets an admin open a single campaign while the storefront is closed', async () => {
+    // Same reason as the list: the admin edit screen reads this endpoint.
+    await openNow();
+    const campaign = await makeMoqCampaign();
+    await closedNow();
+    await signIn('admin');
+
+    expect((await ONE_CAMPAIGN(detailReq(), ctx(campaign.id))).status).toBe(200);
   });
 });
 

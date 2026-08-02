@@ -34,7 +34,7 @@ vi.mock('@/lib/session', () => {
 const { POST } = await import('./route');
 const { staleCheckoutLine } = await import('@/lib/checkout-error');
 const { getDb, moqCampaigns, orders, orderItems, products } = await import('@/lib/db');
-const { resetDb, makeUser, makeMoqCampaign, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeMoqCampaign, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
 async function signIn() {
   const user = await makeUser({ role: 'customer' });
@@ -63,6 +63,7 @@ async function checkout(items: unknown[], opts: Parameters<typeof checkoutReques
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('a group buy commitment placed from the cart', () => {

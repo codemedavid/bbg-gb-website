@@ -25,7 +25,7 @@ vi.mock('@/lib/session', () => {
 const { sweepKahatis, closeFullKahati } = await import('./kahati-server');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { getDb, groupBuys, orders, orderItems, orderStatusHistory, emailLog, products } = await import('@/lib/db');
-const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
 const DAY = 24 * 60 * 60 * 1000;
 const past = () => new Date(Date.now() - DAY);
@@ -68,6 +68,7 @@ async function expire(id: string) {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('sweepKahatis — viability', () => {

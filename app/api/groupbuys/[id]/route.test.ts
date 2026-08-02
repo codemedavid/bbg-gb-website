@@ -6,12 +6,13 @@ import { eq, sql } from 'drizzle-orm';
 
 const { GET } = await import('./route');
 const { getDb, groupBuys } = await import('@/lib/db');
-const { resetDb, makeGroupBuy } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeGroupBuy } = await import('@/lib/test/harness');
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
 beforeEach(async () => {
   await resetDb();
+  await openBoards();
 });
 
 describe('GET /api/groupbuys/[id]', () => {
