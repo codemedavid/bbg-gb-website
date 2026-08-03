@@ -7,7 +7,7 @@
 // proceeds is derived from status + committed vs. MOQ (SRS §3.3, §7).
 import { MOQ_BATCH_MAX_KITS, batchCapacity, groupBuyMoqStatus } from './pricing';
 
-export type MoqCampaignStatus = 'open' | 'approved' | 'completed' | 'cancelled';
+export type MoqCampaignStatus = 'scheduled' | 'open' | 'approved' | 'completed' | 'cancelled';
 export type MoqCampaignAction = 'approve' | 'extend' | 'cancel';
 
 const ACTION_RESULT: Record<MoqCampaignAction, MoqCampaignStatus> = {
@@ -36,7 +36,8 @@ export function applyCampaignAction(
 
 // Customers may commit only while the batch is open. A completed batch is not a
 // dead end for the customer — the commit route sends them to its successor —
-// but it accepts nothing itself, which is what keeps it at its cap.
+// but it accepts nothing itself, which is what keeps it at its cap. A scheduled
+// batch is not on the board yet, so nothing can reach it either.
 export function canCommit(status: MoqCampaignStatus): boolean {
   return status === 'open';
 }

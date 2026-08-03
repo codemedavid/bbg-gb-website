@@ -6,6 +6,7 @@
 // save. Keeping it here also lets the routed Create and Edit pages share one
 // definition of "a campaign being written" without importing each other.
 import { MOQ_BATCH_MAX_KITS } from '@/lib/pricing';
+import { scheduleWindowErrorFromIso } from '@/lib/schedule';
 import type { CampaignPayload, IncludedProduct, MoqCampaign } from '@/lib/types';
 
 // Every field is the string the input holds, not the number the column wants.
@@ -17,6 +18,7 @@ export type CampaignDraft = {
   pricePerKitPhp: string;
   shippingPhp: string;
   moq: string;
+  opensAt: string | null;
   deadline: string | null;
   arrivalGroup: MoqCampaign['arrivalGroup'];
   description: string;
@@ -25,7 +27,7 @@ export type CampaignDraft = {
 
 export const emptyCampaignDraft: CampaignDraft = {
   name: '', pricePerKitPhp: '0', shippingPhp: '300', moq: String(MOQ_BATCH_MAX_KITS),
-  deadline: null, arrivalGroup: 'white_powder', description: '', includedProducts: [],
+  opensAt: null, deadline: null, arrivalGroup: 'white_powder', description: '', includedProducts: [],
 };
 
 // Prefills the form from an existing campaign. The included products are copied,
@@ -37,6 +39,7 @@ export const campaignDraftFrom = (c: MoqCampaign): CampaignDraft => ({
   pricePerKitPhp: c.pricePerKitPhp,
   shippingPhp: c.shippingPhp,
   moq: String(c.moq),
+  opensAt: c.opensAt,
   deadline: c.deadline,
   arrivalGroup: c.arrivalGroup,
   description: c.description ?? '',
@@ -52,7 +55,9 @@ export function validateCampaignDraft(d: CampaignDraft): string | null {
   if (!Number.isInteger(Number(d.moq)) || Number(d.moq) < 1) return 'Batch size must be a whole number of 1 or more.';
   if (Number(d.moq) > MOQ_BATCH_MAX_KITS) return `A batch holds at most ${MOQ_BATCH_MAX_KITS} kits — bigger runs continue as batch #2.`;
   if (Number(d.shippingPhp) < 0) return 'Packing fee cannot be negative.';
-  return null;
+  // Mirrors the API's refine, so a batch that would open after it closes is
+  // caught in the form rather than coming back as a 400 the admin did not ask for.
+  return scheduleWindowErrorFromIso(d.opensAt, d.deadline);
 }
 
 // Builds the body for POST /campaigns and PATCH /campaigns/:id.
@@ -67,6 +72,7 @@ export function campaignPayloadFrom(d: CampaignDraft): CampaignPayload {
     pricePerKitPhp: Number(d.pricePerKitPhp),
     moq: Number(d.moq),
     shippingPhp: Number(d.shippingPhp),
+    opensAt: d.opensAt,
     deadline: d.deadline,
     includedProducts: d.includedProducts,
     arrivalGroup: d.arrivalGroup,

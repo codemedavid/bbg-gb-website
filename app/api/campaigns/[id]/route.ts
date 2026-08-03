@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, moqCampaigns } from '@/lib/db';
-import { moqCampaignSchema } from '@/lib/moq-schemas';
+import { moqCampaignPatchSchema } from '@/lib/moq-schemas';
 import { describeBatch } from '@/lib/group-buy';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -22,11 +22,11 @@ export const PATCH = handler(async (req: Request, ctx: Ctx) => {
   const { id } = await ctx.params;
   // status is lifecycle-owned: it may only change via /action (approve/extend/cancel),
   // which enforces applyCampaignAction. Strip it here so a PATCH can't bypass the state machine.
-  const { status: _status, ...b } = moqCampaignSchema.partial().parse(await req.json());
+  const { status: _status, ...b } = moqCampaignPatchSchema.parse(await req.json());
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(b)) {
     if (k === 'pricePerKitPhp' || k === 'shippingPhp') patch[k] = String(v);
-    else if (k === 'deadline') patch[k] = v ? new Date(v as string) : null;
+    else if (k === 'deadline' || k === 'opensAt') patch[k] = v ? new Date(v as string) : null;
     else patch[k] = v;
   }
   if (!Object.keys(patch).length) throw new ApiError(400, 'No fields to update.');

@@ -10,7 +10,7 @@
 // stale read and push a batch past its cap. That is what makes 11/10
 // unreachable rather than merely unlikely — no application-level check can
 // promise the same under concurrency.
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, lte, sql } from 'drizzle-orm';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { MOQ_BATCH_MAX_KITS, batchCapacity, isBatchFull, nextBatchDeadline } from './group-buy';
 
@@ -45,6 +45,27 @@ export async function resolveOpenBatch(db: Db, batch: BatchRow): Promise<BatchRo
   // the admin cancelled batch #2 would mint an open batch #3 and take money for
   // a group buy that was deliberately shut down.
   return (await latestBatch(db, seriesOf(batch))) ?? batch;
+}
+
+// Put every batch whose scheduled open date has arrived on the board.
+//
+// The Kahati board has always resolved its lifecycle lazily on read; this gives
+// the group buy board the one piece of that it needs, without introducing the
+// scheduler process this app has done without. GET /api/campaigns calls it, so
+// the admin list and the storefront both perform the flip.
+//
+// The isNotNull guard keeps a 'scheduled' row with no open date dark: it has no
+// moment to arrive, and publishing an unscheduled campaign is the worse failure.
+// RETURNING makes the result mean "this call opened it" — a repeat is a no-op.
+export async function openDueBatches(db: Db, now: Date = new Date()): Promise<string[]> {
+  const opened = await db.update(moqCampaigns).set({ status: 'open' })
+    .where(and(
+      eq(moqCampaigns.status, 'scheduled'),
+      isNotNull(moqCampaigns.opensAt),
+      lte(moqCampaigns.opensAt, now),
+    ))
+    .returning({ id: moqCampaigns.id });
+  return opened.map((r) => r.id);
 }
 
 export type BatchRollover = { sealed: BatchRow; opened: BatchRow };
@@ -88,6 +109,9 @@ export async function openSuccessor(db: Db, batch: BatchRow): Promise<BatchRow> 
     perCustomerMin: batch.perCustomerMin,
     shippingPhp: batch.shippingPhp,
     status: 'open',
+    // Not inherited: this batch opens because its parent filled, so its moment
+    // has already arrived. Only the deadline moves on.
+    opensAt: null,
     deadline: nextBatchDeadline(batch.createdAt, batch.deadline, new Date()),
     includedProducts: batch.includedProducts,
     arrivalGroup: batch.arrivalGroup,

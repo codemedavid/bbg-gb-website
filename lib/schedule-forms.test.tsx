@@ -42,13 +42,13 @@ beforeEach(() => {
 
 describe('Group Buy campaign form', () => {
   it('offers an Opens at field', () => {
-    render(<CampaignForm initial={emptyCampaignDraft} />);
+    render(<CampaignForm initial={emptyCampaignDraft} draftId="new" />);
 
     expect(screen.getByLabelText(/opens at/i)).toBeInTheDocument();
   });
 
   it('sends the typed open date to the API', async () => {
-    render(<CampaignForm initial={emptyCampaignDraft} />);
+    render(<CampaignForm initial={emptyCampaignDraft} draftId="new" />);
 
     await userEvent.type(screen.getByLabelText(/^name$/i), 'Retatrutide 30mg');
     const price = screen.getByLabelText(/price \/ kit/i);
@@ -90,7 +90,10 @@ describe('campaign draft rules', () => {
 describe('Kahati admin form', () => {
   it('offers an Opens at field', async () => {
     const { default: AdminGroupBuysPage } = await import('@/app/admin/groupbuys/page');
-    render(<AdminGroupBuysPage />);
+    // The page's delete button asks for confirmation, so it only renders inside
+    // the provider the admin layout supplies.
+    const { ConfirmProvider } = await import('@/components/ConfirmDialog');
+    render(<ConfirmProvider><AdminGroupBuysPage /></ConfirmProvider>);
 
     await userEvent.click(screen.getByRole('button', { name: /new group buy/i }));
 

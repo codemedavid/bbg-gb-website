@@ -36,7 +36,10 @@ export default function GroupBuyPage() {
   const startCommit = (c: MoqCampaign) => setCommitting(c);
 
   const open = campaigns.filter((c) => c.status === 'open');
-  const closed = campaigns.filter((c) => c.status !== 'open');
+  // A scheduled batch has not happened yet, so it belongs in neither list. The
+  // API already withholds it from customers; this keeps an admin browsing the
+  // storefront from seeing their unannounced campaign filed under "closed".
+  const closed = campaigns.filter((c) => c.status !== 'open' && c.status !== 'scheduled');
 
   return (
     <>

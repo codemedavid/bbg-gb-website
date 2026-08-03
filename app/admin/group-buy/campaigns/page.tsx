@@ -20,6 +20,8 @@ const OUTCOME_LABEL: Record<MoqCampaign['outcome'], string> = {
 };
 
 const STATUS_STYLE: Record<MoqCampaign['status'], string> = {
+  // Written but not yet on the board — it opens on its own when opensAt passes.
+  scheduled: 'bg-[#f5eddb] text-brand-navy',
   open: 'bg-[#e8f5db] text-brand-greendark',
   approved: 'bg-[#dbe8f5] text-brand-blue',
   // Reached its kit cap and closed itself; its successor is already open.

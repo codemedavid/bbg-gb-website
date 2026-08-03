@@ -8,7 +8,8 @@ import { KAHATI_MAX_VIALS, kahatiProgressPercent, kahatiClaimedDisplay } from '@
 import type { GroupBuy, HatianCommitment, PaymentState } from '@/lib/types';
 
 // A brand-new hatian starts empty and fills exactly one kit.
-const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSlots: KAHATI_MAX_VIALS, claimedSlots: 0, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder', closesAt: null });
+// A brand-new hatian opens on save unless the admin gives it an open date.
+const blank = (): Partial<GroupBuy> => ({ name: '', pricePerKitPhp: '0', totalSlots: KAHATI_MAX_VIALS, claimedSlots: 0, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder', opensAt: null, closesAt: null });
 
 // The hatian deadline drives the storefront "closes in …" countdown and the
 // expiry sweep. Stored as an ISO string; the <input type="datetime-local">
@@ -35,6 +36,7 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
         id: f.id, name: f.name, pricePerKitPhp: Number(f.pricePerKitPhp) as any,
         totalSlots: Number(f.totalSlots), claimedSlots: Number(f.claimedSlots), minVials: Number(f.minVials),
         repackFeePhp: Number(f.repackFeePhp) as any, status: f.status, arrivalGroup: f.arrivalGroup,
+        opensAt: f.opensAt ?? null,
         closesAt: f.closesAt ?? null,
         description: f.description ?? null,
       } as any);
@@ -54,9 +56,15 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
         <Labeled label="Min vials / person"><input className={field} type="number" min={1} max={KAHATI_MAX_VIALS} value={f.minVials ?? 1} onChange={(e) => setF({ ...f, minVials: Number(e.target.value) })} /></Labeled>
         <Labeled label="Status">
           <select className={field} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as any })}>
-            {['open', 'closed', 'shipped', 'completed', 'cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
+            {['scheduled', 'open', 'closed', 'shipped', 'completed', 'cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </Labeled>
+        <div className="col-span-2">
+          <Labeled label="Opens at (leave blank to open now)">
+            <input className={field} type="datetime-local" aria-label="Opens at"
+              value={toLocalInput(f.opensAt)} onChange={(e) => setF({ ...f, opensAt: toIso(e.target.value) })} />
+          </Labeled>
+        </div>
         <div className="col-span-2">
           <Labeled label="Closes at (deadline)">
             <input className={field} type="datetime-local" aria-label="Closes at"

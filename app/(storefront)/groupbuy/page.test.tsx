@@ -30,7 +30,7 @@ const GroupBuyPage = (await import('./page')).default;
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4,
   perCustomerMin: 1,
-  shippingPhp: '300.00', status: 'open', deadline: null,
+  shippingPhp: '300.00', status: 'open', opensAt: null, deadline: null,
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
   seriesId: 'c1', batchNo: 1,

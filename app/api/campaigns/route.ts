@@ -1,16 +1,28 @@
 import { randomUUID } from 'node:crypto';
-import { desc } from 'drizzle-orm';
-import { requireAdmin } from '@/lib/session';
+import { desc, ne } from 'drizzle-orm';
+import { requireAdmin, getSession } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { moqCampaignSchema } from '@/lib/moq-schemas';
 import { getPackingFees } from '@/lib/settings';
 import { describeBatch } from '@/lib/group-buy';
+import { openDueBatches } from '@/lib/moq-batch-server';
+import { openingStatus } from '@/lib/schedule';
 
 // Public: list batches with derived MOQ progress and lifecycle outcome.
+//
+// The admin board reads this same endpoint, so a scheduled batch is hidden by
+// audience rather than by route: an unannounced campaign's name and price must
+// not be fetchable before it opens, and the admin still has to see what they
+// scheduled. Reading the board is also what opens the batches whose date has
+// arrived — the Kahati board has resolved its lifecycle this way all along.
 export const GET = handler(async () => {
   const db = await getDb();
-  const rows = await db.select().from(moqCampaigns).orderBy(desc(moqCampaigns.createdAt));
+  await openDueBatches(db);
+  const session = await getSession();
+  const rows = await db.select().from(moqCampaigns)
+    .where(session?.role === 'admin' ? undefined : ne(moqCampaigns.status, 'scheduled'))
+    .orderBy(desc(moqCampaigns.createdAt));
   return ok(rows.map(describeBatch));
 });
 
@@ -25,6 +37,7 @@ export const POST = handler(async (req: Request) => {
   // series at itself in the same INSERT: every batch of a series, including the
   // first, is reachable by one indexed read on series_id.
   const id = randomUUID();
+  const opensAt = b.opensAt ? new Date(b.opensAt) : null;
   const [row] = await db.insert(moqCampaigns).values({
     id,
     seriesId: id,
@@ -33,7 +46,10 @@ export const POST = handler(async (req: Request) => {
     pricePerKitPhp: String(b.pricePerKitPhp),
     moq: b.moq,
     shippingPhp: String(b.shippingPhp ?? defaultFee),
-    status: b.status ?? 'open',
+    // The admin sets a date, not a status: 'scheduled' is derived so the two can
+    // never disagree — no batch waits on a moment that already passed.
+    status: b.status ?? openingStatus(opensAt),
+    opensAt,
     deadline: b.deadline ? new Date(b.deadline) : null,
     includedProducts: b.includedProducts ?? [],
     arrivalGroup: b.arrivalGroup ?? 'white_powder',

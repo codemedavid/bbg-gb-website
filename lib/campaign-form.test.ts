@@ -14,7 +14,7 @@ import {
 
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   id: 'c1', name: 'Retatrutide 30mg', pricePerKitPhp: '5200.00', moq: 10, committed: 4,
-  perCustomerMin: 1, shippingPhp: '300.00', status: 'open',
+  perCustomerMin: 1, shippingPhp: '300.00', status: 'open', opensAt: null,
   deadline: '2026-08-30T16:00:00.000Z', includedProducts: [{ productId: 'p1', name: 'Reta 30mg' }],
   arrivalGroup: 'white_powder', description: 'Batch one.', createdAt: '2026-07-01T00:00:00.000Z',
   seriesId: 'c1', batchNo: 1, capacity: 10, progress: 0.4, remaining: 6,

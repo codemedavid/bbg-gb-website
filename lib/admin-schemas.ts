@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { KAHATI_MAX_VIALS } from './pricing';
+import { scheduleWindowErrorFromIso } from './schedule';
 
 export const productSchema = z.object({
   code: z.string().max(40).optional(),
@@ -36,7 +37,11 @@ const groupBuyFields = z.object({
     .max(KAHATI_MAX_VIALS, `A person cannot commit more than ${KAHATI_MAX_VIALS} vials — that is the whole kit.`)
     .optional(),
   repackFeePhp: z.number().nonnegative().optional(),
-  status: z.enum(['open', 'closed', 'shipped', 'completed', 'cancelled']).optional(),
+  // 'scheduled' is derived from opensAt by the create route rather than picked
+  // by hand; it is listed so a round-tripped row validates.
+  status: z.enum(['scheduled', 'open', 'closed', 'shipped', 'completed', 'cancelled']).optional(),
+  // When the counter goes on the board. Absent or past means now.
+  opensAt: z.string().datetime().nullable().optional(),
   closesAt: z.string().datetime().nullable().optional(),
   arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
   description: z.string().max(2000).nullable().optional(),
@@ -44,15 +49,26 @@ const groupBuyFields = z.object({
 
 // Create payload: claimed vials can never exceed the cap — an omitted cap
 // defaults to KAHATI_MAX_VIALS, so the bound still holds.
-export const groupBuySchema = groupBuyFields.refine(
-  (b) => (b.claimedSlots ?? 0) <= (b.totalSlots ?? KAHATI_MAX_VIALS),
-  { message: 'Claimed vials cannot exceed the vial cap.', path: ['claimedSlots'] },
-);
+export const groupBuySchema = groupBuyFields
+  .refine(
+    (b) => (b.claimedSlots ?? 0) <= (b.totalSlots ?? KAHATI_MAX_VIALS),
+    { message: 'Claimed vials cannot exceed the vial cap.', path: ['claimedSlots'] },
+  )
+  // A counter that opens after it closes accepts nothing for its whole life.
+  // Unlike the cap check this one survives a partial body — an absent half makes
+  // it vacuously true — so the PATCH shape carries it too.
+  .refine(
+    (b) => scheduleWindowErrorFromIso(b.opensAt, b.closesAt) === null,
+    { message: 'The open date must be before the close date.', path: ['opensAt'] },
+  );
 
 // PATCH bodies are partial, so the cross-field cap check cannot live here — the
 // missing half is only known once merged with the current row. The route
 // validates the merged effective values instead.
-export const groupBuyPatchSchema = groupBuyFields.partial();
+export const groupBuyPatchSchema = groupBuyFields.partial().refine(
+  (b) => scheduleWindowErrorFromIso(b.opensAt, b.closesAt) === null,
+  { message: 'The open date must be before the close date.', path: ['opensAt'] },
+);
 
 // Text fields of a payment method. The QR image arrives as a separate multipart
 // File part, validated by lib/uploads, so it is not part of this schema.

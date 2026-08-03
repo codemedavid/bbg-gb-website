@@ -119,6 +119,14 @@ export function CampaignForm({ draftId, initial }: Props) {
               onChange={(e) => set('moq', e.target.value)} />
           </label>
           <label className="block">
+            <span className={label}>Opens at</span>
+            <input className={field} type="datetime-local" value={toLocalInput(draft.opensAt)}
+              onChange={(e) => set('opensAt', toIso(e.target.value))} />
+            <span className="mt-0.5 block text-[12px] text-ink-muted">
+              Leave blank to open now. A future date holds the batch off the board until then.
+            </span>
+          </label>
+          <label className="block">
             <span className={label}>Deadline</span>
             <input className={field} type="datetime-local" value={toLocalInput(draft.deadline)}
               onChange={(e) => set('deadline', toIso(e.target.value))} />

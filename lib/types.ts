@@ -14,7 +14,10 @@ export type CoaFile = { id: string; productId: string; batch: string | null; fil
 
 export type GroupBuy = {
   id: string; name: string; pricePerKitPhp: string; totalSlots: number; claimedSlots: number;
-  minVials: number; repackFeePhp: string; status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+  minVials: number; repackFeePhp: string;
+  status: 'scheduled' | 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+  // When the counter goes on the board; null means it already is.
+  opensAt: string | null;
   closesAt: string | null; arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
   perVialPhp: number; remaining: number; progress: number;
 };
@@ -40,7 +43,9 @@ export type MoqCampaign = {
   id: string; name: string; pricePerKitPhp: string; moq: number; committed: number;
   // Admin-set floor on one customer's commitment; the cart seeds the line here.
   perCustomerMin: number;
-  shippingPhp: string; status: 'open' | 'approved' | 'completed' | 'cancelled';
+  shippingPhp: string; status: 'scheduled' | 'open' | 'approved' | 'completed' | 'cancelled';
+  // When the batch goes on the board; null means it already is.
+  opensAt: string | null;
   deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null; createdAt: string;
   // Which batch of which series this row is. seriesId resolves to the row's own
@@ -58,7 +63,7 @@ export type MoqCampaign = {
 // `status` is intentionally omitted — it is lifecycle-owned (see /campaigns/:id/action).
 export type CampaignPayload = {
   id?: string; name: string; pricePerKitPhp: number; moq: number;
-  shippingPhp: number; deadline: string | null; includedProducts: IncludedProduct[];
+  shippingPhp: number; opensAt: string | null; deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
 };
 

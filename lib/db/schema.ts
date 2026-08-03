@@ -14,7 +14,9 @@ export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati', 'group_buy', 'm
 // Group Buy (MOQ) campaign lifecycle. 'reached' is derived (committed >= moq), not stored.
 // 'completed' = the batch filled to its 10-kit cap and closed itself; further
 // commitments go to the successor batch the fill opened (see lib/moq-batch-server.ts).
-export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['open', 'approved', 'completed', 'cancelled']);
+// 'scheduled' precedes 'open': the batch exists, holds its terms, and is off the
+// storefront until its `opens_at` passes (lib/schedule.ts).
+export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['scheduled', 'open', 'approved', 'completed', 'cancelled']);
 export const orderStatusEnum = pgEnum('order_status', [
   'proof_review',      // 0 Proof under review
   'payment_confirmed', // 1 Payment confirmed
@@ -25,7 +27,7 @@ export const orderStatusEnum = pgEnum('order_status', [
 ]);
 // 'closed' = full (reached the 10-vial cap) or admin-closed; 'cancelled' = deadline
 // passed before the cap was reached. Both are terminal for accepting new commits.
-export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 'shipped', 'completed', 'cancelled']);
+export const groupBuyStatusEnum = pgEnum('group_buy_status', ['scheduled', 'open', 'closed', 'shipped', 'completed', 'cancelled']);
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
 export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign', 'moq_product']);
@@ -91,6 +93,10 @@ export const groupBuys = pgTable('group_buys', {
   minVials: integer('min_vials').notNull().default(1),          // min vials one person may commit
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('150'),
   status: groupBuyStatusEnum('status').notNull().default('open'),
+  // When this counter goes on the board. Null means "already there" — which is
+  // every counter written before scheduling existed. A future date parks the row
+  // at 'scheduled' until a sweep opens it (lib/kahati-server.ts openDueKahatis).
+  opensAt: timestamp('opens_at', { withTimezone: true }),
   closesAt: timestamp('closes_at', { withTimezone: true }),
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
@@ -126,6 +132,10 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   // Pasabay packing fee (local shipping included); admin-editable per campaign.
   shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('300'),
   status: moqCampaignStatusEnum('status').notNull().default('open'),
+  // When this batch goes on the board — see the note on group_buys.opens_at.
+  // Successor batches never inherit it: a successor opens because its parent
+  // filled, which is a moment that has already arrived.
+  opensAt: timestamp('opens_at', { withTimezone: true }),
   deadline: timestamp('deadline', { withTimezone: true }),
   // Included products with per-product out-of-stock flags: [{ productId, name, outOfStock }]
   includedProducts: jsonb('included_products').notNull().default(sql`'[]'::jsonb`),

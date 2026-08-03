@@ -13,7 +13,7 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(b)) {
     if (k === 'pricePerKitPhp' || k === 'repackFeePhp') patch[k] = String(v);
-    else if (k === 'closesAt') patch[k] = v ? new Date(v as string) : null;
+    else if (k === 'closesAt' || k === 'opensAt') patch[k] = v ? new Date(v as string) : null;
     else patch[k] = v;
   }
   if (!Object.keys(patch).length) throw new ApiError(400, 'No fields to update.');
