@@ -32,14 +32,22 @@ const { resetDb, makeUser } = await import('@/lib/test/harness');
 const MONDAY = '2026-03-16';
 const IN_WEEK = new Date('2026-03-17T02:00:00Z');
 
-const rollup = async () => {
+type Row = { name: string; qty: number; kits: number };
+
+const rollup = async (): Promise<{ rows: Row[] }> => {
   const res = await GET(new Request(`http://localhost/api/admin/report/weekly?week=${MONDAY}`));
   const body = await res.json();
   expect(body.success).toBe(true);
   return body.data.report.productTotals;
 };
-const rowFor = (totals: { rows: { name: string }[] }, name: string) =>
-  totals.rows.find((r) => r.name.includes(name));
+
+// Throws rather than returning undefined: a missing row means the line never
+// reached the rollup at all, and "cannot read kits of undefined" hides that.
+function rowFor(totals: { rows: Row[] }, name: string): Row {
+  const row = totals.rows.find((r) => r.name.includes(name));
+  if (!row) throw new Error(`no rollup row matching "${name}" — got: ${totals.rows.map((r) => r.name).join(', ')}`);
+  return row;
+}
 
 async function makeOrder() {
   const db = await getDb();

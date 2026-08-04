@@ -1,7 +1,8 @@
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, orderItems, products, users } from '@/lib/db';
+import { getDb, orders, orderItems, products, groupBuys, users } from '@/lib/db';
 import { buildWeeklyReport, type ReportItem, type ReportOrderInput } from '@/lib/report/build';
 import { isValidYmd, mondayOf, mostRecentFullWeekMonday, weekBounds } from '@/lib/report/week';
 
@@ -33,6 +34,11 @@ export const GET = handler(async (req: Request) => {
   // item snapshots do not hold — it is a left join because kahati and MOQ lines
   // reference no product row.
   const ids = orderRows.map((o) => o.id);
+  // A hatian line names no product — it references the counter — so it needs a
+  // second hop to reach a kit size: order_item -> group_buy -> product. Aliased
+  // because `products` is already joined for direct lines and one query cannot
+  // join the same table twice under one name.
+  const kahatiProducts = alias(products, 'kahati_products');
   const itemRows = ids.length
     ? await db
         .select({
@@ -40,9 +46,13 @@ export const GET = handler(async (req: Request) => {
           specSnapshot: orderItems.specSnapshot, productId: orderItems.productId,
           qty: orderItems.qty, unitPriceUsd: orderItems.unitPriceUsd, unitPricePhp: orderItems.unitPricePhp,
           code: products.code, kitSize: products.kitSize,
+          kahatiKitSize: kahatiProducts.kitSize,
+          kahatiVialCap: groupBuys.totalSlots,
         })
         .from(orderItems)
         .leftJoin(products, eq(orderItems.productId, products.id))
+        .leftJoin(groupBuys, eq(orderItems.groupBuyId, groupBuys.id))
+        .leftJoin(kahatiProducts, eq(groupBuys.productId, kahatiProducts.id))
         .where(inArray(orderItems.orderId, ids))
     : [];
   const itemsByOrder = new Map<string, ReportItem[]>();
@@ -51,7 +61,12 @@ export const GET = handler(async (req: Request) => {
     list.push({
       nameSnapshot: it.nameSnapshot, specSnapshot: it.specSnapshot, productId: it.productId,
       qty: it.qty, unitPriceUsd: it.unitPriceUsd, unitPricePhp: it.unitPricePhp,
-      code: it.code, kitSize: it.kitSize,
+      // Direct line: the product's own kit size. Hatian line: the kit size of
+      // the product its counter names, falling back to the counter's vial cap —
+      // which IS one kit by the feature's definition and is NOT NULL, so a
+      // hatian always divides by something real. Leaving it null meant one kit
+      // per vial, which over-stated the largest rows on the sheet tenfold.
+      code: it.code, kitSize: it.kitSize ?? it.kahatiKitSize ?? it.kahatiVialCap,
     });
     itemsByOrder.set(it.orderId, list);
   }
