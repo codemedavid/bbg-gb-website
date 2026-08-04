@@ -34,10 +34,10 @@ describe('ProductTotalsReport', () => {
   it('shows how many distinct products and total units the week moved', () => {
     render(<ProductTotalsReport productTotals={productTotals} />);
 
-    expect(screen.getByText('Products')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('Units')).toBeInTheDocument();
-    expect(screen.getByText('310')).toBeInTheDocument();
+    // Scoped to the tiles: a bare getByText('3') would also match the rank cell
+    // of the third row.
+    expect(within(screen.getByTestId('tile-products')).getByText('3')).toBeInTheDocument();
+    expect(within(screen.getByTestId('tile-units')).getByText('310')).toBeInTheDocument();
   });
 
   it('closes with a total row carrying the summed USD', () => {
