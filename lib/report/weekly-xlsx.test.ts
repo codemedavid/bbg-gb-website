@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
 import { buildWeeklyReport, type ReportOrderInput } from './build';
-import { buildWeeklyWorkbook, XLSX_HEADERS } from './weekly-xlsx';
+import { buildWeeklyWorkbook, PRODUCT_TOTALS_HEADERS, PRODUCT_TOTALS_SHEET, XLSX_HEADERS } from './weekly-xlsx';
 
 type Header = (typeof XLSX_HEADERS)[number];
 // 1-based column index of a header, so assertions name the column instead of
@@ -32,7 +32,7 @@ async function roundTrip(orders: ReportOrderInput[], monday = '2026-05-25') {
 
   const reopened = new ExcelJS.Workbook();
   await reopened.xlsx.load(buffer);
-  return { sheet: reopened.worksheets[0], report };
+  return { sheet: reopened.worksheets[0], workbook: reopened, report };
 }
 
 describe('buildWeeklyWorkbook', () => {
@@ -138,5 +138,82 @@ describe('buildWeeklyWorkbook', () => {
   it('handles a week with no orders without throwing', async () => {
     const { sheet } = await roundTrip([]);
     expect(sheet.getRow(1).getCell(1).value).toBe(XLSX_HEADERS[0]);
+  });
+});
+
+// The batch order is placed per product, not per buyer: the team needs "how many
+// vials of TR30 do we owe the supplier this week" out of the same file they
+// already download, so it ships as a second sheet rather than a second export.
+describe('buildWeeklyWorkbook — Product Totals sheet', () => {
+  const twoProducts = () => order({
+    items: [
+      { productId: 'p-ba5', nameSnapshot: 'Liquid Bacteriostatic Water', specSnapshot: '5ml', code: 'BA5', kitSize: 10, qty: 270, unitPriceUsd: '1.00', unitPricePhp: '56.00' },
+      { productId: 'p-lb50', nameSnapshot: 'Lemon Bottle', specSnapshot: '50ml', code: 'LB50', kitSize: 1, qty: 33, unitPriceUsd: '18.00', unitPricePhp: '1000.00' },
+    ],
+  });
+
+  const totalsSheet = async (orders: ReportOrderInput[]) => {
+    const { workbook, report } = await roundTrip(orders);
+    const sheet = workbook.getWorksheet(PRODUCT_TOTALS_SHEET);
+    if (!sheet) throw new Error(`workbook has no "${PRODUCT_TOTALS_SHEET}" sheet`);
+    return { sheet, report };
+  };
+
+  it('adds the product rollup as a second sheet, keeping the order sheet first', async () => {
+    const { workbook } = await roundTrip([twoProducts()]);
+
+    expect(workbook.worksheets).toHaveLength(2);
+    expect(workbook.worksheets[1].name).toBe(PRODUCT_TOTALS_SHEET);
+  });
+
+  it('writes a header row naming every product column', async () => {
+    const { sheet } = await totalsSheet([twoProducts()]);
+    const headerRow = sheet.getRow(1);
+
+    expect(PRODUCT_TOTALS_HEADERS.map((_, i) => headerRow.getCell(i + 1).value))
+      .toEqual([...PRODUCT_TOTALS_HEADERS]);
+  });
+
+  it('emits one row per product, ranked by quantity', async () => {
+    const { sheet } = await totalsSheet([twoProducts()]);
+    const col = PRODUCT_TOTALS_HEADERS.indexOf('Variant / Code') + 1;
+
+    expect([2, 3].map((r) => sheet.getRow(r).getCell(col).value)).toEqual(['BA5', 'LB50']);
+  });
+
+  it('carries name, specs, qty and kits for each product', async () => {
+    const { sheet } = await totalsSheet([twoProducts()]);
+    const cell = (row: number, name: (typeof PRODUCT_TOTALS_HEADERS)[number]) =>
+      sheet.getRow(row).getCell(PRODUCT_TOTALS_HEADERS.indexOf(name) + 1).value;
+
+    expect(cell(2, 'Product')).toBe('Liquid Bacteriostatic Water');
+    expect(cell(2, 'Specs')).toBe('5ml');
+    expect(cell(2, 'Total Qty')).toBe(270);
+    expect(cell(2, 'Kits')).toBe(27);
+    // Sold per piece, so its kit count matches its quantity.
+    expect(cell(3, 'Kits')).toBe(33);
+  });
+
+  it('writes product USD as a number with a currency format', async () => {
+    const { sheet } = await totalsSheet([twoProducts()]);
+    const usd = sheet.getRow(2).getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total USD') + 1);
+
+    expect(usd.value).toBe(270);
+    expect(typeof usd.value).toBe('number');
+    expect(usd.numFmt).toContain('0.00');
+  });
+
+  it('closes with a TOTAL row summing USD and quantity', async () => {
+    const { sheet, report } = await totalsSheet([twoProducts()]);
+    const totalRow = sheet.getRow(sheet.rowCount);
+
+    expect(totalRow.getCell(1).value).toBe('TOTAL');
+    expect(totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total USD') + 1).value).toBe(report.productTotals.totals.usd);
+    expect(totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total Qty') + 1).value).toBe(303);
+  });
+
+  it('still produces the sheet when the week has no orders', async () => {
+    const { sheet } = await totalsSheet([]);
+    expect(sheet.getRow(1).getCell(1).value).toBe(PRODUCT_TOTALS_HEADERS[0]);
   });
 });

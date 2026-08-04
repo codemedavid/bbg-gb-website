@@ -46,4 +46,18 @@ describe('buildWeeklyReport', () => {
     expect(r.weekNo).toBe(22);
     expect(r.rangeLabel).toBe('Mon May 25 – Sun May 31');
   });
+
+  it('attaches the per-product rollup alongside the per-order rows', () => {
+    const r = buildWeeklyReport('2026-05-25', [
+      order({
+        items: [
+          { productId: 'p-tr15', nameSnapshot: 'Tirzepatide', specSnapshot: '15mg', code: 'TR15', kitSize: 10, qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' },
+        ],
+      }),
+    ]);
+
+    expect(r.productTotals.rows).toHaveLength(1);
+    expect(r.productTotals.rows[0]).toMatchObject({ code: 'TR15', qty: 5, kits: 0.5 });
+    expect(r.productTotals.totals.qty).toBe(5);
+  });
 });
