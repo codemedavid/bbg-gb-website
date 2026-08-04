@@ -26,7 +26,7 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         pricePhp: Number(f.pricePhp) as any, priceUsd: (f.priceUsd != null ? Number(f.priceUsd) : null) as any,
         isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
         onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
-        stock: f.stock, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
+        stock: f.stock, kitSize: f.kitSize, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
       } as any);
       onClose();
     } catch (err) {
@@ -53,6 +53,8 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         </Labeled>
         <Labeled label="Price ₱"><input className={field} type="number" value={f.pricePhp as any} onChange={(e) => setF({ ...f, pricePhp: e.target.value })} /></Labeled>
         <Labeled label="Stock"><input className={field} type="number" value={f.stock ?? 0} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} /></Labeled>
+        {/* Drives the weekly report's Kits column: 10 vials to a peptide kit, 1 for anything sold per piece. */}
+        <Labeled label="Kit size (vials per kit)"><input className={field} type="number" min={1} value={f.kitSize ?? 10} onChange={(e) => setF({ ...f, kitSize: Number(e.target.value) })} /></Labeled>
       </div>
 
       <label className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-ink-body">

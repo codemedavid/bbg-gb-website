@@ -17,6 +17,9 @@ export const productSchema = z.object({
   onHandKitPhp: z.number().nonnegative().nullable().optional(),
   onHandPiecePhp: z.number().nonnegative().nullable().optional(),
   stock: z.number().int().nonnegative().optional(),
+  // Vials per supplier kit, used by the weekly report's per-product rollup.
+  // Positive, because it is a divisor: a 0 would make every kit count Infinity.
+  kitSize: z.number().int().positive().optional(),
   arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
   description: z.string().max(2000).nullable().optional(),
   imageEmoji: z.string().max(8).optional(),

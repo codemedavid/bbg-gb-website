@@ -17,6 +17,10 @@ const report: WeeklyReport = {
       payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
     },
   ],
+  productTotals: {
+    rows: [{ index: 1, name: 'Retatrutide', code: 'RT30', spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
+    totals: { usd: 100, qty: 5 },
+  },
 };
 
 describe('OrderSummaryReport', () => {

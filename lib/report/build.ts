@@ -1,6 +1,8 @@
 // Pure builder that turns a week's orders into the weekly-report structure the PDF
 // renders. No I/O, no clock — fully testable.
 import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LABEL } from './constants';
+import { num } from './money';
+import { buildProductTotals, type ProductTotals } from './product-totals';
 import { formatRange, isoWeekNumber } from './week';
 
 export type ReportItem = {
@@ -8,6 +10,14 @@ export type ReportItem = {
   qty: number;
   unitPriceUsd: string | null;
   unitPricePhp: string;
+  // Product-rollup fields, joined from `products` at query time. All optional:
+  // kahati and MOQ lines reference no product row and legitimately have none.
+  productId?: string | null;
+  specSnapshot?: string | null;
+  /** Price-list code, e.g. "TR30". */
+  code?: string | null;
+  /** Vials per supplier kit; 1 for anything sold per piece. */
+  kitSize?: number | null;
 };
 
 export type ReportOrderInput = {
@@ -57,11 +67,8 @@ export type WeeklyReport = {
   counts: { paid: number; pending: number; cancelled: number };
   totals: { usd: number; php: number };
   rows: ReportRow[];
-};
-
-const num = (v: string | null | undefined): number => {
-  const n = parseFloat(v ?? '');
-  return Number.isFinite(n) ? n : 0;
+  /** The same week's orders rolled up per product, for the batch order. */
+  productTotals: ProductTotals;
 };
 
 // Manila-local M/D/YYYY for an ISO instant (report matches the +08:00 sample).
@@ -126,5 +133,6 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     counts,
     totals,
     rows,
+    productTotals: buildProductTotals(orders),
   };
 }

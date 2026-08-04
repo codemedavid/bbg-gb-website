@@ -25,6 +25,15 @@ export const XLSX_HEADERS = [
 // short codes do not waste it.
 const COLUMN_WIDTHS = [5, 14, 12, 22, 16, 26, 34, 38, 10, 12, 16, 15, 20, 11, 13];
 
+// Second sheet: the same week rolled up per product, which is the shape the
+// batch order is actually placed in. Column names match the sheet the team
+// already circulates so nobody has to relearn the layout.
+export const PRODUCT_TOTALS_SHEET = 'Product Totals';
+export const PRODUCT_TOTALS_HEADERS = [
+  '#', 'Product', 'Variant / Code', 'Specs', 'Total USD', 'Total Qty', 'Kits',
+] as const;
+const PRODUCT_COLUMN_WIDTHS = [5, 38, 16, 24, 13, 12, 10];
+
 const MONEY_FORMAT = '#,##0.00';
 
 // ExcelJS wants 'FFRRGGBB'; REPORT_COLORS carries the PDF's [r,g,b] triples so
@@ -90,7 +99,49 @@ export async function buildWeeklyWorkbook(
     to: { row: 1, column: XLSX_HEADERS.length },
   };
 
+  addProductTotalsSheet(workbook, report);
+
   return workbook;
+}
+
+// Appended after the order sheet so the workbook opens on the view the team
+// already knows, with the batch-order view one tab away.
+function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
+  const sheet = workbook.addWorksheet(PRODUCT_TOTALS_SHEET, {
+    views: [{ state: 'frozen', ySplit: 1 }],
+  });
+
+  sheet.columns = PRODUCT_TOTALS_HEADERS.map((header, i) => ({
+    header,
+    width: PRODUCT_COLUMN_WIDTHS[i],
+  }));
+
+  const headerRow = sheet.getRow(1);
+  headerRow.font = { bold: true, color: { argb: argb(REPORT_COLORS.headerText) } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.headerFill) } };
+  headerRow.alignment = { vertical: 'middle', wrapText: true };
+
+  for (const row of report.productTotals.rows) {
+    sheet.addRow([row.index, row.name, row.code, row.spec, row.usd, row.qty, row.kits]);
+  }
+
+  const usdCol = PRODUCT_TOTALS_HEADERS.indexOf('Total USD') + 1;
+  sheet.getColumn(usdCol).numFmt = MONEY_FORMAT;
+
+  const totalRow = sheet.addRow([]);
+  totalRow.getCell(1).value = 'TOTAL';
+  totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Product') + 1).value =
+    `${report.productTotals.rows.length} products · ${report.orderCount} orders`;
+  totalRow.getCell(usdCol).value = report.productTotals.totals.usd;
+  totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total Qty') + 1).value = report.productTotals.totals.qty;
+  totalRow.font = { bold: true };
+  totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.totalFill) } };
+  totalRow.getCell(usdCol).numFmt = MONEY_FORMAT;
+
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: PRODUCT_TOTALS_HEADERS.length },
+  };
 }
 
 export function weeklyXlsxFilename(mondayYmd: string): string {

@@ -12,6 +12,10 @@ const report: WeeklyReport = {
     phone: '0917', email: 'a@x.com', address: 'QC', products: ['Reta x5'], courier: 'J&T',
     packedBy: 'Cza', payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
   }],
+  productTotals: {
+    rows: [{ index: 1, name: 'Retatrutide', code: 'RT30', spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
+    totals: { usd: 100, qty: 5 },
+  },
 };
 
 vi.mock('@/lib/api-client', () => ({
@@ -35,5 +39,12 @@ describe('AdminReportsPage', () => {
     expect(screen.getByRole('heading', { name: /reports/i })).toBeInTheDocument();
     expect(await screen.findByText('BBG-2500')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /weekly excel/i })).toBeInTheDocument();
+  });
+
+  it('renders the product totals section beneath the order summary', async () => {
+    render(<Page />, { wrapper });
+
+    expect(await screen.findByRole('heading', { name: /product totals/i })).toBeInTheDocument();
+    expect(screen.getByText('RT30')).toBeInTheDocument();
   });
 });

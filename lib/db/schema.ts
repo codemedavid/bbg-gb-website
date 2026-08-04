@@ -70,6 +70,11 @@ export const products = pgTable('products', {
   onHandKitPhp: numeric('on_hand_kit_php', { precision: 12, scale: 2 }),
   onHandPiecePhp: numeric('on_hand_piece_php', { precision: 12, scale: 2 }),
   stock: integer('stock').notNull().default(0),
+  // Vials per supplier kit, used by the weekly report to turn "270 vials" into
+  // "27 kits" — the unit the batch order is actually placed in. Peptides ship
+  // 10 to a kit; fillers and serums (Lemon Bottle, Profhilo, Restylane) are
+  // sold per piece and carry 1.
+  kitSize: integer('kit_size').notNull().default(10),
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
   imageEmoji: varchar('image_emoji', { length: 8 }).default('💧'),

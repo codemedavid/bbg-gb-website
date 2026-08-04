@@ -8,6 +8,7 @@ import { recentWeekMondays, weekOptionLabel } from '@/lib/report/week';
 import { downloadWeeklyReportXlsx } from '@/lib/report/weekly-xlsx';
 import type { WeeklyReport } from '@/lib/report/build';
 import { OrderSummaryReport } from './OrderSummaryReport';
+import { ProductTotalsReport } from './ProductTotalsReport';
 
 // Reports hub: pick a Mon–Sun week, read the Order Summary on-page (detail rows
 // + rollups) and download the same data as the formatted weekly .xlsx workbook.
@@ -40,7 +41,7 @@ export default function AdminReportsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="m-0 font-display text-[24px] font-bold">Reports</h1>
-          <p className="mt-1 text-[13px] text-ink-muted">Order Summary &amp; weekly export.</p>
+          <p className="mt-1 text-[13px] text-ink-muted">Order Summary, product totals &amp; weekly export.</p>
         </div>
         <div className="flex items-center gap-2">
           <select className={`${field} w-auto`} value={monday} onChange={(e) => setMonday(e.target.value)}>
@@ -54,7 +55,12 @@ export default function AdminReportsPage() {
 
       {isLoading || !report
         ? <div className="text-ink-muted">Loading report…</div>
-        : <OrderSummaryReport report={report} />}
+        : (
+          <>
+            <OrderSummaryReport report={report} />
+            <ProductTotalsReport productTotals={report.productTotals} />
+          </>
+        )}
     </div>
   );
 }

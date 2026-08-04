@@ -5,7 +5,10 @@ export type Product = {
   pricePhp: string; priceUsd: string | null; categoryId: string | null;
   categorySlug: string | null; categoryName: string | null;
   isOnHand: boolean; onHandKitPhp: string | null; onHandPiecePhp: string | null;
-  stock: number; arrivalGroup: 'white_powder' | 'salt_liquid';
+  stock: number;
+  /** Vials per supplier kit; drives the weekly report's Kits column. */
+  kitSize: number;
+  arrivalGroup: 'white_powder' | 'salt_liquid';
   description: string | null; imageEmoji: string | null; soldCount: number;
   isActive?: boolean;
   coaFiles?: CoaFile[];

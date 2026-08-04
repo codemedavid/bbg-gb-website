@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, orderItems, users } from '@/lib/db';
+import { getDb, orders, orderItems, products, users } from '@/lib/db';
 import { buildWeeklyReport, type ReportItem, type ReportOrderInput } from '@/lib/report/build';
 import { isValidYmd, mondayOf, mostRecentFullWeekMonday, weekBounds } from '@/lib/report/week';
 
@@ -28,21 +28,31 @@ export const GET = handler(async (req: Request) => {
     .where(and(gte(orders.createdAt, start), lt(orders.createdAt, end)))
     .orderBy(desc(orders.createdAt));
 
-  // One batched query for line items instead of N per order.
+  // One batched query for line items instead of N per order. The product join
+  // carries `code` and `kit_size`, which the per-product rollup needs and the
+  // item snapshots do not hold — it is a left join because kahati and MOQ lines
+  // reference no product row.
   const ids = orderRows.map((o) => o.id);
   const itemRows = ids.length
     ? await db
         .select({
           orderId: orderItems.orderId, nameSnapshot: orderItems.nameSnapshot,
+          specSnapshot: orderItems.specSnapshot, productId: orderItems.productId,
           qty: orderItems.qty, unitPriceUsd: orderItems.unitPriceUsd, unitPricePhp: orderItems.unitPricePhp,
+          code: products.code, kitSize: products.kitSize,
         })
         .from(orderItems)
+        .leftJoin(products, eq(orderItems.productId, products.id))
         .where(inArray(orderItems.orderId, ids))
     : [];
   const itemsByOrder = new Map<string, ReportItem[]>();
   for (const it of itemRows) {
     const list = itemsByOrder.get(it.orderId) ?? [];
-    list.push({ nameSnapshot: it.nameSnapshot, qty: it.qty, unitPriceUsd: it.unitPriceUsd, unitPricePhp: it.unitPricePhp });
+    list.push({
+      nameSnapshot: it.nameSnapshot, specSnapshot: it.specSnapshot, productId: it.productId,
+      qty: it.qty, unitPriceUsd: it.unitPriceUsd, unitPricePhp: it.unitPricePhp,
+      code: it.code, kitSize: it.kitSize,
+    });
     itemsByOrder.set(it.orderId, list);
   }
 

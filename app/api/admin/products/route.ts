@@ -18,7 +18,7 @@ export const POST = handler(async (req: Request) => {
     code: b.code, name: b.name, spec: b.spec ?? '', categoryId: b.categoryId ?? null,
     pricePhp: String(b.pricePhp), priceUsd: numToStr(b.priceUsd),
     isOnHand: b.isOnHand ?? false, onHandKitPhp: numToStr(b.onHandKitPhp), onHandPiecePhp: numToStr(b.onHandPiecePhp),
-    stock: b.stock ?? 0, arrivalGroup: b.arrivalGroup ?? 'white_powder',
+    stock: b.stock ?? 0, kitSize: b.kitSize ?? 10, arrivalGroup: b.arrivalGroup ?? 'white_powder',
     description: b.description ?? null, imageEmoji: b.imageEmoji ?? '💧', isActive: b.isActive ?? true,
   }).returning();
   return ok(row, 201);
