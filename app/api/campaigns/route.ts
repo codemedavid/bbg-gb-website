@@ -7,7 +7,8 @@ import { moqCampaignSchema } from '@/lib/moq-schemas';
 import { getPackingFees } from '@/lib/settings';
 import { describeBatch } from '@/lib/group-buy';
 import { openDueBatches } from '@/lib/moq-batch-server';
-import { openingStatus } from '@/lib/schedule';
+import { openingStatus } from '@/lib/campaign-schedule';
+import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
 
 // Public: list batches with derived MOQ progress and lifecycle outcome.
 //
@@ -17,6 +18,10 @@ import { openingStatus } from '@/lib/schedule';
 // scheduled. Reading the board is also what opens the batches whose date has
 // arrived — the Kahati board has resolved its lifecycle this way all along.
 export const GET = handler(async () => {
+  // The same shared window that gates the hatian board. The admin reads through
+  // it — this endpoint backs the admin campaign list, and locking them out here
+  // would leave no screen from which to open the next window.
+  await requireBoardsOpenOrAdmin();
   const db = await getDb();
   await openDueBatches(db);
   const session = await getSession();

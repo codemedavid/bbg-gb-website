@@ -5,8 +5,9 @@ import {
   validateGroupBuyCommit, groupBuyMoqStatus, hasMoq, validateMoqQty,
   splitKahatiDownpayment, onHandUnitPrice, vialsFor, validateOnHandQty,
   settlementPackingFee,
-  PACKING_FEE_PHP, KAHATI_MIN_VIALS, VIALS_PER_KIT,
-  type PriceableItem,
+  groupBuyUnitPrice, groupBuyVialsPerKit, kahatiDefaultsFor, campaignDefaultsFor,
+  PACKING_FEE_PHP, KAHATI_MIN_VIALS, VIALS_PER_KIT, KAHATI_MAX_VIALS, MOQ_BATCH_MAX_KITS,
+  type PriceableItem, type GroupBuyConfig,
 } from './pricing';
 
 const product = (price: number, qty = 1): PriceableItem => ({ kind: 'product', unitPricePhp: price, qty });
@@ -361,5 +362,115 @@ describe('validateMoqQty', () => {
     const r = validateMoqQty(1, 1, 0);
     expect(r.ok).toBe(false);
     expect(r.message).toMatch(/out of stock/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Product-level group buy configuration
+//
+// The five settings live on the product; a hatian or a campaign that includes
+// that product SEEDS its own fields from them. These are the seeding rules —
+// pure, so the same numbers hold whichever surface asks.
+// ---------------------------------------------------------------------------
+
+const gbConfig = (over: Partial<GroupBuyConfig> = {}): GroupBuyConfig => ({
+  gbPricePerKitPhp: null, gbPricePerPiecePhp: null,
+  gbVialsPerKit: null, gbMinVials: null, gbMaxVialsPerBatch: null,
+  ...over,
+});
+
+describe('groupBuyVialsPerKit', () => {
+  it('falls back to the global kit size when the product sets none', () => {
+    expect(groupBuyVialsPerKit(gbConfig())).toBe(VIALS_PER_KIT);
+  });
+
+  it('uses the kit size the product itself declares', () => {
+    expect(groupBuyVialsPerKit(gbConfig({ gbVialsPerKit: 6 }))).toBe(6);
+  });
+
+  it('refuses a kit of zero vials — nothing could ever fill it', () => {
+    expect(groupBuyVialsPerKit(gbConfig({ gbVialsPerKit: 0 }))).toBe(VIALS_PER_KIT);
+  });
+});
+
+describe('groupBuyUnitPrice', () => {
+  it('returns the configured price per kit', () => {
+    expect(groupBuyUnitPrice(gbConfig({ gbPricePerKitPhp: '4500' }), 'kit')).toBe(4500);
+  });
+
+  it('returns the explicit per-piece price when one is set', () => {
+    const c = gbConfig({ gbPricePerKitPhp: '4500', gbPricePerPiecePhp: '480' });
+    expect(groupBuyUnitPrice(c, 'piece')).toBe(480);
+  });
+
+  it('derives the per-piece price from the kit when none is set', () => {
+    expect(groupBuyUnitPrice(gbConfig({ gbPricePerKitPhp: '4500' }), 'piece')).toBe(450);
+  });
+
+  it('derives against the kit size the product declares, not the global one', () => {
+    const c = gbConfig({ gbPricePerKitPhp: '4500', gbVialsPerKit: 5 });
+    expect(groupBuyUnitPrice(c, 'piece')).toBe(900);
+  });
+
+  it('returns null for a unit the product is not sold in', () => {
+    expect(groupBuyUnitPrice(gbConfig(), 'kit')).toBeNull();
+    expect(groupBuyUnitPrice(gbConfig(), 'piece')).toBeNull();
+  });
+
+  it('treats a zero price as "not sold this way", never as free', () => {
+    expect(groupBuyUnitPrice(gbConfig({ gbPricePerKitPhp: '0' }), 'kit')).toBeNull();
+    // A zero piece price falls through to the kit derivation rather than free.
+    const c = gbConfig({ gbPricePerKitPhp: '4500', gbPricePerPiecePhp: '0' });
+    expect(groupBuyUnitPrice(c, 'piece')).toBe(450);
+  });
+});
+
+describe('kahatiDefaultsFor', () => {
+  it('seeds price, minimum and vial cap straight from the product', () => {
+    const c = gbConfig({ gbPricePerKitPhp: '4500', gbMinVials: 2, gbMaxVialsPerBatch: 8 });
+    expect(kahatiDefaultsFor(c)).toEqual({ pricePerKitPhp: 4500, minVials: 2, totalSlots: 8 });
+  });
+
+  it('leaves the current hatian defaults alone when the product configures nothing', () => {
+    expect(kahatiDefaultsFor(gbConfig())).toEqual({
+      pricePerKitPhp: null, minVials: KAHATI_MIN_VIALS, totalSlots: KAHATI_MAX_VIALS,
+    });
+  });
+
+  it('clamps a vial cap beyond one kit — a hatian fills exactly one', () => {
+    expect(kahatiDefaultsFor(gbConfig({ gbMaxVialsPerBatch: 25 })).totalSlots).toBe(KAHATI_MAX_VIALS);
+  });
+
+  it('never seeds a per-person minimum larger than the cap it must fit inside', () => {
+    const c = gbConfig({ gbMinVials: 9, gbMaxVialsPerBatch: 4 });
+    expect(kahatiDefaultsFor(c).minVials).toBe(4);
+  });
+});
+
+describe('campaignDefaultsFor', () => {
+  it('converts the vial figures a product declares into the kits a campaign counts', () => {
+    const c = gbConfig({ gbPricePerKitPhp: '4500', gbVialsPerKit: 10, gbMaxVialsPerBatch: 50, gbMinVials: 20 });
+    expect(campaignDefaultsFor(c)).toEqual({ pricePerKitPhp: 4500, moq: 5, perCustomerMin: 2 });
+  });
+
+  it('rounds a part-kit minimum up — half a kit is still a whole kit to commit', () => {
+    const c = gbConfig({ gbVialsPerKit: 10, gbMinVials: 11 });
+    expect(campaignDefaultsFor(c).perCustomerMin).toBe(2);
+  });
+
+  it('leaves the current campaign defaults alone when the product configures nothing', () => {
+    expect(campaignDefaultsFor(gbConfig())).toEqual({
+      pricePerKitPhp: null, moq: MOQ_BATCH_MAX_KITS, perCustomerMin: 1,
+    });
+  });
+
+  it('clamps a batch beyond the hard ceiling — bigger runs continue as batch #2', () => {
+    const c = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 500 });
+    expect(campaignDefaultsFor(c).moq).toBe(MOQ_BATCH_MAX_KITS);
+  });
+
+  it('floors a batch smaller than one kit at one kit rather than at nothing', () => {
+    const c = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 4 });
+    expect(campaignDefaultsFor(c).moq).toBe(1);
   });
 });

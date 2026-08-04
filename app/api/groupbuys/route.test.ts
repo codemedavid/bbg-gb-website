@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 
 const { GET } = await import('./route');
 const { getDb, groupBuys } = await import('@/lib/db');
-const { resetDb, makeGroupBuy } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeGroupBuy } = await import('@/lib/test/harness');
 
 const DAY = 24 * 60 * 60 * 1000;
 const past = () => new Date(Date.now() - DAY);
@@ -13,6 +13,7 @@ const future = () => new Date(Date.now() + DAY);
 
 beforeEach(async () => {
   await resetDb();
+  await openBoards();
 });
 
 async function statusOf(id: string): Promise<string> {

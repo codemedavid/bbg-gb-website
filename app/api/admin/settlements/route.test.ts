@@ -25,7 +25,7 @@ const { PATCH } = await import('./[id]/route');
 const { POST: SETTLE } = await import('../../settlements/route');
 const { POST: CHECKOUT } = await import('../../orders/route');
 const { GET: PREVIEW } = await import('../../settlements/preview/route');
-const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest, settlementRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest, settlementRequest } = await import('@/lib/test/harness');
 const { getDb, groupBuys, orders, settlements } = await import('@/lib/db');
 
 const asAdmin = async () => {
@@ -49,6 +49,7 @@ async function settledCustomer(): Promise<string> {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('GET /api/admin/settlements', () => {

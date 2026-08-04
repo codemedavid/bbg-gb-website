@@ -73,8 +73,21 @@ export const products = pgTable('products', {
   // Vials per supplier kit, used by the weekly report to turn "270 vials" into
   // "27 kits" — the unit the batch order is actually placed in. Peptides ship
   // 10 to a kit; fillers and serums (Lemon Bottle, Profhilo, Restylane) are
-  // sold per piece and carry 1.
+  // sold per piece and carry 1. Distinct from gbVialsPerKit below: this is how
+  // the SUPPLIER ships the product, that is how a group buy splits it.
   kitSize: integer('kit_size').notNull().default(10),
+  // Admin-editable group buy terms. These belong to the PRODUCT: a hatian or a
+  // campaign that carries it seeds its own fields from them instead of the admin
+  // retyping the terms into every batch (see lib/pricing.ts kahatiDefaultsFor /
+  // campaignDefaultsFor). Every column is nullable and counted in VIALS —
+  // absent means "not configured", which falls back to the global defaults
+  // rather than to zero. A ₱0 group buy price would read as free.
+  isGroupBuy: boolean('is_group_buy').notNull().default(false),
+  gbPricePerKitPhp: numeric('gb_price_per_kit_php', { precision: 12, scale: 2 }),
+  gbPricePerPiecePhp: numeric('gb_price_per_piece_php', { precision: 12, scale: 2 }),
+  gbVialsPerKit: integer('gb_vials_per_kit'),
+  gbMinVials: integer('gb_min_vials'),
+  gbMaxVialsPerBatch: integer('gb_max_vials_per_batch'),
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
   imageEmoji: varchar('image_emoji', { length: 8 }).default('💧'),
@@ -90,6 +103,13 @@ export const products = pgTable('products', {
 export const groupBuys = pgTable('group_buys', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 160 }).notNull(),
+  // The catalog product this hatian is for, once an admin picks one. Nullable
+  // because every hatian written before this column existed is a free-text name
+  // and a price — those rows stay valid and keep working untouched. The link
+  // exists so a new hatian can seed its terms from the product's group buy
+  // configuration; it is not a pricing authority, and the row's own
+  // price_per_kit_php remains what customers are charged.
+  productId: uuid('product_id').references(() => products.id),
   pricePerKitPhp: numeric('price_per_kit_php', { precision: 12, scale: 2 }).notNull(), // admin-editable
   // A hatian counter fills exactly one kit — 10 vials. On reaching this cap it
   // closes and a fresh sibling auto-opens (see lib/kahati-server.ts).
@@ -113,6 +133,20 @@ export const groupBuys = pgTable('group_buys', {
   // admin edit, a script or a console query all hit this same wall. Overflow
   // becomes the next counter (lib/kahati-server.ts closeFullKahati) instead.
   withinCap: check('group_buys_claimed_within_cap', sql`${t.claimedSlots} <= ${t.totalSlots}`),
+  // At most one OPEN counter per product, enforced by the database.
+  //
+  // The hatian board reconciles itself against the product list on read
+  // (app/api/groupbuys/route.ts), and that read is public and polled. Two
+  // requests arriving together both see the product as unlisted before either
+  // INSERT commits, and both insert — a race no amount of application-side
+  // checking closes. This is the wall that does.
+  //
+  // Partial, on `status = 'open'` only: the counters a product has finished are
+  // history and may pile up freely. NULL product_id rows — every hatian written
+  // before the column existed, and any free-text counter an admin makes by hand
+  // — are exempt, because NULLs are distinct in a unique index.
+  oneOpenPerProduct: uniqueIndex('group_buys_one_open_per_product_idx')
+    .on(t.productId).where(sql`${t.status} = 'open'`),
 }));
 
 // ---- Group Buy (MOQ) campaigns ----------------------------------------

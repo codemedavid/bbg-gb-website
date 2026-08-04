@@ -148,3 +148,14 @@ Full suite: `npx vitest run` → **1021 passed across 112 files**. `npx tsc --no
 - **`0013`'s dead code-based backfill was left in place** rather than rewritten.
   It is harmless (it matched 0 rows) and rewriting an already-applied migration
   is worse than leaving an honest record of what was tried.
+
+---
+
+> **Renumbered on merge (2026-08-05).** `main` had independently used `0012` and
+> `0013`, so on merging this branch these migrations moved to
+> `0014_scheduled_open.sql`, `0015_product_kit_size.sql` and
+> `0016_product_kit_size_backfill.sql`, and were recorded in
+> `drizzle/meta/_journal.json`. Filenames quoted above are the ones in force when
+> the commands were run — they are left as-is so the evidence stays literal.
+> Re-application is safe: every one of these statements is idempotent, which is
+> why the production copies applied under the old numbers need no undoing.

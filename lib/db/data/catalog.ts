@@ -1,6 +1,11 @@
 // Canonical seed catalog for BBG Peptides.
 // Sourced from the imported design (BBG Peptides App.html) + bbg Price list.xlsx
-// (Pricelist, On Hand, and MOQ sheets). PHP prices are per-vial unless noted.
+// (Pricelist, On Hand, and MOQ sheets).
+//
+// `pricePhp` is PER KIT, not per vial. The workbook heads that money column
+// "PER KIT (10 VIALS) PRICE" and scripts/extract-pricelist.py copies the figure
+// through verbatim. Anything deriving a vial price divides by the kit size; do
+// not multiply this figure by ten (see shopKitPrice in lib/campaign-seed.ts).
 
 export type SeedCategory = { name: string; slug: string; sortOrder: number };
 

@@ -69,6 +69,44 @@ export function kahatiBadge(status: KahatiStatus, claimedSlots: number, totalSlo
   return `${needed} MORE TO GO`;
 }
 
+/** The least a row must carry to be ranked by demand. */
+export type HatianDemandRow = { claimedSlots: number; createdAt: string | Date };
+
+/**
+ * The board order: the counters closest to filling lead.
+ *
+ * Sorting by demand rather than by recency is what makes the board useful — a
+ * customer who wants their vial soon should see the 9/10 counter before the
+ * 0/10 one that opened this morning.
+ *
+ * Ranked on vials committed, not on percentage of cap: a legacy counter with a
+ * bigger cap can be a lower percentage while holding more vials, and the
+ * requirement is "most vials committed". Callers pass the count they DISPLAY,
+ * so an over-cap row cannot buy rank with vials the board is not showing.
+ *
+ * Ties go to the counter that has been waiting longest, so two equal counters
+ * do not trade places on every reload. The comparison is total — an unparseable
+ * creation date sorts last within its tie group instead of throwing, and rows
+ * equal on both keys keep their input order. Returns a new array; the route maps
+ * DB rows and then sorts, and an in-place sort would reorder a caller's array
+ * under it.
+ */
+export function sortHatiansByDemand<T extends HatianDemandRow>(rows: readonly T[]): T[] {
+  const createdMs = (row: T): number => {
+    const ms = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.parse(row.createdAt);
+    // NaN would make every comparison false and leave the order undefined.
+    return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+  };
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) =>
+      b.row.claimedSlots - a.row.claimedSlots
+      || createdMs(a.row) - createdMs(b.row)
+      // Explicit, so the result does not depend on Array#sort being stable.
+      || a.index - b.index)
+    .map((entry) => entry.row);
+}
+
 // Deadline for an auto-opened sibling: the same window length as its parent,
 // measured from `now`. A parent with no deadline yields a sibling with none.
 // A parent already past its deadline yields a zero-length window (closes at now),

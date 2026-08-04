@@ -16,3 +16,5 @@ _archive_*/
 .pglite/
 uploads/
 coverage/
+.pglite-qa/
+.pglite-gbqa/

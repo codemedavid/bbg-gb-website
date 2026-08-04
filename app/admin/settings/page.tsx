@@ -4,6 +4,7 @@ import { apiGet, apiSend } from '@/lib/api-client';
 import { useAuth } from '@/lib/useAuth';
 import { field, label, btnPrimary } from '@/components/admin-ui';
 import { MoqPageCard } from './MoqPageCard';
+import { SchedulePanel } from './SchedulePanel';
 
 const empty = { currentPassword: '', newPassword: '', confirm: '' };
 
@@ -201,6 +202,7 @@ export default function AdminSettingsPage() {
         </form>
       </div>
 
+      <SchedulePanel />
       <PackingFeesCard />
       <DownpaymentCard />
       <MoqPageCard />

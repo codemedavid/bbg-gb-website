@@ -3,9 +3,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
 import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
+import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
+
+// The Group Buy participants screen's payload. The row shapes are the server's
+// own (lib/campaign-participants.ts) so the table cannot drift from what the
+// route computes.
+export type CampaignParticipantsResponse = {
+  campaign: { id: string; name: string; seriesId: string; batchNo: number; moq: number; committed: number };
+  participants: CampaignParticipant[];
+  summary: ReturnType<typeof summariseCampaignParticipants>;
+};
 
 export type DashboardStats = {
   totals: {
@@ -52,6 +62,15 @@ export const useCampaign = (id: string | null) =>
   useQuery({
     queryKey: ['admin', 'campaign', id],
     queryFn: () => apiGet<MoqCampaign>(`/campaigns/${id}`),
+    enabled: !!id,
+    retry: false,
+  });
+// Who is in a Group Buy campaign, grouped one row per customer. Same retry
+// policy and reasoning as useCampaign above.
+export const useCampaignParticipants = (id: string | null) =>
+  useQuery({
+    queryKey: ['admin', 'campaign', id, 'commitments'],
+    queryFn: () => apiGet<CampaignParticipantsResponse>(`/admin/campaigns/${id}/commitments`),
     enabled: !!id,
     retry: false,
   });

@@ -6,7 +6,7 @@ import { groupBuySchema } from '@/lib/admin-schemas';
 import { getPackingFees } from '@/lib/settings';
 import { sweepKahatis } from '@/lib/kahati-server';
 import { KAHATI_MAX_VIALS } from '@/lib/kahati';
-import { openingStatus } from '@/lib/schedule';
+import { openingStatus } from '@/lib/campaign-schedule';
 
 export const GET = handler(async () => {
   await requireAdmin();

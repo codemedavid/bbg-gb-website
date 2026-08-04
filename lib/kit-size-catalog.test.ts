@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest';
 import { kitSizeFromSpec, VIALS_PER_PEPTIDE_KIT } from './kit-size';
 import { APPROVED_KIT_SIZES } from './kit-size-catalog';
 
-const MIGRATION = path.resolve(__dirname, '../drizzle/0014_product_kit_size_backfill.sql');
+const MIGRATION = path.resolve(__dirname, '../drizzle/0016_product_kit_size_backfill.sql');
 
 describe('the approved kit sizes', () => {
   it('covers the 19 products reviewed against the live catalogue', () => {

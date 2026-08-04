@@ -6,7 +6,7 @@
 // save. Keeping it here also lets the routed Create and Edit pages share one
 // definition of "a campaign being written" without importing each other.
 import { MOQ_BATCH_MAX_KITS } from '@/lib/pricing';
-import { scheduleWindowErrorFromIso } from '@/lib/schedule';
+import { scheduleWindowErrorFromIso } from '@/lib/campaign-schedule';
 import type { CampaignPayload, IncludedProduct, MoqCampaign } from '@/lib/types';
 
 // Every field is the string the input holds, not the number the column wants.

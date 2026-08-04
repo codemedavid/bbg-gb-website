@@ -142,3 +142,14 @@ backward-compatible: `opens_at IS NULL` reads as "already open", so every
 existing counter and batch keeps its current behaviour. Run `npm run db:push`
 (or apply `drizzle/0012_scheduled_open.sql`), then `npm run db:check` to confirm
 the deployed shape matches.
+
+---
+
+> **Renumbered on merge (2026-08-05).** `main` had independently used `0012` and
+> `0013`, so on merging this branch these migrations moved to
+> `0014_scheduled_open.sql`, `0015_product_kit_size.sql` and
+> `0016_product_kit_size_backfill.sql`, and were recorded in
+> `drizzle/meta/_journal.json`. Filenames quoted above are the ones in force when
+> the commands were run — they are left as-is so the evidence stays literal.
+> Re-application is safe: every one of these statements is idempotent, which is
+> why the production copies applied under the old numbers need no undoing.

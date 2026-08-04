@@ -3,6 +3,10 @@ import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, groupBuys, orderItems, orders, settlements, users } from '@/lib/db';
 import { downpaymentState, finalPaymentState, orderBalance, packingFeeState } from '@/lib/settlement';
+import { round2 } from '@/lib/pricing';
+import { signedUrl } from '@/lib/storage';
+import { BUCKETS } from '@/lib/env';
+import type { HatianCommitment } from '@/lib/types';
 
 // Admin: who is in this hatian and what each of them still owes.
 //
@@ -25,6 +29,13 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     packingFeePhp: orders.packingFeePhp,
     settlementId: orders.settlementId,
     committedAt: orders.createdAt,
+    // The delivery snapshot taken at checkout — immutable, unlike the user's
+    // current profile. Where this parcel goes must not change under an admin
+    // who is looking at a batch that has already been packed.
+    shipPhone: orders.shipPhone,
+    shipAddress: orders.shipAddress,
+    paymentMethod: orders.paymentMethod,
+    paymentProofKey: orders.paymentProofKey,
     customerName: users.name,
     customerEmail: users.email,
     customerPhone: users.phone,
@@ -46,6 +57,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     .groupBy(
       orders.id, orders.orderNo, orders.status, orders.totalPhp, orders.downpaymentPhp,
       orders.packingFeePhp, orders.settlementId, orders.createdAt,
+      orders.shipPhone, orders.shipAddress, orders.paymentMethod, orders.paymentProofKey,
       users.name, users.email, users.phone,
       settlements.status, settlements.paidAt, groupBuys.repackFeePhp,
     )
@@ -68,7 +80,10 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       : [],
   );
 
-  return ok(rows.map((r) => {
+  // Annotated with the shared contract: the admin panel reads HatianCommitment,
+  // so a field renamed here without renaming it there stops the build instead of
+  // reaching a browser as an undefined the formatter throws on.
+  return ok(await Promise.all(rows.map(async (r): Promise<HatianCommitment> => {
     const order = {
       id: r.orderId,
       status: r.orderStatus,
@@ -79,6 +94,9 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       settlementId: r.settlementId,
     };
     const settlementStatus = r.settlementStatus ?? null;
+    const downpayment = downpaymentState(order);
+    const finalPayment = finalPaymentState(order, settlementStatus);
+    const balancePhp = orderBalance(order);
     return {
       orderId: r.orderId,
       orderNo: r.orderNo,
@@ -86,18 +104,36 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       customerName: r.customerName,
       customerEmail: r.customerEmail,
       customerPhone: r.customerPhone,
+      contactPhone: r.shipPhone,
+      shippingAddress: r.shipAddress,
       vials: r.vials,
-      committedAt: r.committedAt,
+      // Serialized here rather than left to JSON.stringify, so the contract's
+      // `string` is what the route actually produces.
+      committedAt: r.committedAt.toISOString(),
       // Named for what it is: the balance of the whole ORDER. When the order also
       // claimed from another counter the same figure appears there too, so it
       // must never be summed down the column without regard to the flag below.
-      orderBalancePhp: orderBalance(order),
+      orderBalancePhp: balancePhp,
       spansOtherHatians: spanning.has(r.orderId),
       downpaymentPhp: order.downpaymentPhp,
-      downpayment: downpaymentState(order),
-      finalPayment: finalPaymentState(order, settlementStatus),
+      // Only what has CLEARED. A proof still under review is not money in the
+      // bank, and counting it would overstate every batch summary built on this
+      // feed. The packing fee is deliberately absent: one fee covers a whole
+      // settlement, so attributing it to each of its orders would book it
+      // several times over.
+      amountPaidPhp: round2(
+        (downpayment === 'paid' ? order.downpaymentPhp : 0)
+        + (finalPayment === 'paid' ? balancePhp : 0),
+      ),
+      downpayment,
+      finalPayment,
       packingFee: packingFeeState(order, settlementStatus),
-      settledAt: r.settlementPaidAt,
+      paymentMethod: r.paymentMethod,
+      // Signed here rather than sent as a key: proofs are private, an <img> in
+      // the panel needs something it can actually fetch, and the storage layout
+      // is not the browser's business.
+      proofUrl: r.paymentProofKey ? await signedUrl(BUCKETS.proofs, r.paymentProofKey) : null,
+      settledAt: r.settlementPaidAt?.toISOString() ?? null,
     };
-  }));
+  })));
 });

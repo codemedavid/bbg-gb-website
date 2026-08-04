@@ -29,7 +29,7 @@ vi.mock('@/lib/session', () => {
 const { PATCH } = await import('./route');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { getDb, groupBuys, products } = await import('@/lib/db');
-const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const cancelReq = () => new Request('http://localhost', {
@@ -65,6 +65,7 @@ async function productRow(id: string) {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('admin cancel releases kahati vials', () => {

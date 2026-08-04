@@ -24,10 +24,11 @@ vi.mock('@/lib/session', () => {
 
 const { POST } = await import('./route');
 const { getDb, groupBuys, orders, products } = await import('@/lib/db');
-const { resetDb, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
 beforeEach(async () => {
   await resetDb();
+  await openBoards();
   const user = await makeUser();
   session.current = { sub: user.id, role: 'customer', email: user.email };
 });

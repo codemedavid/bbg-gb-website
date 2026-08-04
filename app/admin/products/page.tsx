@@ -4,9 +4,30 @@ import { useAdminProducts, useAdminCategories, useMutate } from '@/lib/admin-api
 import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
+import { KAHATI_MAX_VIALS } from '@/lib/pricing';
 import type { Product } from '@/lib/types';
 
-const blank = (): Partial<Product> => ({ name: '', spec: '', pricePhp: '0', arrivalGroup: 'white_powder', isOnHand: false, stock: 0, imageEmoji: '💧', isActive: true });
+const blank = (): Partial<Product> => ({
+  name: '', spec: '', pricePhp: '0', arrivalGroup: 'white_powder', isOnHand: false,
+  stock: 0, imageEmoji: '💧', isActive: true,
+  // A batch of one kit — the client's stated default and the largest a hatian
+  // can hold. Everything else starts unset, meaning "no figure of its own".
+  isGroupBuy: false, gbMaxVialsPerBatch: KAHATI_MAX_VIALS,
+});
+
+// The minimum and the batch cap are only ever on screen together here, so this
+// is the one place the contradiction can be shown to the person who typed it.
+// Downstream, kahatiDefaultsFor clamps a minimum above the cap so the counter
+// stays joinable — right for a legacy row, but it would silently discard what
+// the admin just entered.
+function groupBuyError(f: Partial<Product>): string | null {
+  if (!f.isGroupBuy) return null;
+  const { gbMinVials: min, gbMaxVialsPerBatch: max } = f;
+  if (min != null && max != null && min > max) {
+    return `Minimum order (${min} vials) cannot exceed the maximum batch of ${max} vials.`;
+  }
+  return null;
+}
 
 function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose: () => void }) {
   const { data: cats = [] } = useAdminCategories();
@@ -19,6 +40,8 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
 
   const submit = async () => {
     setError(null);
+    const invalid = groupBuyError(f);
+    if (invalid) { setError(invalid); return; }
     try {
       await saveProduct.mutateAsync({
         id: f.id,
@@ -27,6 +50,14 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
         onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
         stock: f.stock, kitSize: f.kitSize, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
+        // Sent whether or not the product is currently offered this way:
+        // isGroupBuy is the switch, and keeping the figures means an admin who
+        // toggles it off and on again does not retype the terms.
+        isGroupBuy: f.isGroupBuy ?? false,
+        gbPricePerKitPhp: (f.gbPricePerKitPhp != null && f.gbPricePerKitPhp !== '' ? Number(f.gbPricePerKitPhp) : null) as any,
+        gbPricePerPiecePhp: (f.gbPricePerPiecePhp != null && f.gbPricePerPiecePhp !== '' ? Number(f.gbPricePerPiecePhp) : null) as any,
+        gbVialsPerKit: f.gbVialsPerKit ?? null, gbMinVials: f.gbMinVials ?? null,
+        gbMaxVialsPerBatch: f.gbMaxVialsPerBatch ?? null,
       } as any);
       onClose();
     } catch (err) {
@@ -54,7 +85,11 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         <Labeled label="Price ₱"><input className={field} type="number" value={f.pricePhp as any} onChange={(e) => setF({ ...f, pricePhp: e.target.value })} /></Labeled>
         <Labeled label="Stock"><input className={field} type="number" value={f.stock ?? 0} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} /></Labeled>
         {/* Drives the weekly report's Kits column: 10 vials to a peptide kit, 1 for anything sold per piece. */}
-        <Labeled label="Kit size (vials per kit)"><input className={field} type="number" min={1} value={f.kitSize ?? 10} onChange={(e) => setF({ ...f, kitSize: Number(e.target.value) })} /></Labeled>
+        {/* How the SUPPLIER ships this product — the divisor behind the weekly
+            report's Kits column. Distinct from the group buy's "Vials per kit"
+            below, which is how a batch is split among buyers. Deliberately
+            worded so the two cannot be confused on screen or in a test query. */}
+        <Labeled label="Supplier kit size (vials)"><input className={field} type="number" min={1} value={f.kitSize ?? 10} onChange={(e) => setF({ ...f, kitSize: Number(e.target.value) })} /></Labeled>
       </div>
 
       <label className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-ink-body">
@@ -66,6 +101,28 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
           <Labeled label="On-hand price / piece ₱"><input className={field} type="number" value={(f.onHandPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandPiecePhp: num(e.target.value) as any })} /></Labeled>
         </div>
       )}
+      {/* Group Buy Configuration — the terms every listing carrying this product
+          starts from. Set once here instead of retyped into each batch. */}
+      <label className="mt-4 flex items-center gap-2 border-t border-line-soft pt-4 text-[13px] font-semibold text-ink-body">
+        <input type="checkbox" checked={!!f.isGroupBuy} onChange={(e) => setF({ ...f, isGroupBuy: e.target.checked })} /> Offer through Group Buy — seed campaigns and hatians from these settings
+      </label>
+      {f.isGroupBuy && (
+        <>
+          <p className="mt-2 text-[12px] leading-snug text-ink-muted">
+            Counted in vials. A campaign converts them to kits when it seeds itself, and a hatian
+            caps at {KAHATI_MAX_VIALS} vials — one kit — whatever is entered here. Leave a field
+            blank to use the shop default.
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <Labeled label="Group Buy price / kit ₱"><input className={field} type="number" min={0} value={(f.gbPricePerKitPhp as any) ?? ''} onChange={(e) => setF({ ...f, gbPricePerKitPhp: e.target.value === '' ? null : e.target.value })} /></Labeled>
+            <Labeled label="Group Buy price / piece (per vial) ₱"><input className={field} type="number" min={0} value={(f.gbPricePerPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, gbPricePerPiecePhp: e.target.value === '' ? null : e.target.value })} /></Labeled>
+            <Labeled label="Vials per kit"><input className={field} type="number" min={1} value={(f.gbVialsPerKit as any) ?? ''} onChange={(e) => setF({ ...f, gbVialsPerKit: num(e.target.value) })} /></Labeled>
+            <Labeled label="Minimum order (vials)"><input className={field} type="number" min={1} value={(f.gbMinVials as any) ?? ''} onChange={(e) => setF({ ...f, gbMinVials: num(e.target.value) })} /></Labeled>
+            <Labeled label="Maximum vials per batch"><input className={field} type="number" min={1} value={(f.gbMaxVialsPerBatch as any) ?? ''} onChange={(e) => setF({ ...f, gbMaxVialsPerBatch: num(e.target.value) })} /></Labeled>
+          </div>
+        </>
+      )}
+
       {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className={btnGhost} onClick={onClose}>Cancel</button>

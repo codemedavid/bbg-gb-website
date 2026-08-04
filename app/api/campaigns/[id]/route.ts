@@ -4,11 +4,16 @@ import { ok, handler } from '@/lib/api-response';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { moqCampaignPatchSchema } from '@/lib/moq-schemas';
 import { describeBatch } from '@/lib/group-buy';
+import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // Public: single campaign with derived fields.
 export const GET = handler(async (_req: Request, ctx: Ctx) => {
+  // Gated like the campaign list, and for the same two reasons: a shareable
+  // URL must not outlive the window, and the admin edit screen reads this
+  // endpoint, so admins read through.
+  await requireBoardsOpenOrAdmin();
   const { id } = await ctx.params;
   const db = await getDb();
   const [c] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, id));

@@ -251,6 +251,117 @@ export function validateMoqQty(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Product-level group buy configuration
+//
+// The five settings below belong to the PRODUCT, not to any one listing. A
+// hatian or a campaign that carries that product seeds its own fields from
+// them, so an admin sets the terms once on the product instead of retyping them
+// into every batch. Seeding is a starting value, never a lock: the listing's own
+// figure wins once an admin has typed one, and nothing here reaches back into a
+// live listing when the product is later edited.
+//
+// The product speaks in VIALS throughout — it is the unit a peptide is counted
+// in. A hatian counts vials too, so it maps across untouched; a campaign counts
+// whole KITS, so campaignDefaultsFor converts. Keeping the conversion in one
+// place is what stops the two boards drifting into different arithmetic.
+// ---------------------------------------------------------------------------
+
+export type GroupBuyConfig = {
+  gbPricePerKitPhp: string | number | null;
+  gbPricePerPiecePhp: string | number | null;
+  gbVialsPerKit: number | null;
+  gbMinVials: number | null;
+  gbMaxVialsPerBatch: number | null;
+};
+
+export type GroupBuyUnit = 'kit' | 'piece';
+
+// A positive whole number, or null when the value is absent or unusable. Shared
+// by every count below so "0 vials per kit" and "-3" fail the same way.
+function positiveInt(raw: number | null | undefined): number | null {
+  if (raw == null || !Number.isFinite(raw)) return null;
+  const n = Math.floor(raw);
+  return n >= 1 ? n : null;
+}
+
+// A positive amount of money, or null. Mirrors onHandUnitPrice's contract: an
+// unset or zero price means "not sold this way", never free.
+function positiveMoney(raw: string | number | null | undefined): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? round2(n) : null;
+}
+
+// Vials in one kit of this product, falling back to the global kit size.
+export function groupBuyVialsPerKit(c: GroupBuyConfig): number {
+  return positiveInt(c.gbVialsPerKit) ?? VIALS_PER_KIT;
+}
+
+// Price for one unit of a product sold through a group buy. The per-piece price
+// is derived from the kit when the admin has not set one explicitly — the same
+// relationship perVialPrice expresses for a hatian, but against this product's
+// own kit size rather than the global ten.
+export function groupBuyUnitPrice(c: GroupBuyConfig, unit: GroupBuyUnit): number | null {
+  const kit = positiveMoney(c.gbPricePerKitPhp);
+  if (unit === 'kit') return kit;
+  const piece = positiveMoney(c.gbPricePerPiecePhp);
+  if (piece != null) return piece;
+  return kit == null ? null : round2(kit / groupBuyVialsPerKit(c));
+}
+
+// The kit price a NEW listing starts at, on EITHER board.
+//
+// The admin's explicit group buy price when the product carries one; otherwise
+// the product's shop price. That shop figure is already a PER-KIT price — the
+// source workbook heads its money column "PER KIT (10 VIALS) PRICE" and it
+// reaches products.price_php unchanged (see lib/db/data/catalog.ts) — so it is
+// never scaled by the kit size. Scaling it listed every seeded campaign at ten
+// times its real price.
+//
+// Both boards seed through this one function, so a kit cannot cost one thing on
+// the Group Buy board and another on the hatian board.
+export function seededKitPrice(
+  c: GroupBuyConfig,
+  shopPricePhp: string | number | null,
+): number | null {
+  return groupBuyUnitPrice(c, 'kit') ?? positiveMoney(shopPricePhp);
+}
+
+// What a NEW hatian starts at when it carries this product. A hatian is
+// vial-native, so the product's figures apply directly — bounded by the rule
+// that a hatian fills exactly one kit.
+export type KahatiDefaults = { pricePerKitPhp: number | null; minVials: number; totalSlots: number };
+
+export function kahatiDefaultsFor(c: GroupBuyConfig): KahatiDefaults {
+  const totalSlots = Math.min(positiveInt(c.gbMaxVialsPerBatch) ?? KAHATI_MAX_VIALS, KAHATI_MAX_VIALS);
+  // A minimum nobody could meet is worse than no minimum: a per-person floor
+  // above the counter's own cap would reject every commitment, including the
+  // first. Clamped to the cap so the seeded hatian is always joinable.
+  const minVials = Math.min(positiveInt(c.gbMinVials) ?? KAHATI_MIN_VIALS, totalSlots);
+  return { pricePerKitPhp: groupBuyUnitPrice(c, 'kit'), minVials, totalSlots };
+}
+
+// What a campaign starts at when this product is included. Campaigns count
+// kits, so both vial figures convert:
+//   batch size       = whole kits that fit in the batch, floored at one
+//   per-customer min = kits needed to cover the minimum, rounded UP — a
+//                      customer commits whole kits, so half a kit is one kit.
+export type CampaignDefaults = { pricePerKitPhp: number | null; moq: number; perCustomerMin: number };
+
+export function campaignDefaultsFor(c: GroupBuyConfig): CampaignDefaults {
+  const vialsPerKit = groupBuyVialsPerKit(c);
+  const maxVials = positiveInt(c.gbMaxVialsPerBatch);
+  const minVials = positiveInt(c.gbMinVials);
+  return {
+    pricePerKitPhp: groupBuyUnitPrice(c, 'kit'),
+    moq: maxVials == null
+      ? MOQ_BATCH_MAX_KITS
+      : batchCapacity(Math.max(1, Math.floor(maxVials / vialsPerKit))),
+    perCustomerMin: minVials == null ? 1 : Math.max(1, Math.ceil(minVials / vialsPerKit)),
+  };
+}
+
 // A group buy batch is one supplier consignment and holds at most this many
 // kits. Not admin-editable: 10/10 is the largest a batch can ever read, and a
 // commitment beyond it opens the next batch (see lib/moq-batch-server.ts).

@@ -33,7 +33,7 @@ vi.mock('@/lib/session', () => {
 const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { GET: LIST } = await import('./route');
 const { getDb, moqCampaigns, orders, orderItems } = await import('@/lib/db');
-const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
   const user = await makeUser({ role });
@@ -59,6 +59,7 @@ async function itemsOf(orderId: string) {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('a batch never exceeds its capacity', () => {

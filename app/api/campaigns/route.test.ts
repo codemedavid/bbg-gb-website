@@ -28,7 +28,7 @@ const { GET: LIST, POST: CREATE } = await import('./route');
 const { POST: ACTION } = await import('./[id]/action/route');
 const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { getDb, moqCampaigns, orders } = await import('@/lib/db');
-const { resetDb, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
   const user = await makeUser({ role });
@@ -43,6 +43,7 @@ const jsonReq = (body: unknown) =>
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('GET /api/campaigns', () => {

@@ -4,7 +4,13 @@ import { ok, handler } from '@/lib/api-response';
 import { getDb, products } from '@/lib/db';
 import { productSchema, numToStr } from '@/lib/admin-schemas';
 
-const MONEY = ['pricePhp', 'priceUsd', 'onHandKitPhp', 'onHandPiecePhp'];
+// Numeric columns Drizzle wants as strings. The group buy prices belong here for
+// the same reason the on-hand ones do — a raw number reaches the driver as an
+// integer and loses the centavos.
+const MONEY = [
+  'pricePhp', 'priceUsd', 'onHandKitPhp', 'onHandPiecePhp',
+  'gbPricePerKitPhp', 'gbPricePerPiecePhp',
+];
 
 export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   await requireAdmin();

@@ -34,7 +34,7 @@ vi.mock('@/lib/session', () => {
 
 const { POST } = await import('./route');
 const { useCart, moqCartLine, campaignCartLine } = await import('@/lib/store/cart');
-const { resetDb, makeUser, makeProduct, makeGroupBuy, makeMoqCampaign, makeMoqProduct, SHIPPING } =
+const { resetDb, openBoards, makeUser, makeProduct, makeGroupBuy, makeMoqCampaign, makeMoqProduct, SHIPPING } =
   await import('@/lib/test/harness');
 
 // Byte-for-byte what app/checkout/page.tsx builds and sends.
@@ -59,6 +59,7 @@ beforeEach(async () => {
   session.current = null;
   useCart.getState().clear();
   await resetDb();
+  await openBoards();
 });
 
 describe('every cart line kind is accepted by checkout', () => {

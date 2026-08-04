@@ -30,7 +30,7 @@ const { sweepKahatis } = await import('./kahati-server');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
 const { GET: publicBoard } = await import('@/app/api/groupbuys/route');
 const { getDb, groupBuys } = await import('@/lib/db');
-const { resetDb, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
 
 const DAY = 24 * 60 * 60 * 1000;
 const future = () => new Date(Date.now() + DAY);
@@ -55,6 +55,7 @@ async function join(groupBuyId: string, qty: number) {
 beforeEach(async () => {
   session.current = null;
   await resetDb();
+  await openBoards();
 });
 
 describe('sweepKahatis — a full counter seals itself and opens a successor', () => {

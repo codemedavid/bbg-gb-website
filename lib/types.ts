@@ -12,6 +12,19 @@ export type Product = {
   description: string | null; imageEmoji: string | null; soldCount: number;
   isActive?: boolean;
   coaFiles?: CoaFile[];
+  // Group buy terms that belong to the PRODUCT: a hatian or a campaign carrying
+  // it seeds itself from these rather than making the admin retype them per
+  // batch. Named exactly as lib/db/schema.ts and pricing.ts's GroupBuyConfig
+  // name them, so an admin row satisfies that contract with no adapter.
+  //
+  // Optional because the public catalog feeds select a narrower column list —
+  // these are admin-surface fields and the storefront never reads them.
+  isGroupBuy?: boolean;
+  gbPricePerKitPhp?: string | null;
+  gbPricePerPiecePhp?: string | null;
+  gbVialsPerKit?: number | null;
+  gbMinVials?: number | null;
+  gbMaxVialsPerBatch?: number | null;
 };
 export type CoaFile = { id: string; productId: string; batch: string | null; fileName: string; storageKey: string };
 
@@ -38,7 +51,14 @@ export type MoqProduct = {
   inStock: boolean;
 };
 
-export type IncludedProduct = { productId: string; name: string; outOfStock?: boolean };
+// A product inside a campaign, with the group buy terms the admin set for it
+// there. Every term is optional: an absent one means the campaign says nothing
+// about it and the product's own saved setting stands.
+export type IncludedProduct = {
+  productId: string; name: string; outOfStock?: boolean;
+  pricePerKitPhp?: number; pricePerPiecePhp?: number;
+  minOrderQty?: number; maxBatchKits?: number; vialsPerKit?: number;
+};
 
 // One BATCH of a group buy. A campaign that outgrows its 10-kit cap continues as
 // batch #2, #3, … of the same series, so the board lists batches, not campaigns.
@@ -145,12 +165,28 @@ export type SettlementPreview = {
 // One participant's commitment to a hatian, as the admin panel lists it. The
 // three payments are separate: a customer may have paid their downpayment and
 // still owe both the balance and the packing fee.
+// This is the contract for GET /admin/groupbuys/[id]/commitments, and the route
+// annotates its rows with it — a field renamed on one side is now a compile
+// error, not a panel that reads undefined and throws in the browser.
 export type HatianCommitment = {
   orderId: string; orderNo: string; orderStatus: string;
   customerName: string; customerEmail: string; customerPhone: string | null;
+  // Where the parcel is going, read off the order's delivery snapshot rather
+  // than the user record: an address edited after committing must not rewrite
+  // where an already-packed batch was shipped.
+  contactPhone: string; shippingAddress: string;
   vials: number; committedAt: string;
-  balancePhp: number; downpaymentPhp: number;
+  // The balance of the whole ORDER, not of this counter's share. A commitment
+  // that overflowed into a sibling counter reports the same figure under both,
+  // which is what spansOtherHatians warns about.
+  orderBalancePhp: number; spansOtherHatians: boolean; downpaymentPhp: number;
+  // What has actually cleared, as opposed to what was quoted. A proof still
+  // under review is not money received, so it counts for nothing here.
+  amountPaidPhp: number;
   downpayment: PaymentState; finalPayment: PaymentState; packingFee: PaymentState;
+  // How they paid, and a URL for the proof they uploaded. Proofs are private, so
+  // the storage key never reaches the browser — only a signed, fetchable URL.
+  paymentMethod: string | null; proofUrl: string | null;
   settledAt: string | null;
 };
 

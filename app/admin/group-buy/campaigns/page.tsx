@@ -106,6 +106,8 @@ export default function AdminCampaignsPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => router.push(`/admin/group-buy/campaigns/${c.id}`)}
                     aria-label={`Edit ${c.name}`} className={`${cardAction} text-brand-blue`} disabled={busy}>Edit</button>
+                  <button onClick={() => router.push(`/admin/group-buy/campaigns/${c.id}/participants`)}
+                    aria-label={`View participants in ${c.name}`} className={`${cardAction} text-ink-body`} disabled={busy}>Participants</button>
                   {c.status === 'open' && <>
                     <button onClick={() => campaignAction.mutate({ id: c.id, action: 'approve' })}
                       aria-label={`Approve ${c.name}`} className={`${cardAction} text-brand-greendark`} disabled={busy}>Approve</button>

@@ -1,12 +1,31 @@
 import { z } from 'zod';
 import { MOQ_BATCH_MAX_KITS } from './pricing';
-import { scheduleWindowErrorFromIso } from './schedule';
+import { scheduleWindowErrorFromIso } from './campaign-schedule';
 
-// A product included in a campaign, with its per-campaign out-of-stock flag.
+// A product included in a campaign: its per-campaign out-of-stock flag and the
+// group buy terms the admin set for it here.
+//
+// Every term is optional, and an absent one means "this campaign says nothing
+// about it" — the product's own saved setting stands. That is why nothing here
+// carries a default: writing one would turn silence into a number the admin
+// never typed, and the difference matters when the entry is copied into the
+// successor batch a fill opens.
+//
+// minOrderQty and maxBatchKits are recorded per product, but a batch still
+// counts kits in aggregate: the orders route enforces the campaign's
+// perCustomerMin and batching claims room against its moq. These are the terms
+// the admin agreed per product, not a second gate at checkout.
 export const includedProductSchema = z.object({
   productId: z.string().uuid(),
   name: z.string().min(1).max(200),
   outOfStock: z.boolean().optional(),
+  pricePerKitPhp: z.number().nonnegative().optional(),
+  pricePerPiecePhp: z.number().nonnegative().optional(),
+  minOrderQty: z.number().int().positive().optional(),
+  // Bounded by the same cap as the campaign's own MOQ, so a per-product figure
+  // can never describe a batch the batching code refuses to fill.
+  maxBatchKits: z.number().int().positive().max(MOQ_BATCH_MAX_KITS).optional(),
+  vialsPerKit: z.number().int().positive().optional(),
 });
 
 const moqCampaignFields = z.object({

@@ -78,6 +78,48 @@
       "when": 1785131920702,
       "tag": "0010_striped_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785135032113,
+      "tag": "0011_kahati_within_cap",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785423256654,
+      "tag": "0012_harsh_mauler",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785423257654,
+      "tag": "0013_one_open_hatian_per_product",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785423258654,
+      "tag": "0014_scheduled_open",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785423259654,
+      "tag": "0015_product_kit_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785423260654,
+      "tag": "0016_product_kit_size_backfill",
+      "breakpoints": true
     }
   ]
 }

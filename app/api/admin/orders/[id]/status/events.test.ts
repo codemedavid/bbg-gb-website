@@ -26,7 +26,7 @@ vi.mock('@/lib/posthog', async () => {
 
 const { PATCH } = await import('./route');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
-const { resetDb, makeUser, makeProduct, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, makeUser, makeProduct, makeGroupBuy, checkoutRequest } = await import('@/lib/test/harness');
 
 async function placeAnOrder() {
   const user = await makeUser();
@@ -50,6 +50,7 @@ beforeEach(async () => {
   session.current = null;
   captureEvent.mockClear();
   await resetDb();
+  await openBoards();
 });
 
 describe('order status events', () => {

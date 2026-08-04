@@ -159,3 +159,14 @@ If these commits are squashed: RED was `b13fe88` (8 failed | 16 passed across 4 
 unresolved `product-totals` / `ProductTotalsReport` modules and an undefined `productTotals`), GREEN
 was `bc5a756` (1004 passed across 110 files, tsc clean), and the schema/route slice was
 mutation-verified rather than RED-first.
+
+---
+
+> **Renumbered on merge (2026-08-05).** `main` had independently used `0012` and
+> `0013`, so on merging this branch these migrations moved to
+> `0014_scheduled_open.sql`, `0015_product_kit_size.sql` and
+> `0016_product_kit_size_backfill.sql`, and were recorded in
+> `drizzle/meta/_journal.json`. Filenames quoted above are the ones in force when
+> the commands were run — they are left as-is so the evidence stays literal.
+> Re-application is safe: every one of these statements is idempotent, which is
+> why the production copies applied under the old numbers need no undoing.
