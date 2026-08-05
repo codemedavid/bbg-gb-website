@@ -3,7 +3,10 @@ import { alias } from 'drizzle-orm/pg-core';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, orders, orderItems, products, groupBuys, users } from '@/lib/db';
-import { buildWeeklyReport, type ReportItem, type ReportOrderInput } from '@/lib/report/build';
+import {
+  buildSegmentedWeeklyReport, buildWeeklyReport,
+  type ReportItem, type ReportOrderInput,
+} from '@/lib/report/build';
 import { isValidYmd, mondayOf, mostRecentFullWeekMonday, weekBounds } from '@/lib/report/week';
 
 // GET /api/admin/report/weekly?week=YYYY-MM-DD
@@ -18,7 +21,7 @@ export const GET = handler(async (req: Request) => {
   const db = await getDb();
   const orderRows = await db
     .select({
-      id: orders.id, orderNo: orders.orderNo, status: orders.status,
+      id: orders.id, orderNo: orders.orderNo, status: orders.status, buyType: orders.buyType,
       createdAt: orders.createdAt, shipName: orders.shipName, shipPhone: orders.shipPhone,
       shipAddress: orders.shipAddress, courier: orders.courier, packedBy: orders.packedBy,
       paymentMethod: orders.paymentMethod, totalUsd: orders.totalUsd, totalPhp: orders.totalPhp,
@@ -42,7 +45,7 @@ export const GET = handler(async (req: Request) => {
   const itemRows = ids.length
     ? await db
         .select({
-          orderId: orderItems.orderId, nameSnapshot: orderItems.nameSnapshot,
+          orderId: orderItems.orderId, kind: orderItems.kind, nameSnapshot: orderItems.nameSnapshot,
           specSnapshot: orderItems.specSnapshot, productId: orderItems.productId,
           qty: orderItems.qty, unitPriceUsd: orderItems.unitPriceUsd, unitPricePhp: orderItems.unitPricePhp,
           code: products.code, kitSize: products.kitSize,
@@ -59,6 +62,9 @@ export const GET = handler(async (req: Request) => {
   for (const it of itemRows) {
     const list = itemsByOrder.get(it.orderId) ?? [];
     list.push({
+      // `kind` is what puts a line's order on the group-buy side of the report
+      // split when orders.buy_type says 'solo' only because that is its default.
+      kind: it.kind,
       nameSnapshot: it.nameSnapshot, specSnapshot: it.specSnapshot, productId: it.productId,
       qty: it.qty, unitPriceUsd: it.unitPriceUsd, unitPricePhp: it.unitPricePhp,
       // Direct line: the product's own kit size. Hatian line: the kit size of
@@ -74,6 +80,7 @@ export const GET = handler(async (req: Request) => {
   const inputs: ReportOrderInput[] = orderRows.map((o) => ({
     orderNo: o.orderNo,
     status: o.status,
+    buyType: o.buyType,
     createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
     shipName: o.shipName,
     shipPhone: o.shipPhone,
@@ -87,5 +94,12 @@ export const GET = handler(async (req: Request) => {
     items: itemsByOrder.get(o.id) ?? [],
   }));
 
-  return ok({ monday, report: buildWeeklyReport(monday, inputs) });
+  // `segments` is what the page renders and the exports download — on-hand and
+  // group buy are separate reports because they answer separate questions.
+  // `report` stays for the whole-week view; both are built from the one query.
+  return ok({
+    monday,
+    report: buildWeeklyReport(monday, inputs),
+    segments: buildSegmentedWeeklyReport(monday, inputs),
+  });
 });
