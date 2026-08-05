@@ -18,11 +18,24 @@ export type ReportItem = {
   code?: string | null;
   /** Vials per supplier kit; 1 for anything sold per piece. */
   kitSize?: number | null;
+  /**
+   * order_items.kind — 'product' for on-hand, otherwise a counter, campaign or
+   * MOQ-shelf line. Optional: it is only needed to place the order on one side
+   * of the on-hand / group-buy split (see segment.ts), and callers written
+   * before that split omit it.
+   */
+  kind?: string | null;
 };
 
 export type ReportOrderInput = {
   orderNo: string;
   status: string;
+  /**
+   * orders.buy_type — 'solo' for the on-hand shop, 'kahati' / 'group_buy' /
+   * 'moq' for anything ordered against a batch. Optional so callers predating
+   * the report split keep compiling; segment.ts falls back to the item kinds.
+   */
+  buyType?: string;
   createdAt: string; // ISO instant
   shipName: string;
   shipPhone: string;
