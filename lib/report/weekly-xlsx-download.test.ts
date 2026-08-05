@@ -90,6 +90,21 @@ describe('downloadWeeklyReportXlsx', () => {
     expect(weeklyXlsxFilename('2026-05-25')).toBe('BBG-Week-2026-05-25.xlsx');
   });
 
+  it('stamps the segment into the filename so the two halves never collide', async () => {
+    // The team downloads both in the same week into the same folder; without
+    // the suffix the second silently overwrites the first, or the browser
+    // renames it " (1)" and nobody can tell which half is which.
+    await downloadWeeklyReportXlsx(report(), '2026-05-25', 'onhand');
+    await downloadWeeklyReportXlsx(report(), '2026-05-25', 'groupbuy');
+
+    expect(clicked.map((c) => c.download)).toEqual([
+      'BBG-Week-2026-05-25-onhand.xlsx',
+      'BBG-Week-2026-05-25-groupbuy.xlsx',
+    ]);
+    expect(weeklyXlsxFilename('2026-05-25', 'onhand')).toBe('BBG-Week-2026-05-25-onhand.xlsx');
+    expect(weeklyXlsxFilename('2026-05-25', 'groupbuy')).toBe('BBG-Week-2026-05-25-groupbuy.xlsx');
+  });
+
   it('does not revoke the object URL in the same tick as the click', async () => {
     await downloadWeeklyReportXlsx(report(), '2026-05-25');
 

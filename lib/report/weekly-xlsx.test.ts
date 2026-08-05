@@ -217,3 +217,56 @@ describe('buildWeeklyWorkbook — Product Totals sheet', () => {
     expect(sheet.getRow(1).getCell(1).value).toBe(PRODUCT_TOTALS_HEADERS[0]);
   });
 });
+
+// On-hand and group buy download as two files rather than two tabs of one, so
+// the batch-order workbook can be handed to whoever places the order without
+// the on-hand sales in it at all.
+describe('buildWeeklyWorkbook — per-segment workbooks', () => {
+  const anOrder = () => order({
+    items: [{ productId: 'p-tr15', nameSnapshot: 'Tirzepatide', specSnapshot: '15mg', code: 'TR15', kitSize: 10, qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
+  });
+
+  it('names the order sheet after the segment and the week', async () => {
+    const report = buildWeeklyReport('2026-05-25', [anOrder()]);
+    const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'groupbuy');
+
+    expect(workbook.worksheets[0].name).toBe('Group Buy · Week 22');
+  });
+
+  it('names the on-hand order sheet for its own segment', async () => {
+    const report = buildWeeklyReport('2026-05-25', [anOrder()]);
+    const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'onhand');
+
+    expect(workbook.worksheets[0].name).toBe('On-Hand · Week 22');
+  });
+
+  it('keeps a segment sheet name legal and within the Excel length limit', async () => {
+    // Excel rejects / \ ? * [ ] in a sheet name and truncates past 31 chars —
+    // either one makes the workbook fail to open, so the display label
+    // ("Group Buy / Kahati") cannot be used verbatim here.
+    const report = buildWeeklyReport('2026-05-25', []);
+
+    for (const segment of ['onhand', 'groupbuy'] as const) {
+      const workbook = await buildWeeklyWorkbook(report, '2026-05-25', segment);
+      for (const sheet of workbook.worksheets) {
+        expect(sheet.name.length).toBeLessThanOrEqual(31);
+        expect(sheet.name).not.toMatch(/[/\\?*[\]]/);
+      }
+    }
+  });
+
+  it('still carries its own Product Totals sheet', async () => {
+    const report = buildWeeklyReport('2026-05-25', [anOrder()]);
+    const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'groupbuy');
+
+    expect(workbook.worksheets).toHaveLength(2);
+    expect(workbook.worksheets[1].name).toBe(PRODUCT_TOTALS_SHEET);
+  });
+
+  it('falls back to the unsegmented sheet name when no segment is given', async () => {
+    const report = buildWeeklyReport('2026-05-25', [anOrder()]);
+    const workbook = await buildWeeklyWorkbook(report, '2026-05-25');
+
+    expect(workbook.worksheets[0].name).toBe('Week 22');
+  });
+});
