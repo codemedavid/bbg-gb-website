@@ -20,13 +20,19 @@ function Tile({ label, value, testId }: { label: string; value: string; testId: 
   );
 }
 
-export function ProductTotalsReport({ productTotals }: { productTotals: ProductTotals }) {
+// `segment` only scopes the heading id: the page renders this twice, once per
+// half of the week, and two elements sharing an id break the aria-labelledby
+// link for whichever one the browser resolves second.
+export function ProductTotalsReport(
+  { productTotals, segment }: { productTotals: ProductTotals; segment?: string },
+) {
   const { rows, totals } = productTotals;
+  const headingId = segment ? `product-totals-${segment}-heading` : 'product-totals-heading';
 
   return (
-    <section aria-labelledby="product-totals-heading" className="flex flex-col gap-4">
+    <section aria-labelledby={headingId} className="flex flex-col gap-4">
       <div>
-        <h2 id="product-totals-heading" className="m-0 font-display text-[18px] font-bold">Product Totals</h2>
+        <h2 id={headingId} className="m-0 font-display text-[18px] font-bold">Product Totals</h2>
         <p className="mt-1 text-[13px] text-ink-muted">Every product ordered this week, ranked by quantity.</p>
       </div>
 

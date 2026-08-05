@@ -12,7 +12,7 @@
 // nothing. weekly-xlsx-download.test.ts pins both halves of that.
 import type { Workbook } from 'exceljs';
 import { REPORT_COLORS } from './constants';
-import { SEGMENT_SHEET_LABEL, type ReportSegment } from './segment';
+import { SEGMENT_SHORT_LABEL, type ReportSegment } from './segment';
 import { weekFilename } from './week';
 import type { WeeklyReport } from './build';
 
@@ -56,7 +56,7 @@ export async function buildWeeklyWorkbook(
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'BBG Peptides';
   const title = segment
-    ? `${SEGMENT_SHEET_LABEL[segment]} · Week ${report.weekNo}`
+    ? `${SEGMENT_SHORT_LABEL[segment]} · Week ${report.weekNo}`
     : `Week ${report.weekNo}`;
   const sheet = workbook.addWorksheet(title, {
     views: [{ state: 'frozen', ySplit: 1 }],

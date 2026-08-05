@@ -4,6 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { WeeklyReport } from '@/lib/report/build';
+import { mostRecentFullWeekMonday } from '@/lib/report/week';
+
+// The page picks the week itself and defaults to the most recent full one, so
+// that — not the mocked response — is the Monday it exports under.
+const SELECTED_MONDAY = mostRecentFullWeekMonday(new Date());
 
 const half = (invoice: string, code: string, name: string): WeeklyReport => ({
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 1,
@@ -88,10 +93,10 @@ describe('AdminReportsPage', () => {
     render(<Page />, { wrapper });
 
     await user.click(await screen.findByRole('button', { name: /on-hand excel/i }));
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(onhand, '2025-05-25', 'onhand');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(onhand, SELECTED_MONDAY, 'onhand');
 
     await user.click(screen.getByRole('button', { name: /group buy excel/i }));
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(groupbuy, '2025-05-25', 'groupbuy');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(groupbuy, SELECTED_MONDAY, 'groupbuy');
   });
 
   it('disables only the button for a half with no orders', async () => {

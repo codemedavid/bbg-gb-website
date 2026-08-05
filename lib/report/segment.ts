@@ -21,10 +21,10 @@ export const SEGMENT_LABEL: Record<ReportSegment, string> = {
   groupbuy: 'Group Buy / Kahati',
 };
 
-// Excel rejects / \ ? * [ ] in a worksheet name and truncates past 31
-// characters — a workbook carrying either fails to open — so the sheet tabs use
-// this shorter, slash-free form instead of SEGMENT_LABEL.
-export const SEGMENT_SHEET_LABEL: Record<ReportSegment, string> = {
+// The short form, for worksheet tabs and buttons. Excel rejects / \ ? * [ ] in
+// a worksheet name and truncates past 31 characters — a workbook carrying
+// either fails to open — so SEGMENT_LABEL cannot be used verbatim there.
+export const SEGMENT_SHORT_LABEL: Record<ReportSegment, string> = {
   onhand: 'On-Hand',
   groupbuy: 'Group Buy',
 };
