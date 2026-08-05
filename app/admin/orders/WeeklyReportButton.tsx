@@ -56,7 +56,9 @@ export function WeeklyReportButton() {
       {REPORT_SEGMENTS.map((segment) => (
         <button
           key={segment}
-          className={btnPrimary}
+          // Without nowrap the two buttons compete for the toolbar's remaining
+          // width and break mid-label ("On-" / "Hand").
+          className={`${btnPrimary} whitespace-nowrap`}
           onClick={() => download(segment)}
           disabled={busySegment !== null}
         >

@@ -35,7 +35,7 @@ export function SegmentReport({ segment, report, isBusy, onDownload }: Props) {
           </p>
         </div>
         <button
-          className={btnPrimary}
+          className={`${btnPrimary} whitespace-nowrap`}
           onClick={() => onDownload(segment)}
           // A half with no orders produces an empty workbook, which reads as a
           // broken export rather than an empty week.
