@@ -21,6 +21,14 @@ export const SEGMENT_LABEL: Record<ReportSegment, string> = {
   groupbuy: 'Group Buy / Kahati',
 };
 
+// Excel rejects / \ ? * [ ] in a worksheet name and truncates past 31
+// characters — a workbook carrying either fails to open — so the sheet tabs use
+// this shorter, slash-free form instead of SEGMENT_LABEL.
+export const SEGMENT_SHEET_LABEL: Record<ReportSegment, string> = {
+  onhand: 'On-Hand',
+  groupbuy: 'Group Buy',
+};
+
 // orders.buy_type, as written by checkout (lib/order-modes.ts). 'solo' is the
 // on-hand shop; the other three are all pre-ordered against a batch and belong
 // on the supplier's side of the split.

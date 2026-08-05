@@ -12,6 +12,7 @@
 // nothing. weekly-xlsx-download.test.ts pins both halves of that.
 import type { Workbook } from 'exceljs';
 import { REPORT_COLORS } from './constants';
+import { SEGMENT_SHEET_LABEL, type ReportSegment } from './segment';
 import { weekFilename } from './week';
 import type { WeeklyReport } from './build';
 
@@ -41,14 +42,23 @@ const MONEY_FORMAT = '#,##0.00';
 const argb = ([r, g, b]: [number, number, number]): string =>
   'FF' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
 
+/**
+ * @param segment Which half of the week this workbook holds. On-hand and group
+ *   buy download as two files, so the sheet says which one is open. Omitted for
+ *   the combined whole-week workbook.
+ */
 export async function buildWeeklyWorkbook(
   report: WeeklyReport,
   mondayYmd: string,
+  segment?: ReportSegment,
 ): Promise<Workbook> {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'BBG Peptides';
-  const sheet = workbook.addWorksheet(`Week ${report.weekNo}`, {
+  const title = segment
+    ? `${SEGMENT_SHEET_LABEL[segment]} · Week ${report.weekNo}`
+    : `Week ${report.weekNo}`;
+  const sheet = workbook.addWorksheet(title, {
     views: [{ state: 'frozen', ySplit: 1 }],
   });
 
@@ -144,16 +154,19 @@ function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
   };
 }
 
-export function weeklyXlsxFilename(mondayYmd: string): string {
-  return `${weekFilename(mondayYmd)}.xlsx`;
+// The segment suffix is not decoration: both halves of a week are downloaded
+// into the same folder, and without it the second overwrites the first.
+export function weeklyXlsxFilename(mondayYmd: string, segment?: ReportSegment): string {
+  return `${weekFilename(mondayYmd)}${segment ? `-${segment}` : ''}.xlsx`;
 }
 
 // Browser-side download.
 export async function downloadWeeklyReportXlsx(
   report: WeeklyReport,
   mondayYmd: string,
+  segment?: ReportSegment,
 ): Promise<void> {
-  const workbook = await buildWeeklyWorkbook(report, mondayYmd);
+  const workbook = await buildWeeklyWorkbook(report, mondayYmd, segment);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -166,7 +179,7 @@ export async function downloadWeeklyReportXlsx(
   // before it is read and the file silently never arrives.
   const link = document.createElement('a');
   link.href = url;
-  link.download = weeklyXlsxFilename(mondayYmd);
+  link.download = weeklyXlsxFilename(mondayYmd, segment);
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
