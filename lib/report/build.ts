@@ -3,6 +3,7 @@
 import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LABEL } from './constants';
 import { num } from './money';
 import { buildProductTotals, type ProductTotals } from './product-totals';
+import { partitionBySegment, type ReportSegment } from './segment';
 import { formatRange, isoWeekNumber } from './week';
 
 export type ReportItem = {
@@ -147,5 +148,28 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     totals,
     rows,
     productTotals: buildProductTotals(orders),
+  };
+}
+
+/** The same week built twice: once for the on-hand shop, once for the batch. */
+export type SegmentedWeeklyReport = Record<ReportSegment, WeeklyReport>;
+
+/**
+ * Build the week as two independent reports rather than one combined sheet.
+ *
+ * Partitioning the input and reusing buildWeeklyReport is what keeps the row
+ * numbering, the paid/pending counts, the cancelled-order exclusion and the kit
+ * rollup identical on both halves — there is no second copy of that logic to
+ * drift. The combined buildWeeklyReport stays available for anything that wants
+ * the whole week at once.
+ */
+export function buildSegmentedWeeklyReport(
+  mondayYmd: string,
+  orders: ReportOrderInput[],
+): SegmentedWeeklyReport {
+  const halves = partitionBySegment(orders);
+  return {
+    onhand: buildWeeklyReport(mondayYmd, halves.onhand),
+    groupbuy: buildWeeklyReport(mondayYmd, halves.groupbuy),
   };
 }
