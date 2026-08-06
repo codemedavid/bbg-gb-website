@@ -3,7 +3,8 @@
 import { getDb, closeDb } from '../lib/db';
 import * as s from '../lib/db/schema';
 import { hashPassword } from '../lib/auth';
-import { CATEGORIES, CATEGORY_DESC, PRODUCTS, GROUP_BUYS, MOQ_PRODUCTS } from '../lib/db/data/catalog';
+import { CATEGORIES, PRODUCTS, GROUP_BUYS, MOQ_PRODUCTS } from '../lib/db/data/catalog';
+import { seedProductRow } from '../lib/db/data/seed-rows';
 
 async function clearAll(db: any) {
   await db.delete(s.orderStatusHistory);
@@ -31,22 +32,7 @@ async function main() {
   console.log(`  ${catRows.length} categories`);
 
   const prodRows = await db.insert(s.products).values(
-    PRODUCTS.map((p) => ({
-      code: p.code,
-      name: p.name,
-      spec: p.spec,
-      categoryId: catBySlug.get(p.cat)!,
-      pricePhp: String(p.pricePhp),
-      priceUsd: p.priceUsd != null ? String(p.priceUsd) : null,
-      isOnHand: !!p.isOnHand,
-      onHandKitPhp: p.onHandKitPhp != null ? String(p.onHandKitPhp) : null,
-      onHandPiecePhp: p.onHandPiecePhp != null ? String(p.onHandPiecePhp) : null,
-      stock: p.stock ?? 0,
-      arrivalGroup: p.arrival,
-      description: CATEGORY_DESC[p.cat],
-      imageEmoji: p.emoji ?? '💧',
-      soldCount: p.soldCount ?? 0,
-    }))
+    PRODUCTS.map((p) => seedProductRow(p, catBySlug.get(p.cat)!))
   ).returning();
   console.log(`  ${prodRows.length} products`);
 

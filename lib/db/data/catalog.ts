@@ -43,6 +43,13 @@ export type SeedProduct = {
   onHandPiecePhp?: number;
   stock?: number;
   soldCount?: number;
+  // Units in a supplier pack, when it is not the ten-vial peptide kit. This is
+  // the divisor behind the weekly report's Kits column, so a differently-packed
+  // line has to state it or the batch order is placed at the wrong multiple.
+  kitSize?: number;
+  // Overrides the category blurb. For a series whose products differ only in
+  // what they treat, the category text cannot tell them apart.
+  description?: string;
 };
 
 // arrival: salt forms, Bioglutide, TR+CGL / TR+RT blends, colored peptides and all
@@ -104,6 +111,18 @@ export const PRODUCTS: SeedProduct[] = [
   { code: null, name: 'AHK-Cu', spec: '100mg vial', cat: 'skin', pricePhp: 3625, priceUsd: 58, arrival: 'white_powder', stock: 25 },
   { code: 'KLOW', name: 'KLOW', spec: '80mg vial', cat: 'skin', pricePhp: 10625, priceUsd: 170, arrival: 'white_powder', stock: 20, soldCount: 44 },
   { code: 'CU-TOP', name: 'GHK-Cu Topical', spec: '1000mg', cat: 'skin', pricePhp: 4350, priceUsd: 69.6, arrival: 'salt_liquid', emoji: '🧴', stock: 25, soldCount: 58 },
+  // ---- Skin Repair (SM) series ----
+  // Six colour-coded hero peptides from the BBG price-list card. Each unit is a
+  // 1g powder vial paired with its own 5mL solvent, and the pack is five of
+  // those pairs at ₱1,975.00 — ₱395.00 a pair. `kitSize: 5` because the pack is
+  // counted in pairs, not in the ten vials a peptide kit holds; the report's
+  // Kits column divides by it. PHP only, as the card quotes no USD.
+  { code: 'SM1', name: 'Skin Repair SM1 — Green', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🟢', description: 'Whitens skin, fades dark spots, treats acne and reduces acne marks. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM2', name: 'Skin Repair SM2 — Brown', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🟤', description: 'Antibacterial and anti-inflammatory — repairs skin and provides deep hydration. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM3', name: 'Skin Repair SM3 — Pink', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🩷', description: 'Regulates oil production and supports anti-aging. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM4', name: 'Skin Repair SM4 — Black', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '⚫', description: 'Deep cleansing — removes blackheads and purges impurities. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM5', name: 'Skin Repair SM5 — Purple', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🟣', description: 'Whitens skin, reduces wrinkles, restores elasticity and enhances radiance. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM6', name: 'Skin Repair SM6 — Blue', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🔵', description: 'Treats mild hormonal skin issues and replenishes vitamins and proteins. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
   // ---- Wellness ----
   { code: 'NJ100', name: 'NAD+', spec: '100mg vial', cat: 'wellness', pricePhp: 2500, priceUsd: 40, arrival: 'salt_liquid', stock: 40, soldCount: 96 },
   { code: 'NJ500', name: 'NAD+', spec: '500mg vial', cat: 'wellness', pricePhp: 2625, priceUsd: 42, arrival: 'salt_liquid', stock: 38, soldCount: 82 },

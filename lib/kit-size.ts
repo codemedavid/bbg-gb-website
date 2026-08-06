@@ -27,8 +27,11 @@ const DOSE_THEN_COUNT = new RegExp(String.raw`\d+(?:\.\d+)?\s*${UNIT}\s*[x×]\s*
 // "1 prefilled syringe". Up to two describing words may sit between the number
 // and the noun. The lookahead is what keeps a dose out: in "15mg vial" the 15
 // is followed by a unit, so it is how big the vial is, not how many there are.
+// `pairs` is here because the Skin Repair series ships a powder vial bundled
+// with its own solvent and the price list counts the bundle, not the vials in
+// it — "5 pairs" is five units to order, not ten.
 const COUNTED_UNITS = new RegExp(
-  String.raw`(\d+)(?!\s*${UNIT}\b)\s*(?:x\s*)?(?:[a-z-]+\s+){0,2}(?:vials?|syringes?|pcs?|pieces?|ampoules?)\b`,
+  String.raw`(\d+)(?!\s*${UNIT}\b)\s*(?:x\s*)?(?:[a-z-]+\s+){0,2}(?:vials?|syringes?|pcs?|pieces?|ampoules?|pairs?)\b`,
   'i',
 );
 
