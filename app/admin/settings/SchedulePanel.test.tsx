@@ -12,6 +12,7 @@
 // assume the storefront is trading when nothing is.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import type { GroupBuySchedule } from '@/lib/schedule';
 import userEvent from '@testing-library/user-event';
 
 const apiGet = vi.fn();
@@ -175,6 +176,25 @@ describe('SchedulePanel quick controls', () => {
     vi.setSystemTime(new Date(iso));
   };
 
+  /** The window the card last posted. */
+  const posted = (): GroupBuySchedule => {
+    const [path, method, body] = apiSend.mock.calls.at(-1) as [string, string, { groupBuySchedule: GroupBuySchedule }];
+    expect([path, method]).toEqual(['/admin/settings', 'PATCH']);
+    return body.groupBuySchedule;
+  };
+
+  /**
+   * An instant the control read off the clock, which is the press itself. The
+   * assertion is deliberately not exact-equality: the clock runs while the
+   * click is dispatched, and pinning the millisecond would test the test
+   * harness rather than the control.
+   */
+  const pressedAt = (iso: string | null, expected: string): void => {
+    const ms = Date.parse(iso ?? '');
+    expect(ms).toBeGreaterThanOrEqual(Date.parse(expected));
+    expect(ms).toBeLessThan(Date.parse(expected) + 5_000);
+  };
+
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -185,8 +205,11 @@ describe('SchedulePanel quick controls', () => {
 
     render(<SchedulePanel />);
 
-    expect(await screen.findByText(/\bopen\b/i)).toBeInTheDocument();
-    expect(screen.getByText(/2d 14h/)).toBeInTheDocument();
+    // Queried by role: the card mentions opening in its prose too, and the one
+    // line that must be right is the live one.
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent(/open/i);
+    expect(status).toHaveTextContent(/2d 14h/);
   });
 
   it('reports a window that has not started yet as still to come', async () => {
@@ -196,7 +219,7 @@ describe('SchedulePanel quick controls', () => {
     render(<SchedulePanel />);
 
     // The distinction that matters: configured, but not trading yet.
-    expect(await screen.findByText(/opens in/i)).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent(/opens in/i);
   });
 
   it('opens both boards for a preset run of days, starting now', async () => {
@@ -206,15 +229,11 @@ describe('SchedulePanel quick controls', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /7 days/i }));
 
-    await waitFor(() => expect(apiSend).toHaveBeenCalledWith(
-      '/admin/settings', 'PATCH',
-      {
-        groupBuySchedule: {
-          opensAt: INSIDE,
-          closesAt: new Date(Date.parse(INSIDE) + 7 * DAY_MS).toISOString(),
-        },
-      },
-    ));
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    const window = posted();
+    pressedAt(window.opensAt, INSIDE);
+    // Seven days of trading from the press, not six and a bit to a calendar end.
+    expect(Date.parse(window.closesAt ?? '') - Date.parse(window.opensAt ?? '')).toBe(7 * DAY_MS);
   });
 
   it('closes an open window at this instant, keeping when it opened', async () => {
@@ -225,10 +244,10 @@ describe('SchedulePanel quick controls', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /close now/i }));
 
-    await waitFor(() => expect(apiSend).toHaveBeenCalledWith(
-      '/admin/settings', 'PATCH',
-      { groupBuySchedule: { opensAt: OPENS, closesAt: INSIDE } },
-    ));
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    const window = posted();
+    expect(window.opensAt).toBe(OPENS);
+    pressedAt(window.closesAt, INSIDE);
   });
 
   it('starts a scheduled window early without moving its planned close', async () => {
@@ -239,10 +258,11 @@ describe('SchedulePanel quick controls', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /open now/i }));
 
-    await waitFor(() => expect(apiSend).toHaveBeenCalledWith(
-      '/admin/settings', 'PATCH',
-      { groupBuySchedule: { opensAt: BEFORE, closesAt: CLOSES } },
-    ));
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    const window = posted();
+    pressedAt(window.opensAt, BEFORE);
+    // The planned close is the point: starting early must not extend the run.
+    expect(window.closesAt).toBe(CLOSES);
   });
 
   it('offers nothing to close while no window is configured', async () => {
