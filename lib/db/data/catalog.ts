@@ -50,6 +50,16 @@ export type SeedProduct = {
   // Overrides the category blurb. For a series whose products differ only in
   // what they treat, the category text cannot tell them apart.
   description?: string;
+  // Product-level group buy terms. `isGroupBuy` is the switch both bulk seeders
+  // select on (kahati-seed-bulk, campaign-seed-bulk); the rest are the figures
+  // a new hatian counter or campaign batch starts from. Counted in UNITS of the
+  // product's own pack — pairs for the Skin Repair series, vials for peptides.
+  isGroupBuy?: boolean;
+  gbPricePerKitPhp?: number;
+  gbPricePerPiecePhp?: number;
+  gbVialsPerKit?: number;
+  gbMinVials?: number;
+  gbMaxVialsPerBatch?: number;
 };
 
 // arrival: salt forms, Bioglutide, TR+CGL / TR+RT blends, colored peptides and all
@@ -117,12 +127,12 @@ export const PRODUCTS: SeedProduct[] = [
   // those pairs at ₱1,975.00 — ₱395.00 a pair. `kitSize: 5` because the pack is
   // counted in pairs, not in the ten vials a peptide kit holds; the report's
   // Kits column divides by it. PHP only, as the card quotes no USD.
-  { code: 'SM1', name: 'Skin Repair SM1 — Green', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🟢', description: 'Whitens skin, fades dark spots, treats acne and reduces acne marks. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
-  { code: 'SM2', name: 'Skin Repair SM2 — Brown', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🟤', description: 'Antibacterial and anti-inflammatory — repairs skin and provides deep hydration. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
-  { code: 'SM3', name: 'Skin Repair SM3 — Pink', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🩷', description: 'Regulates oil production and supports anti-aging. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
-  { code: 'SM4', name: 'Skin Repair SM4 — Black', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '⚫', description: 'Deep cleansing — removes blackheads and purges impurities. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
-  { code: 'SM5', name: 'Skin Repair SM5 — Purple', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🟣', description: 'Whitens skin, reduces wrinkles, restores elasticity and enhances radiance. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
-  { code: 'SM6', name: 'Skin Repair SM6 — Blue', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, emoji: '🔵', description: 'Treats mild hormonal skin issues and replenishes vitamins and proteins. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM1', name: 'Skin Repair SM1 — Green', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395, gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5, emoji: '🟢', description: 'Whitens skin, fades dark spots, treats acne and reduces acne marks. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM2', name: 'Skin Repair SM2 — Brown', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395, gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5, emoji: '🟤', description: 'Antibacterial and anti-inflammatory — repairs skin and provides deep hydration. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM3', name: 'Skin Repair SM3 — Pink', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395, gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5, emoji: '🩷', description: 'Regulates oil production and supports anti-aging. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM4', name: 'Skin Repair SM4 — Black', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395, gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5, emoji: '⚫', description: 'Deep cleansing — removes blackheads and purges impurities. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM5', name: 'Skin Repair SM5 — Purple', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395, gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5, emoji: '🟣', description: 'Whitens skin, reduces wrinkles, restores elasticity and enhances radiance. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
+  { code: 'SM6', name: 'Skin Repair SM6 — Blue', spec: '1g + 5mL · 5 pairs', cat: 'skin', pricePhp: 1975, priceUsd: null, arrival: 'white_powder', kitSize: 5, isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395, gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5, emoji: '🔵', description: 'Treats mild hormonal skin issues and replenishes vitamins and proteins. 1g lyophilized powder paired with 5mL solvent; for research use only.' },
   // ---- Wellness ----
   { code: 'NJ100', name: 'NAD+', spec: '100mg vial', cat: 'wellness', pricePhp: 2500, priceUsd: 40, arrival: 'salt_liquid', stock: 40, soldCount: 96 },
   { code: 'NJ500', name: 'NAD+', spec: '500mg vial', cat: 'wellness', pricePhp: 2625, priceUsd: 42, arrival: 'salt_liquid', stock: 38, soldCount: 82 },

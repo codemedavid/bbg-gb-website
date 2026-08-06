@@ -37,5 +37,14 @@ export function seedProductRow(product: SeedProduct, categoryId: string) {
     description: product.description ?? CATEGORY_DESC[product.cat],
     imageEmoji: product.emoji ?? '💧',
     soldCount: product.soldCount ?? 0,
+    // Group buy terms. Null rather than 0 when unstated: null means "this
+    // product states no figure of its own" and falls back to the global
+    // defaults, where a ₱0 group buy price would read as free.
+    isGroupBuy: !!product.isGroupBuy,
+    gbPricePerKitPhp: money(product.gbPricePerKitPhp),
+    gbPricePerPiecePhp: money(product.gbPricePerPiecePhp),
+    gbVialsPerKit: product.gbVialsPerKit ?? null,
+    gbMinVials: product.gbMinVials ?? null,
+    gbMaxVialsPerBatch: product.gbMaxVialsPerBatch ?? null,
   };
 }

@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { PRODUCTS } from './catalog';
 import { kitSizeFromSpec } from '@/lib/kit-size';
+import { kahatiDefaultsFor, groupBuyUnitPrice } from '@/lib/pricing';
 
 const SM_CODES = ['SM1', 'SM2', 'SM3', 'SM4', 'SM5', 'SM6'] as const;
 const series = PRODUCTS.filter((p) => p.code && /^SM[1-6]$/.test(p.code));
@@ -86,5 +87,60 @@ describe('Skin Repair series', () => {
     const descriptions = series.map((p) => p.description);
     expect(descriptions.every(Boolean)).toBe(true);
     expect(new Set(descriptions).size).toBe(SM_CODES.length);
+  });
+});
+
+// Both boards carry this series, so each product has to state its own group-buy
+// terms: kahati-seed-bulk and campaign-seed-bulk select on `isGroupBuy` and seed
+// every listing from these five fields.
+describe('Skin Repair series — group buy terms', () => {
+  it('is offered through the group buy boards', () => {
+    for (const product of series) {
+      expect(product.isGroupBuy).toBe(true);
+    }
+  });
+
+  it('prices a pack and a pair at the card figures', () => {
+    for (const product of series) {
+      expect(product.gbPricePerKitPhp).toBe(1975);
+      expect(product.gbPricePerPiecePhp).toBe(395);
+    }
+  });
+
+  it('counts five pairs to a pack, matching the catalogue pack size', () => {
+    // gbVialsPerKit and kitSize describe the same physical pack. Letting them
+    // disagree would price a pair off one number and order it off the other.
+    for (const product of series) {
+      expect(product.gbVialsPerKit).toBe(product.kitSize);
+    }
+  });
+
+  it('seeds a hatian counter that fills at exactly one pack', () => {
+    for (const product of series) {
+      const { totalSlots, minVials, pricePerKitPhp } = kahatiDefaultsFor({
+        gbPricePerKitPhp: product.gbPricePerKitPhp ?? null,
+        gbPricePerPiecePhp: product.gbPricePerPiecePhp ?? null,
+        gbVialsPerKit: product.gbVialsPerKit ?? null,
+        gbMinVials: product.gbMinVials ?? null,
+        gbMaxVialsPerBatch: product.gbMaxVialsPerBatch ?? null,
+      });
+
+      // Five pairs, not the ten-vial default a peptide counter would take.
+      expect(totalSlots).toBe(5);
+      expect(minVials).toBe(1);
+      expect(pricePerKitPhp).toBe(1975);
+    }
+  });
+
+  it('derives the advertised per-pair price from the pack price', () => {
+    for (const product of series) {
+      expect(groupBuyUnitPrice({
+        gbPricePerKitPhp: product.gbPricePerKitPhp ?? null,
+        gbPricePerPiecePhp: null,
+        gbVialsPerKit: product.gbVialsPerKit ?? null,
+        gbMinVials: null,
+        gbMaxVialsPerBatch: null,
+      }, 'piece')).toBe(395);
+    }
   });
 });

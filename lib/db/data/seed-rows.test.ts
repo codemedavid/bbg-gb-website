@@ -64,3 +64,29 @@ describe('seedProductRow', () => {
     expect(row).toMatchObject({ isOnHand: true, onHandKitPhp: '5000', onHandPiecePhp: '550' });
   });
 });
+
+describe('seedProductRow — group buy terms', () => {
+  it('leaves a product off the boards and states no terms by default', () => {
+    // Null, not 0: null is "states no figure of its own" and falls back to the
+    // global defaults. A ₱0 group buy price would read as free.
+    const row = seedProductRow(product(), CATEGORY_ID);
+
+    expect(row.isGroupBuy).toBe(false);
+    expect(row.gbPricePerKitPhp).toBeNull();
+    expect(row.gbVialsPerKit).toBeNull();
+    expect(row.gbMinVials).toBeNull();
+    expect(row.gbMaxVialsPerBatch).toBeNull();
+  });
+
+  it('carries stated group buy terms through, money as strings', () => {
+    const row = seedProductRow(product({
+      isGroupBuy: true, gbPricePerKitPhp: 1975, gbPricePerPiecePhp: 395,
+      gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5,
+    }), CATEGORY_ID);
+
+    expect(row).toMatchObject({
+      isGroupBuy: true, gbPricePerKitPhp: '1975', gbPricePerPiecePhp: '395',
+      gbVialsPerKit: 5, gbMinVials: 1, gbMaxVialsPerBatch: 5,
+    });
+  });
+});
