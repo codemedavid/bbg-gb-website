@@ -2,10 +2,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { apiGet, apiSend } from '@/lib/api-client';
 import { field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
-import { isoToPhtLocal, phtLocalToIso, formatPht, type GroupBuySchedule } from '@/lib/schedule';
+import { isoToPhtLocal, phtLocalToIso, type GroupBuySchedule } from '@/lib/schedule';
 import {
-  scheduleStatus, windowOpeningNow, windowStartedNow, windowClosedNow, formatTimeLeft,
+  scheduleStatus, windowOpeningNow, windowStartedNow, windowClosedNow,
 } from '@/lib/schedule-controls';
+import { ScheduleStatusLine } from './ScheduleStatusLine';
 import { MANILA_TZ_LABEL } from '@/lib/timezone';
 
 // The one shared Group Buy + Hatian window.
@@ -138,7 +139,6 @@ export function SchedulePanel() {
   };
 
   const status = saved ? scheduleStatus(saved, now) : null;
-  const left = status?.msUntil != null ? formatTimeLeft(status.msUntil) : null;
 
   return (
     <div className="mt-6 rounded-2xl bg-white p-5 shadow-card">
@@ -152,35 +152,7 @@ export function SchedulePanel() {
 
       {form && (
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          {status && (
-            <div role="status" aria-live="polite"
-              className={`rounded-[10px] px-3 py-2 text-[13px] ${
-                status.state === 'open' ? 'bg-[#e8f5db] text-brand-greendark'
-                  : status.state === 'scheduled' ? 'bg-[#dbe8f5] text-brand-navy'
-                    : 'bg-warn-bg text-warn-fg'}`}
-            >
-              {status.state === 'open' && (
-                <>
-                  <span className="font-bold">● Open now</span>
-                  {` — both boards close in ${left} (${formatPht(saved?.closesAt ?? null)}).`}
-                </>
-              )}
-              {status.state === 'scheduled' && (
-                <>
-                  <span className="font-bold">○ Scheduled</span>
-                  {` — closed to customers; opens in ${left} (${formatPht(saved?.opensAt ?? null)}).`}
-                </>
-              )}
-              {status.state === 'closed' && (
-                <>
-                  <span className="font-bold">○ Closed</span>
-                  {` — the window ended ${formatPht(saved?.closesAt ?? null)}. Set the next one below.`}
-                </>
-              )}
-              {status.state === 'unset'
-                && 'No window is configured, so both boards are closed to customers right now.'}
-            </div>
-          )}
+          {status && saved && <ScheduleStatusLine status={status} schedule={saved} />}
 
           {/* The fast path. Absolute times are the precise way to say when both
               boards trade; these are for the admin who means "today" or "stop",
