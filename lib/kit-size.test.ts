@@ -68,3 +68,22 @@ describe('kitSizeFromSpec', () => {
     });
   });
 });
+
+// The Skin Repair series is packed in PAIRS — one 1g powder vial with its 5mL
+// solvent — and the price list sells five of them to a pack. "pair" was not a
+// pack noun this recognised, so the whole series fell back to the 10-vial
+// peptide kit and would have been ordered at twice what the sheet asked for.
+describe('packs counted in pairs', () => {
+  it('reads a pack stated in pairs', () => {
+    expect(kitSizeFromSpec('1g + 5mL · 5 pairs')).toBe(5);
+  });
+
+  it('reads a single pair as a pack of one', () => {
+    expect(kitSizeFromSpec('1 pair')).toBe(1);
+  });
+
+  it('does not mistake the solvent volume for the pack count', () => {
+    // "5mL" is how much diluent comes with each vial, not how many pairs ship.
+    expect(kitSizeFromSpec('1g + 5mL')).toBe(VIALS_PER_PEPTIDE_KIT);
+  });
+});
