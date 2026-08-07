@@ -10,8 +10,9 @@
 // Second, the card must never imply a schedule that is not in force. An unset
 // window means BOTH boards are shut, and an admin who cannot see that will
 // assume the storefront is trading when nothing is.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import type { GroupBuySchedule } from '@/lib/schedule';
 import userEvent from '@testing-library/user-event';
 
 const apiGet = vi.fn();
@@ -150,5 +151,151 @@ describe('SchedulePanel', () => {
 
     expect(screen.getByText(/group buy/i)).toBeInTheDocument();
     expect(screen.getByText(/hatian|kahati/i)).toBeInTheDocument();
+  });
+});
+
+// The quick controls: opening and closing both boards without typing a window.
+//
+// The controls exist because the datetime fields are the slow path — an admin
+// who wants to trade today should not have to work out what "now" is in a
+// picker, and one who needs to stop should not have to clear two fields and
+// hope they did not leave the window half-set.
+//
+// Every assertion here is on the instant that leaves the card. A button that
+// LOOKS like it closed the boards while posting a window the server refuses is
+// the exact failure these controls could introduce.
+describe('SchedulePanel quick controls', () => {
+  // Inside the stored window: Aug 9 09:59 PHT, with 2d 14h left of it.
+  const INSIDE = '2026-08-09T01:59:00.000Z';
+  // Before it: Aug 3 09:00 PHT, a day before the window is due to open.
+  const BEFORE = '2026-08-03T01:00:00.000Z';
+  const DAY_MS = 86_400_000;
+
+  const atClock = (iso: string): void => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(iso));
+  };
+
+  /** The window the card last posted. */
+  const posted = (): GroupBuySchedule => {
+    const [path, method, body] = apiSend.mock.calls.at(-1) as [string, string, { groupBuySchedule: GroupBuySchedule }];
+    expect([path, method]).toEqual(['/admin/settings', 'PATCH']);
+    return body.groupBuySchedule;
+  };
+
+  /**
+   * An instant the control read off the clock, which is the press itself. The
+   * assertion is deliberately not exact-equality: the clock runs while the
+   * click is dispatched, and pinning the millisecond would test the test
+   * harness rather than the control.
+   */
+  const pressedAt = (iso: string | null, expected: string): void => {
+    const ms = Date.parse(iso ?? '');
+    expect(ms).toBeGreaterThanOrEqual(Date.parse(expected));
+    expect(ms).toBeLessThan(Date.parse(expected) + 5_000);
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reports that both boards are open right now and how long is left', async () => {
+    atClock(INSIDE);
+    apiGet.mockResolvedValue({ groupBuySchedule: { opensAt: OPENS, closesAt: CLOSES } });
+
+    render(<SchedulePanel />);
+
+    // Queried by role: the card mentions opening in its prose too, and the one
+    // line that must be right is the live one.
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent(/open/i);
+    expect(status).toHaveTextContent(/2d 14h/);
+  });
+
+  it('reports a window that has not started yet as still to come', async () => {
+    atClock(BEFORE);
+    apiGet.mockResolvedValue({ groupBuySchedule: { opensAt: OPENS, closesAt: CLOSES } });
+
+    render(<SchedulePanel />);
+
+    // The distinction that matters: configured, but not trading yet.
+    expect(await screen.findByRole('status')).toHaveTextContent(/opens in/i);
+  });
+
+  it('opens both boards for a preset run of days, starting now', async () => {
+    atClock(INSIDE);
+    render(<SchedulePanel />);
+    await waitFor(() => expect(opensField()).toBeEnabled());
+
+    await userEvent.click(screen.getByRole('button', { name: /7 days/i }));
+
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    const window = posted();
+    pressedAt(window.opensAt, INSIDE);
+    // Seven days of trading from the press, not six and a bit to a calendar end.
+    expect(Date.parse(window.closesAt ?? '') - Date.parse(window.opensAt ?? '')).toBe(7 * DAY_MS);
+  });
+
+  it('closes an open window at this instant, keeping when it opened', async () => {
+    atClock(INSIDE);
+    apiGet.mockResolvedValue({ groupBuySchedule: { opensAt: OPENS, closesAt: CLOSES } });
+    render(<SchedulePanel />);
+    await waitFor(() => expect(opensField().value).toBe('2026-08-04T09:00'));
+
+    await userEvent.click(screen.getByRole('button', { name: /close now/i }));
+
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    const window = posted();
+    expect(window.opensAt).toBe(OPENS);
+    pressedAt(window.closesAt, INSIDE);
+  });
+
+  it('starts a scheduled window early without moving its planned close', async () => {
+    atClock(BEFORE);
+    apiGet.mockResolvedValue({ groupBuySchedule: { opensAt: OPENS, closesAt: CLOSES } });
+    render(<SchedulePanel />);
+    await waitFor(() => expect(opensField().value).toBe('2026-08-04T09:00'));
+
+    await userEvent.click(screen.getByRole('button', { name: /open now/i }));
+
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    const window = posted();
+    pressedAt(window.opensAt, BEFORE);
+    // The planned close is the point: starting early must not extend the run.
+    expect(window.closesAt).toBe(CLOSES);
+  });
+
+  it('offers nothing to close while no window is configured', async () => {
+    atClock(INSIDE);
+    render(<SchedulePanel />);
+    await waitFor(() => expect(opensField()).toBeEnabled());
+
+    // Closing what is already shut would only overwrite the fields with nulls
+    // the admin never asked for.
+    expect(screen.queryByRole('button', { name: /close now/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the fields the control wrote, so the card and the window agree', async () => {
+    atClock(INSIDE);
+    const closesAt = new Date(Date.parse(INSIDE) + 3 * DAY_MS).toISOString();
+    apiSend.mockResolvedValue({ groupBuySchedule: { opensAt: INSIDE, closesAt } });
+    render(<SchedulePanel />);
+    await waitFor(() => expect(opensField()).toBeEnabled());
+
+    await userEvent.click(screen.getByRole('button', { name: /3 days/i }));
+
+    await waitFor(() => expect(opensField().value).toBe('2026-08-09T09:59'));
+    expect(closesField().value).toBe('2026-08-12T09:59');
+  });
+
+  it('surfaces a rejected quick control instead of implying it applied', async () => {
+    atClock(INSIDE);
+    apiSend.mockRejectedValue(new Error('Nope.'));
+    render(<SchedulePanel />);
+    await waitFor(() => expect(opensField()).toBeEnabled());
+
+    await userEvent.click(screen.getByRole('button', { name: /7 days/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/nope/i);
   });
 });

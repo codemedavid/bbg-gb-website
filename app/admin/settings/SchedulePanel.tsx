@@ -1,8 +1,12 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { apiGet, apiSend } from '@/lib/api-client';
-import { field, label, btnPrimary } from '@/components/admin-ui';
+import { field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { isoToPhtLocal, phtLocalToIso, type GroupBuySchedule } from '@/lib/schedule';
+import {
+  scheduleStatus, windowOpeningNow, windowStartedNow, windowClosedNow,
+} from '@/lib/schedule-controls';
+import { ScheduleStatusLine } from './ScheduleStatusLine';
 import { MANILA_TZ_LABEL } from '@/lib/timezone';
 
 // The one shared Group Buy + Hatian window.
@@ -22,12 +26,22 @@ const entry = (value: string): string => value.slice(0, 16);
 
 type Loaded = { opens: string; closes: string };
 
+// How often the live status re-reads the clock. The countdown is shown in
+// minutes at its finest, so this is twice the resolution it renders — enough
+// that "under a minute" turns into "closed" promptly without re-rendering the
+// card every second for a line that would not change.
+const TICK_MS = 30_000;
+
+/** The runs offered by the one-tap presets, in days. */
+const PRESET_DAYS = [3, 7, 14] as const;
+
 export function SchedulePanel() {
   const [form, setForm] = useState<Loaded | null>(null);
   const [saved, setSaved] = useState<GroupBuySchedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   const apply = (schedule: GroupBuySchedule): void => {
     setSaved(schedule);
@@ -40,11 +54,54 @@ export function SchedulePanel() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not load the schedule.'));
   }, []);
 
+  // The status is a fact about the clock, not about the last save. Without this
+  // the card would go on saying "closes in 2h" long after the boards shut, and
+  // the admin would read a live storefront off a stale render.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+
   const set = (key: keyof Loaded) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = entry(e.target.value);
     setForm((f) => (f ? { ...f, [key]: value } : f));
     setDone(false);
     setError(null);
+  };
+
+  // The one way a window reaches the server. The quick controls and the form
+  // differ only in how they arrive at `next`; sharing the save means a control
+  // cannot skip the error handling or leave the card showing what it hoped for.
+  const save = async (next: GroupBuySchedule): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    try {
+      const d = await apiSend<{ groupBuySchedule: GroupBuySchedule }>(
+        '/admin/settings', 'PATCH', { groupBuySchedule: next },
+      );
+      // Render what the server confirmed, not what was typed: it normalises,
+      // and a card showing an entry the server did not store is a card lying.
+      apply(d.groupBuySchedule);
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the schedule.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A control acts on the window as stored, at the instant it is pressed —
+  // never on the entries, which may hold an edit the admin has not saved.
+  const runControl = (build: (schedule: GroupBuySchedule) => GroupBuySchedule) => async () => {
+    if (busy) return;
+    setDone(false);
+    try {
+      await save(build(saved ?? { opensAt: null, closesAt: null }));
+    } catch (err) {
+      // The controls refuse to build a window the server would reject; that
+      // refusal is the message, and nothing is sent.
+      setError(err instanceof Error ? err.message : 'That is not a window we can set.');
+    }
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -78,24 +135,10 @@ export function SchedulePanel() {
       next = { opensAt, closesAt };
     }
 
-    setError(null);
-    setBusy(true);
-    try {
-      const d = await apiSend<{ groupBuySchedule: GroupBuySchedule }>(
-        '/admin/settings', 'PATCH', { groupBuySchedule: next },
-      );
-      // Render what the server confirmed, not what was typed: it normalises,
-      // and a card showing an entry the server did not store is a card lying.
-      apply(d.groupBuySchedule);
-      setDone(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the schedule.');
-    } finally {
-      setBusy(false);
-    }
+    await save(next);
   };
 
-  const configured = Boolean(saved?.opensAt && saved?.closesAt);
+  const status = saved ? scheduleStatus(saved, now) : null;
 
   return (
     <div className="mt-6 rounded-2xl bg-white p-5 shadow-card">
@@ -109,13 +152,36 @@ export function SchedulePanel() {
 
       {form && (
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div
-            className={`rounded-[10px] px-3 py-2 text-[13px] ${
-              configured ? 'bg-[#e8f5db] text-brand-greendark' : 'bg-warn-bg text-warn-fg'}`}
-          >
-            {configured
-              ? 'A window is configured. Both boards follow it automatically.'
-              : 'No window is configured, so both boards are closed to customers right now.'}
+          {status && saved && <ScheduleStatusLine status={status} schedule={saved} />}
+
+          {/* The fast path. Absolute times are the precise way to say when both
+              boards trade; these are for the admin who means "today" or "stop",
+              and who should not have to reach that through a date picker. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {status?.state === 'scheduled' && (
+              <button type="button" disabled={busy} className={btnGhost}
+                onClick={runControl((s) => windowStartedNow(s, new Date()))}>
+                Open now
+              </button>
+            )}
+            {(status?.state === 'open' || status?.state === 'scheduled') && (
+              <button type="button" disabled={busy} className={btnGhost}
+                onClick={runControl((s) => windowClosedNow(s, new Date()))}>
+                Close now
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12px] font-semibold text-ink-body">
+              {status?.state === 'open' ? 'Replace with a run of:' : 'Start a window running for:'}
+            </span>
+            {PRESET_DAYS.map((days) => (
+              <button key={days} type="button" disabled={busy} className={btnGhost}
+                onClick={runControl(() => windowOpeningNow(days, new Date()))}>
+                {days} days
+              </button>
+            ))}
           </div>
 
           <div>
