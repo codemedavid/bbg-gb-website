@@ -2,34 +2,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { SectionHeader } from '@/components/headers';
+import { OrderItemList } from '@/components/OrderItemList';
+import { OrderStatusTrail } from '@/components/OrderStatusTrail';
 import { useOrders, useSettlementPreview } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { php, shortDate } from '@/lib/format';
-import { STATUS_FLOW, STATUS_LABEL, STATUS_BADGE, statusIndex } from '@/lib/order-status';
+import { STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
 import { useToast } from '@/lib/store/toast';
 import type { Order } from '@/lib/types';
-
-function Timeline({ order }: { order: Order }) {
-  const current = statusIndex(order.status);
-  return (
-    <div>
-      {STATUS_FLOW.map((s, i) => {
-        const done = i < current, active = i === current;
-        return (
-          <div key={s} className="flex items-start gap-2.5">
-            <div className="flex flex-col items-center">
-              <div className="mt-0.5 h-3 w-3 rounded-full" style={{ background: done ? '#57a814' : active ? '#0b46b8' : '#d3ddd2' }} />
-              {i < STATUS_FLOW.length - 1 && <div className="h-4 w-0.5" style={{ background: done ? '#a9c88f' : '#e6ece4' }} />}
-            </div>
-            <div className="text-[12.5px]" style={{ color: active ? '#0b46b8' : done ? '#33413d' : '#98a29b', fontWeight: active ? 700 : done ? 600 : 400 }}>
-              {STATUS_LABEL[s]}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // What the customer is told about a hatian order's packing fee. A settlement
 // that exists but is unverified is "under review", never "settled" — and a
@@ -47,49 +27,86 @@ function settlementLabelKey(order: Order): keyof typeof PACKING_FEE_LABEL {
 
 function OrderCard({ order }: { order: Order }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
   const toast = useToast((s) => s.show);
-  const first = order.items?.[0];
+  const items = order.items ?? [];
   const downpayment = Number(order.downpaymentPhp ?? 0);
   const balance = Number(order.totalPhp) - downpayment;
-  const itemsText = first ? `${first.nameSnapshot}${(order.items?.length || 0) > 1 ? ` +${order.items!.length - 1} more` : ''}` : '';
+  // A count, not a sample. Naming the first item and appending "+3 more" read
+  // as though the order were mostly that item, and the other three were
+  // nowhere on this screen or any screen reachable from it.
+  const itemsText = items.length ? `${items.length} item${items.length === 1 ? '' : 's'}` : '';
   return (
     <div className="rounded-[16px] bg-white p-4 shadow-card">
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between text-left">
-        <div>
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className="flex w-full items-start justify-between gap-3 text-left">
+        <div className="min-w-0">
           <div className="text-[14.5px] font-bold text-ink">{order.orderNo}</div>
           <div className="text-[12px] text-ink-muted">{shortDate(order.createdAt)} · {itemsText}</div>
         </div>
-        <span className={`rounded-md px-2.5 py-1 text-[11px] font-bold ${STATUS_BADGE[order.status] || ''}`}>{STATUS_LABEL[order.status]}</span>
+        <span className={`flex-none rounded-md px-2.5 py-1 text-[11px] font-bold ${STATUS_BADGE[order.status] || ''}`}>{STATUS_LABEL[order.status] ?? order.status}</span>
       </button>
       {open && (
         <div className="mt-3.5 border-t border-line-soft pt-3.5">
-          <Timeline order={order} />
+          <OrderStatusTrail status={order.status} />
+          <div className="mt-3">
+            <OrderItemList items={items} />
+          </div>
           {order.trackingNo && <div className="mt-2 rounded-[10px] bg-surface-mist px-3 py-2.5 text-[12.5px] text-ink-body">🚚 {order.trackingNo} — in transit</div>}
-          {downpayment > 0 && (
-            <div className="mt-2 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5 text-[12.5px] text-ink-body">
-              <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
-              {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
-              {/* The fee is charged at the final checkout, not here — say which
-                  state this order is in so an unpaid fee is never a surprise.
-                  Keyed on the settlement's status, not merely on its existence:
-                  an uploaded proof is not a verified payment, and saying
-                  "Settled" while the admin panel says "under review" would have
-                  the two screens contradicting each other. */}
-              {order.buyType === 'kahati' && (
-                <div className="mt-0.5 flex justify-between">
-                  <span>Packing fee</span>
-                  <span data-testid={`packing-fee-${order.orderNo}`}>{PACKING_FEE_LABEL[settlementLabelKey(order)]}</span>
-                </div>
-              )}
+          {/* Read back to the customer after checkout: the note they typed is
+              part of what they agreed to, and it is the only place they can
+              confirm we actually received it. */}
+          {order.notes && (
+            <div className="mt-2 rounded-[10px] border border-line-soft bg-surface-mist px-3 py-2.5 text-[12.5px]">
+              <div className="mb-0.5 font-bold text-ink">📝 Your note</div>
+              <p className="m-0 whitespace-pre-wrap leading-snug text-ink-body">{order.notes}</p>
             </div>
           )}
-          <div className="mt-3 flex items-center justify-between">
+          {/* Shown for every order, not only ones carrying a downpayment. This
+              block used to be gated on `downpayment > 0`, so an on-hand order —
+              which never has one — displayed no subtotal, no fee and no total:
+              the customer could see what they bought but not what they paid. */}
+          <div data-testid={`order-summary-${order.orderNo}`}
+            className="mt-2 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5 text-[12.5px] text-ink-body">
+            <div className="flex justify-between"><span>Subtotal</span><span>{php(order.subtotalPhp)}</span></div>
+            {Number(order.packingFeePhp) > 0 && (
+              <div className="mt-0.5 flex justify-between"><span>Packing fee</span><span>{php(order.packingFeePhp)}</span></div>
+            )}
+            {downpayment > 0 && (
+              <>
+                <div className="mt-0.5 flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
+                {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
+              </>
+            )}
+            {/* The fee is charged at the final checkout, not here — say which
+                state this order is in so an unpaid fee is never a surprise.
+                Keyed on the settlement's status, not merely on its existence:
+                an uploaded proof is not a verified payment, and saying
+                "Settled" while the admin panel says "under review" would have
+                the two screens contradicting each other. */}
+            {order.buyType === 'kahati' && (
+              <div className="mt-0.5 flex justify-between">
+                <span>Packing fee</span>
+                <span data-testid={`packing-fee-${order.orderNo}`}>{PACKING_FEE_LABEL[settlementLabelKey(order)]}</span>
+              </div>
+            )}
+            <div className="mt-1 flex justify-between border-t border-[#cfe2bb] pt-1 font-bold text-ink">
+              <span>Total</span><span>{php(order.totalPhp)}</span>
+            </div>
+          </div>
+          <div className="mt-3">
             <button onClick={() => toast('COA available on the product page or on request.')}
-              className="rounded-[9px] border-[1.5px] border-[#a9c88f] px-3.5 py-2 text-[12px] font-bold text-brand-greendark">📄 Download COA</button>
-            <strong className="font-display text-[16px] text-ink">{php(order.totalPhp)}</strong>
+              className="rounded-[10px] border-[1.5px] border-[#a9c88f] px-3.5 py-2.5 text-[12px] font-bold text-brand-greendark">📄 Download COA</button>
           </div>
         </div>
       )}
+      {/* Outside the accordion on purpose. The whole point of the details page
+          is to be one tap from the order list; putting its entrance behind an
+          expand step makes it something the customer has to find first. */}
+      <button onClick={() => router.push(`/orders/${order.id}`)}
+        className="mt-3 w-full rounded-[10px] border-[1.5px] border-line py-2.5 text-[12.5px] font-bold text-brand-blue transition-colors hover:border-brand-blue active:scale-[.99]">
+        View details →
+      </button>
     </div>
   );
 }
