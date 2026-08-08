@@ -36,7 +36,25 @@ const kahatiOrder = {
   id: 'o1', orderNo: 'BBG-2418', status: 'batch_filling', buyType: 'kahati',
   subtotalPhp: '2700', packingFeePhp: '0', totalPhp: '2700', downpaymentPhp: '150',
   shipName: 'Ana', shipPhone: '0917', shipAddress: 'x', trackingNo: null,
-  createdAt: new Date('2026-07-01').toISOString(), items: [{ id: 'i1', nameSnapshot: 'Reta — kahati', qty: 3 }],
+  createdAt: new Date('2026-07-01').toISOString(),
+  items: [{
+    id: 'i1', kind: 'group_buy', nameSnapshot: 'Reta — kahati', specSnapshot: '20mg vial',
+    unitPricePhp: '900', qty: 3, lineTotalPhp: '2700',
+  }],
+};
+
+// The shape the brief calls out: many products, several sharing a name and
+// differing only by variant. This is the order the old "+N more" summary hid.
+const manyItemOrder = {
+  ...kahatiOrder,
+  id: 'o9', orderNo: 'BBG-2419', buyType: 'solo', status: 'shipped',
+  subtotalPhp: '33950', packingFeePhp: '200', totalPhp: '34150', downpaymentPhp: '0',
+  items: [
+    { id: 'a', kind: 'product', nameSnapshot: 'Tirzepatide', specSnapshot: '15mg vial', unitPricePhp: '3200', qty: 1, lineTotalPhp: '3200' },
+    { id: 'b', kind: 'product', nameSnapshot: 'Tirzepatide', specSnapshot: '30mg vial', unitPricePhp: '4850', qty: 1, lineTotalPhp: '4850' },
+    { id: 'c', kind: 'product', nameSnapshot: 'Retatrutide', specSnapshot: '20mg vial', unitPricePhp: '6875', qty: 2, lineTotalPhp: '13750' },
+    { id: 'd', kind: 'product', nameSnapshot: 'Cagrilintide', specSnapshot: '5mg vial', unitPricePhp: '4050', qty: 3, lineTotalPhp: '12150' },
+  ],
 };
 
 beforeEach(() => {
@@ -72,6 +90,64 @@ describe('settle prompt on My Orders', () => {
   it('stays quiet while no hatian has completed', () => {
     render(<OrdersPage />, { wrapper });
     expect(screen.queryByText(/ready to settle/i)).toBeNull();
+  });
+});
+
+// The bug the brief opens with: an order card that names one item and counts
+// the rest. A customer with four lines could not see three of them, and no
+// screen they could reach from here listed them either.
+describe('seeing everything in an order', () => {
+  beforeEach(() => { state.orders = [manyItemOrder]; });
+
+  it('lists every ordered item, not the first one and a tally', async () => {
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2419')).click();
+
+    expect(await screen.findByText('Cagrilintide')).toBeInTheDocument();
+    expect(screen.getAllByText('Tirzepatide')).toHaveLength(2);
+    expect(screen.getByText('Retatrutide')).toBeInTheDocument();
+    // The summary that replaced the real list.
+    expect(screen.queryByText(/\+\d+ more/)).toBeNull();
+  });
+
+  it('shows the quantity of each line', async () => {
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2419')).click();
+
+    const rows = await screen.findAllByRole('listitem');
+    expect(rows.find((r) => r.textContent?.includes('Cagrilintide'))).toHaveTextContent('Qty: 3');
+    expect(rows.find((r) => r.textContent?.includes('20mg vial'))).toHaveTextContent('Qty: 2');
+  });
+
+  // The status was only drawn once the card was open, so the one thing a
+  // customer opens this screen to check was the one thing behind a tap.
+  it('shows the status without the card being opened', () => {
+    render(<OrdersPage />, { wrapper });
+    expect(screen.getByText('Shipped')).toBeInTheDocument();
+  });
+
+  it('offers a way through to the full order', async () => {
+    render(<OrdersPage />, { wrapper });
+
+    (await screen.findByRole('button', { name: /view details/i })).click();
+    expect(push).toHaveBeenCalledWith('/orders/o9');
+  });
+});
+
+// The whole money block was gated on a downpayment being present, so an
+// on-hand order — which never has one — showed no subtotal, no packing fee and
+// no total at all.
+describe('an order with no downpayment', () => {
+  it('still breaks down what was charged', async () => {
+    state.orders = [manyItemOrder];
+    render(<OrdersPage />, { wrapper });
+    (await screen.findByText('BBG-2419')).click();
+
+    const summary = await screen.findByTestId('order-summary-BBG-2419');
+    expect(summary).toHaveTextContent('₱33,950');  // subtotal
+    expect(summary).toHaveTextContent('₱200');     // packing fee
+    expect(summary).toHaveTextContent('₱34,150');  // total
+    expect(summary).not.toHaveTextContent(/downpayment/i);
   });
 });
 
