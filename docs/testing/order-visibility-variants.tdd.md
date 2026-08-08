@@ -19,6 +19,7 @@ in the UI without migrating the enum.
 | J4 | As a customer, I want a View Details button that opens the whole order on one screen. | 4 |
 | J5 | As a customer, I want to see what I paid on every order, not only ones with a downpayment. | 1 |
 | J6 | As a customer browsing peptides, I want one card per peptide with a dose dropdown, so I'm not reading the same name five times. | 3 |
+| J7 | As a customer on a phone, I want every ordering screen to fit, so nothing overflows sideways and no control is out of reach. | 8 |
 
 ---
 
@@ -91,6 +92,51 @@ trail drawing with `statusSteps`, which distinguishes cancelled from unstarted.
   `Cannot read properties of undefined (reading 'onHandPiecePhp')`.
 - **GREEN** same command → `Tests 8 passed (8)`.
 
+### Task 8 — Mobile pass (requirement 8), browser-verified
+
+Ran a real Chrome against a local dev server (PGlite, `STORAGE_DRIVER=local`,
+no `.env` present so `DATABASE_URL` was unset — the prod Supabase was never
+touched), seeded via `npm run db:setup`, with an 8-line order placed through the
+running API so the item list exceeded the 6-row scroll threshold.
+
+Measurement script per page: every element's `getBoundingClientRect()` compared
+to `clientWidth` for horizontal overflow, plus every interactive element checked
+against the WCAG 2.2 AA 24px target-size minimum.
+
+Viewports: **320×568, 375×667, 768×1024, 1440×900** (Chrome's window floor is
+~500px, so `emulate` device-metrics override was required — `resize_page` alone
+silently reported 500px and would have invalidated the whole 320px pass).
+
+| Surface | 320 | 375 | 768 | 1440 | Overflow | Notes |
+|---|---|---|---|---|---|---|
+| `/orders` (8-item order expanded) | ✓ | — | — | — | none | 8 rows present; scroll region 576→280, vertical only |
+| `/orders/[id]` | ✓ | ✓ | ✓ | ✓ | none | all 7 blocks; long address wraps; 46px clearance under fixed nav |
+| `/shop` (variant dropdown) | ✓ | — | ✓ | ✓ | none | 8 products → 6 cards; live 15mg→30mg flips ₱550→₱700, stock→87 |
+| `/cart` | ✓ | — | — | — | none | |
+| `/checkout` | ✓ | — | — | — | none | |
+| `/success/[orderNo]` | ✓ | — | — | — | none | defect found and fixed, below |
+
+**Two real defects found and fixed:**
+
+1. **Confirmation page could strand the customer** (`app/success/[orderNo]/page.tsx`).
+   RED: injecting ~320px of extra content at 320×568 put both buttons below the
+   fold (bottoms 633 and 691 vs viewport 568); `document.scrollHeight` equalled
+   the viewport, so `window.scrollTo(0, 9999)` left `scrollY` at 0 — no way to
+   reach either control. GREEN: same injection, shell scrolls (`scrollTop` 123),
+   both buttons back within the fold (510, 568), top still reachable at
+   `scrollTop` 0. Needed `min-h-full` as well as `overflow-y-auto`: with
+   `justify-center` alone, over-tall content overflows off *both* edges and the
+   top stays unreachable even once the parent scrolls.
+
+2. **Product name below the WCAG tap-target minimum** (`components/ProductCard.tsx`).
+   RED: 17px tall, 6 such elements on the shop grid at 768. GREEN: 25px after
+   `py-1`; zero elements below the minimum. Pre-existing rather than a
+   regression — the original card had the same bare button.
+
+**Not changed, noted:** `CartShortcut` renders at 31px and the bottom-nav tabs at
+37px. Both clear the 24px AA minimum but sit under the 44px comfort guideline.
+They belong to a concurrent session's files, so they were left alone.
+
 ---
 
 ## Test Specification
@@ -121,6 +167,9 @@ trail drawing with `statusSteps`, which distinguishes cancelled from unstarted.
 | 22 | The price shown is the selected strength's price | `components/ProductCard.test.tsx:shows the selected strength's price after switching` | component | PASS |
 | 23 | The cart receives the selected strength, not the first | `components/ProductCard.test.tsx:adds the selected strength to the cart, not the first one` | component | PASS |
 | 24 | Sold-out strengths are disabled, not hidden | `components/ProductCard.test.tsx:marks a sold-out strength in the dropdown rather than hiding it` | component | PASS |
+| 25 | No customer ordering screen scrolls horizontally at 320/375/768/1440 | browser measurement (Task 8 table) | manual/browser | PASS |
+| 26 | The confirmation page stays reachable when its content outgrows the screen | browser measurement (Task 8, defect 1) | manual/browser | PASS |
+| 27 | Every interactive element on the shop grid clears the WCAG 2.2 AA 24px minimum | browser measurement (Task 8, defect 2) | manual/browser | PASS |
 
 ---
 
@@ -147,22 +196,27 @@ one-line router/toast delegations.
 
 ## Known Gaps
 
-1. **Kahati variant dropdown not wired.** `lib/product-variants.ts` is generic
-   over an accessor view precisely so the Kahati board can use it, but
-   `GET /api/groupbuys` does not select `group_buys.product_id` into its
-   response and the `GroupBuy` type has no such field. Wiring it needs an API +
-   type change that was outside this cycle.
-2. **Mobile viewport pass (requirement 8) not executed.** Mobile-safe choices
-   were made in code (`min-w-0`/`break-words` on item rows and product names,
-   stacked label-over-value fields, wrapped button rows, full-width picker at
-   tappable height) and are covered by unit tests, but no browser was driven at
-   320/375/768/1440 and no screenshots were captured.
+1. **Kahati variant dropdown deliberately NOT built** — user decision after the
+   conflict was surfaced. An earlier draft of this report claimed the blocker
+   was that `GET /api/groupbuys` omits `product_id`; that was **wrong**. The
+   route selects the whole `groupBuys` row (`app/api/groupbuys/route.ts:37`), so
+   `productId` is already in the JSON — only the `GroupBuy` TypeScript type
+   omits it. The actual blocker is a collision: a concurrent session's
+   `app/(storefront)/kahati/page.test.tsx` asserts **one card per counter**
+   (e.g. `expect(cardNames()).toEqual(['Retatrutide 20mg vial', 'Retatrutide 10mg vial'])`),
+   and grouping would collapse those and break 4+ of its tests. Mitigating
+   factor: that board's search already matches the variant, so a customer can
+   still reach a specific strength by typing "20mg".
+2. ~~Mobile viewport pass not executed~~ — **done**, see Task 8. Two defects
+   found and fixed.
 3. **Requirements 5, 6, 9, 10 are out of scope** by the agreed P1 split. Board
    search/sort already exist (`lib/board-filter.ts`, `components/BoardControls.tsx`);
    category/availability *filters* do not.
-4. **Defect D4 left unfixed and unrecorded in code**: `app/success/[orderNo]/page.tsx`
-   uses `fixed inset-0` with no `overflow-y-auto`, so requirement 10's richer
-   confirmation content will clip on a 320×568 viewport.
+4. ~~Defect D4 left unfixed~~ — **fixed and browser-verified**, see Task 8
+   defect 1. It was latent rather than live: with today's short confirmation
+   content everything fit (buttons ended at 543 of 568), but the page could not
+   scroll at all, so requirement 10's richer content would have trapped the
+   customer.
 5. **Snapshot contract worth knowing**: checkout writes the variant *into*
    `nameSnapshot` (`"Tirzepatide 15mg vial"`) and uses `specSnapshot` for the
    buying mode (`"On-hand · per piece"`) — see `app/api/orders/route.ts:185-186`.
@@ -193,6 +247,13 @@ test: add reproducer for product variant grouping                      (RED unre
 feat: group product variants into one entry per peptide                (GREEN 11/11)
 test: add reproducer for the variant dropdown on shop cards            (RED 8 fail)
 feat: one shop card per peptide with a variant dropdown                (GREEN 8/8, 1613/1613 suite)
+docs: TDD evidence report for the P1 order-visibility work
+fix: order confirmation can scroll when it outgrows the screen         (RED/GREEN browser-measured)
+fix: product name on a shop card is a tappable target                  (RED 17px → GREEN 25px)
 ```
+
+The last two carry browser measurements rather than test-runner output, because
+jsdom computes no layout and neither defect is expressible as a unit test. Their
+RED and GREEN figures are quoted in full in their commit messages and in Task 8.
 
 If these are squashed, this file is the surviving record of what was verified.
