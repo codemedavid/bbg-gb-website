@@ -11,17 +11,10 @@ export const usePackingFees = () =>
     staleTime: 5 * 60 * 1000,
   });
 
-export const useKahatiDownpayment = () =>
-  useQuery({
-    queryKey: ['kahati-downpayment'],
-    queryFn: () => apiGet<{ kahatiDownpayment: number }>('/settings').then((d) => d.kahatiDownpayment),
-    staleTime: 5 * 60 * 1000,
-  });
-
-// The kahati commitments this customer already holds, and whether that covers
-// the reservation downpayment. Never cached stale: a hatian sealing flips the
-// waiver, and showing "nothing to pay" for a checkout the server then charges
-// for is the failure to avoid.
+// The kahati commitments this customer already holds, and whether this cycle's
+// packing fee is already paid. Never cached stale: a cycle turning over flips
+// the answer, and showing "nothing to pay" for a checkout the server then
+// charges for is the failure to avoid.
 export const useKahatiCommitments = (enabled = true) =>
   useQuery({
     queryKey: ['kahati-commitments'],
@@ -30,14 +23,14 @@ export const useKahatiCommitments = (enabled = true) =>
     staleTime: 0,
   });
 
-// The group buys this customer already has a parcel going in, so the cart can
-// show ₱0 packing fee exactly where the server will charge none. Never cached
-// stale, for the same reason as the kahati waiver above.
-export const useCampaignPackingFeeWaivers = (enabled = true) =>
+// Whether this customer has already paid to have this cycle's parcel packed, so
+// the cart can show ₱0 packing fee exactly where the server will charge none.
+// Never cached stale, for the same reason as the kahati commitments above.
+export const useCyclePackingFeePaid = (enabled = true) =>
   useQuery({
-    queryKey: ['campaign-commitments'],
-    queryFn: () => apiGet<{ paidSeriesIds: string[] }>('/campaigns/commitments')
-      .then((d) => new Set(d.paidSeriesIds)),
+    queryKey: ['cycle-packing-fee'],
+    queryFn: () => apiGet<{ paidThisCycle: boolean }>('/campaigns/commitments')
+      .then((d) => d.paidThisCycle),
     enabled,
     staleTime: 0,
   });

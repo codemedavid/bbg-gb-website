@@ -31,24 +31,27 @@ describe('packingFeeFor', () => {
     expect(packingFeeFor([onHand()], { solo: 275, kahati: 150, group_buy: 300, moq: 300 })).toBe(275);
   });
 
-  it('charges nothing for a kahati cart — the hatian fee is deferred to settlement', () => {
-    expect(packingFeeFor([kahati()])).toBe(0);
-    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(0);
+  it('charges the hatian fee at checkout, not at settlement', () => {
+    // The ₱150 is what the customer pays today, added to the goods rather than
+    // taken out of them.
+    expect(packingFeeFor([kahati()])).toBe(150);
+    expect(packingFeeFor([kahati()], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(99);
   });
 
-  it('ignores a per-listing kahati fee at commit time — it is charged at settlement', () => {
-    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(0);
+  it('lets a per-listing kahati fee win over the admin default', () => {
+    expect(packingFeeFor([kahati({ packingFeePhp: 180 })], { solo: 200, kahati: 99, group_buy: 300, moq: 300 })).toBe(180);
   });
 
-  it('charges one fee per charged-at-checkout mode in a mixed cart', () => {
+  it('charges the on-hand parcel and the cycle separately in a mixed cart', () => {
     const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
-    // The hatian leg adds nothing now; only the on-hand parcel is billed.
-    expect(packingFeeFor([onHand(), kahati()], fees)).toBe(200);
+    // Two parcels on two timings: the on-hand one ships now, the hatian one
+    // when the cycle's goods arrive.
+    expect(packingFeeFor([onHand(), kahati()], fees)).toBe(350);
   });
 
-  it('charges nothing for two kahati placements — one fee follows at settlement', () => {
+  it('charges one fee for two hatian placements — one cycle, one parcel', () => {
     const items = [kahati({ key: 'gb:a', packingFeePhp: 120 }), kahati({ key: 'gb:b', packingFeePhp: 210 })];
-    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(0);
+    expect(packingFeeFor(items, { solo: 200, kahati: 150, group_buy: 300, moq: 300 })).toBe(210);
   });
 
   it('charges nothing for an empty cart', () => {
@@ -93,28 +96,28 @@ describe('packingFeeFor', () => {
   });
 
   // The client half of the client/server fee agreement: the cart must show ₱0
-  // exactly where campaignPackingFeeDue will charge ₱0, and nowhere else.
-  it('waives the fee for a line whose series the customer already has a parcel in', () => {
-    expect(packingFeeFor([campaign({ seriesId: 's1' })], PACKING_FEE_PHP, new Set(['s1']))).toBe(0);
+  // exactly where the server will charge ₱0, and nowhere else.
+  it('waives the fee once this cycle is already paid for', () => {
+    expect(packingFeeFor([campaign()], PACKING_FEE_PHP, true)).toBe(0);
   });
 
-  it('still charges for a series the customer has no parcel in', () => {
-    expect(packingFeeFor([campaign({ seriesId: 's2' })], PACKING_FEE_PHP, new Set(['s1']))).toBe(300);
+  it('charges the fee when this cycle has not been paid for', () => {
+    expect(packingFeeFor([campaign()], PACKING_FEE_PHP, false)).toBe(300);
   });
 
-  it('charges the unwaived group buy when the cart mixes a paid series with a new one', () => {
-    const items = [
-      campaign({ key: 'gbuy:a', refId: 'a', seriesId: 's1' }),
-      campaign({ key: 'gbuy:b', refId: 'b', seriesId: 's2', packingFeePhp: 400 }),
-    ];
-    expect(packingFeeFor(items, PACKING_FEE_PHP, new Set(['s1']))).toBe(400);
+  it('charges ONE fee for a cart spanning both boards', () => {
+    // Group Buy and Hatian trade in the same cycle and ship one parcel, so a
+    // cart holding both pays to have it packed once — the dearer of the two.
+    const items = [campaign({ packingFeePhp: 300 }), kahati({ packingFeePhp: 150 })];
+    expect(packingFeeFor(items, PACKING_FEE_PHP, false)).toBe(300);
   });
 
-  it('waives by series, so a successor batch is not charged again', () => {
-    // Batch #2 is a different row with the same seriesId; the fee follows the
-    // series, not the batch.
-    const items = [campaign({ key: 'gbuy:b2', refId: 'b2', spec: 'Group buy · batch #2', seriesId: 's1' })];
-    expect(packingFeeFor(items, PACKING_FEE_PHP, new Set(['s1']))).toBe(0);
+  it('still adds the on-hand fee alongside the one cycle fee', () => {
+    // On-hand stock ships as its own parcel on its own timing, so its fee is
+    // not the cycle's to waive.
+    const fees = { solo: 200, kahati: 150, group_buy: 300, moq: 300 };
+    expect(packingFeeFor([campaign(), kahati(), onHand()], fees, false)).toBe(500);
+    expect(packingFeeFor([campaign(), kahati(), onHand()], fees, true)).toBe(200);
   });
 });
 

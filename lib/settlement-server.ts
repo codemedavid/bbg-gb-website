@@ -30,6 +30,7 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
     status: orders.status,
     totalPhp: orders.totalPhp,
     downpaymentPhp: orders.downpaymentPhp,
+    cycleKey: orders.cycleKey,
     packingFeePhp: orders.packingFeePhp,
     settlementId: orders.settlementId,
     createdAt: orders.createdAt,
@@ -81,6 +82,7 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
       status: row.status,
       totalPhp: Number(row.totalPhp),
       downpaymentPhp: Number(row.downpaymentPhp),
+      cycleKey: row.cycleKey,
       packingFeePhp: Number(row.packingFeePhp),
       // Spanning counters with different fees costs what the priciest one costs.
       hatianPackingFeePhp: Math.max(...fees),

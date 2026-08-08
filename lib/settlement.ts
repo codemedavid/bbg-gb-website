@@ -33,6 +33,11 @@ export type SettleableOrder = {
   // The packing fee of the hatian this order committed to — the candidate fee
   // for the settlement, not something the order has paid.
   hatianPackingFeePhp: number;
+  // The trading cycle this order was placed in, or null for an order placed
+  // before cycles existed. Its presence is what distinguishes an order whose
+  // packing fee was paid at checkout from a legacy one that paid at commit time
+  // — the two carry the same fee on the row and mean opposite things.
+  cycleKey: string | null;
   settlementId: string | null;
 };
 
@@ -43,24 +48,33 @@ export type SettleableOrder = {
 // counter: it ships as one parcel, so settling it while the sibling is still
 // open would bill a parcel that is not ready to go out.
 //
-// The packing-fee check is the cutover. An order carrying a fee on its own row
-// was placed before the fee was deferred, when balances were collected
-// off-platform and nothing in the database recorded whether that had happened.
-// Quoting those orders here would ask customers to pay a balance many of them
-// already settled in person. They stay out of this flow entirely; the admin
-// closes them the way they always have.
+// The packing-fee check is the cutover, and it turns on the CYCLE as well as
+// the fee. Three generations of order meet here:
+//
+//   1. A fee with no cycle: placed before the fee was deferred, when balances
+//      were collected off-platform and nothing recorded whether that had
+//      happened. Quoting those would ask customers to pay a balance many of
+//      them already settled in person, so they stay out of this flow entirely.
+//   2. No fee and no cycle: placed while the fee was deferred to this final
+//      checkout. Settled here, and the fee is collected here.
+//   3. A cycle: placed under the per-cycle rule, which charges the fee at
+//      checkout. Settled here, but the fee is NOT collected again.
+//
+// Testing the fee alone would put every generation-3 order in bucket 1 and make
+// all of them permanently unsettleable.
 export function isReadyToSettle(o: {
   status: OrderStatus;
   settlementId: string | null;
   settlementStatus?: SettlementStatus | null;
   groupBuyStatuses: string[];
   packingFeePhp?: number;
+  cycleKey?: string | null;
 }): boolean {
   if (o.status === 'cancelled') return false;
   // Held by a settlement — unless that settlement was cancelled, which frees the
   // order to be settled again while keeping the record of what it once covered.
   if (o.settlementId != null && o.settlementStatus !== 'cancelled') return false;
-  if ((o.packingFeePhp ?? 0) > 0) return false;
+  if (o.cycleKey == null && (o.packingFeePhp ?? 0) > 0) return false;
   if (!o.groupBuyStatuses.length) return false;
   return o.groupBuyStatuses.every(
     (s) => (SETTLEABLE_GROUP_BUY_STATUSES as readonly string[]).includes(s),
@@ -79,14 +93,15 @@ export type SettlementTotals = {
   totalPhp: number;
 };
 
-// What one final checkout costs: every outstanding balance, plus a single
-// packing fee. Only orders that were NOT charged at commit time contribute a
-// candidate fee — a legacy order already paid for its packing, and billing it
-// again is exactly the double-charge this feature removes.
+// What one final checkout costs: every outstanding balance, plus at most a
+// single packing fee. Only generation-2 orders — no fee on the row AND no cycle
+// — contribute a candidate fee. An order from either other generation already
+// paid for its packing, and billing it again is exactly the double-charge this
+// feature exists to remove.
 export function settlementTotals(orders: SettleableOrder[]): SettlementTotals {
   const balancePhp = round2(orders.reduce((sum, o) => sum + orderBalance(o), 0));
   const deferredFees = orders
-    .filter((o) => o.packingFeePhp <= 0)
+    .filter((o) => o.packingFeePhp <= 0 && o.cycleKey == null)
     .map((o) => o.hatianPackingFeePhp);
   const packingFeePhp = settlementPackingFee(deferredFees);
   return { balancePhp, packingFeePhp, totalPhp: round2(balancePhp + packingFeePhp) };
@@ -109,12 +124,14 @@ export function finalPaymentState(
   return settlementStatus === 'paid' ? 'paid' : 'under_review';
 }
 
-// The packing fee. Legacy orders paid theirs at commit time and are done; every
-// other order's fee is settled with its balance.
+// The packing fee. An order that paid at commit time, and any order placed
+// under the per-cycle rule (which collects the fee at checkout, or waives it
+// because another order in the cycle already paid), is done. Only a deferred
+// order's fee is settled with its balance.
 export function packingFeeState(
-  o: Pick<SettleableOrder, 'settlementId' | 'packingFeePhp'>,
+  o: Pick<SettleableOrder, 'settlementId' | 'packingFeePhp' | 'cycleKey'>,
   settlementStatus: SettlementStatus | null,
 ): PaymentState {
-  if (o.packingFeePhp > 0) return 'paid';
+  if (o.packingFeePhp > 0 || o.cycleKey != null) return 'paid';
   return finalPaymentState(o, settlementStatus);
 }

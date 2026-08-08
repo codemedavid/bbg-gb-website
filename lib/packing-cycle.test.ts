@@ -11,8 +11,10 @@
 import { describe, it, expect } from 'vitest';
 import { hasPaidPackingFeeThisCycle, packingFeeDueThisCycle } from '@/lib/packing-cycle';
 
-const paid = (over: Partial<{ orderStatus: string; packingFeePhp: number }> = {}) => ({
-  orderStatus: 'proof_review' as never, packingFeePhp: 150, ...over,
+import type { CyclePayment } from '@/lib/packing-cycle';
+
+const paid = (over: Partial<CyclePayment> = {}): CyclePayment => ({
+  orderStatus: 'proof_review', packingFeePhp: 150, ...over,
 });
 
 describe('hasPaidPackingFeeThisCycle', () => {

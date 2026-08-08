@@ -19,23 +19,23 @@ export default function CheckoutPage() {
   const qc = useQueryClient();
   const { user, loading } = useAuth();
   const items = useCart((s) => s.items);
+  const note = useCart((s) => s.note);
   const clear = useCart((s) => s.clear);
   const removeLine = useCart((s) => s.remove);
-  // The kahati commitments this customer already holds. An open one among them
-  // means their reservation downpayment is already paid, so this commitment
-  // owes nothing (see lib/kahati-commitment.ts) — mirrors the server rule that
-  // decides what is actually charged.
+  // The kahati commitments this customer already holds, and whether this
+  // cycle's packing fee is already paid — one fee covers everything they join
+  // between one opening and the next (see lib/packing-cycle.ts). Mirrors the
+  // server rule that decides what is actually charged.
   const { data: kahatiHeld } = useKahatiCommitments();
-  const downpaymentWaived = !!kahatiHeld?.downpaymentWaived;
-  // A cart of nothing but waived kahati lines owes nothing at all: no
-  // downpayment, and so no payment method, no proof, nothing to review. Any
-  // on-hand or MOQ line alongside it is still paid for now.
-  const confirmOnly = downpaymentWaived && items.length > 0 && items.every((i) => i.kind === 'group_buy');
+  const paidThisCycle = !!kahatiHeld?.paidThisCycle;
+  // A cart of nothing but hatian lines with the cycle fee already paid owes
+  // nothing at all: no fee, and so no payment method, no proof, nothing to
+  // review. Any on-hand or MOQ line alongside it is still paid for now.
+  const confirmOnly = paidThisCycle && items.length > 0 && items.every((i) => i.kind === 'group_buy');
 
-  const { total, hasKahati, downpayment } = useOrderTotals(downpaymentWaived);
-  // Kahati carts pay only the reservation downpayment now; the balance is
-  // collected after the kahati ends.
-  const amountDueNow = hasKahati && downpayment > 0 ? downpayment : total;
+  // A hatian pays only the packing fee now; the goods are settled after it ends.
+  const { hasKahati, dueNow } = useOrderTotals(paidThisCycle);
+  const amountDueNow = dueNow;
   const toast = useToast((s) => s.show);
   const { data: methods = [] } = usePaymentMethods();
 
@@ -81,6 +81,9 @@ export default function CheckoutPage() {
       fd.append('shipName', name);
       fd.append('shipPhone', phone);
       fd.append('shipAddress', address);
+      // Written in the cart, carried through here, saved onto every order this
+      // checkout creates.
+      if (note.trim()) fd.append('note', note.trim());
       if (selectedMethod && !confirmOnly) fd.append('paymentMethod', selectedMethod.label);
       fd.append('courier', courier);
       if (proof) fd.append('proof', proof);
@@ -203,7 +206,7 @@ export default function CheckoutPage() {
               <div className="text-[12px] text-ink-muted">Account / number</div>
               <div className="text-[16px] font-bold text-ink">{selectedMethod.accountNumber}</div>
               <div className="mt-1 text-[12px] text-ink-muted">
-                {hasKahati && downpayment > 0 ? 'Downpayment due now' : 'Amount'}: <strong className="font-display text-ink-body">{php(amountDueNow)}</strong>
+                {hasKahati && amountDueNow > 0 ? 'Packing fee due now' : 'Amount'}: <strong className="font-display text-ink-body">{php(amountDueNow)}</strong>
               </div>
               {selectedMethod.qrUrl && (
                 <div className="mt-3 flex justify-center">
@@ -238,7 +241,20 @@ export default function CheckoutPage() {
         </div>
 
         <div className="flex flex-col gap-3.5 lg:sticky lg:top-[72px]">
-        <div className="rounded-[14px] bg-white p-4 shadow-card"><OrderSummary downpaymentWaived={downpaymentWaived} /></div>
+        {/* Read-only here. The cart owns the note; showing it back at the point
+            of payment is what lets the customer confirm it survived the trip,
+            and the link says where to change it. */}
+        {note.trim() && (
+          <div className="rounded-[14px] border border-line-soft bg-white p-4 shadow-card">
+            <div className="mb-1 flex items-baseline gap-2">
+              <span className="text-[13px] font-bold text-ink">📝 Your note</span>
+              <button type="button" onClick={() => router.push('/cart')}
+                className="ml-auto text-[11.5px] font-semibold text-brand-blue underline">Edit</button>
+            </div>
+            <p className="m-0 whitespace-pre-wrap text-[12.5px] leading-snug text-ink-body">{note.trim()}</p>
+          </div>
+        )}
+        <div className="rounded-[14px] bg-white p-4 shadow-card"><OrderSummary paidThisCycle={paidThisCycle} /></div>
         <div className="text-[11.5px] leading-relaxed text-ink-muted">
           🛬 Tip: white powder peptides ship first; salt forms, blends &amp; liquids arrive 3–5 days later — place them in separate orders to avoid delays.
         </div>

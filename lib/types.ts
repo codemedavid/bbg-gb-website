@@ -119,6 +119,10 @@ export type Order = {
   // awaiting verification from a confirmed payment — the id alone does not.
   settlementId?: string | null;
   settlementStatus?: 'proof_review' | 'paid' | 'cancelled' | null;
+  // The instructions the customer wrote in the cart before checking out. Shown
+  // back to them so they can confirm what they asked for, and to the admin who
+  // has to act on it.
+  notes?: string | null;
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };
@@ -146,7 +150,7 @@ export type KahatiCommitments = {
     totalPhp: number;
     orderCount: number;
   };
-  downpaymentWaived: boolean;
+  paidThisCycle: boolean;
 };
 
 export type KahatiCommitment = {

@@ -26,6 +26,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     orderStatus: orders.status,
     totalPhp: orders.totalPhp,
     downpaymentPhp: orders.downpaymentPhp,
+    cycleKey: orders.cycleKey,
     packingFeePhp: orders.packingFeePhp,
     settlementId: orders.settlementId,
     committedAt: orders.createdAt,
@@ -55,7 +56,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     .leftJoin(settlements, eq(settlements.id, orders.settlementId))
     .where(eq(orderItems.groupBuyId, id))
     .groupBy(
-      orders.id, orders.orderNo, orders.status, orders.totalPhp, orders.downpaymentPhp,
+      orders.id, orders.orderNo, orders.status, orders.totalPhp, orders.downpaymentPhp, orders.cycleKey,
       orders.packingFeePhp, orders.settlementId, orders.createdAt,
       orders.shipPhone, orders.shipAddress, orders.paymentMethod, orders.paymentProofKey,
       users.name, users.email, users.phone,
@@ -91,6 +92,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
       downpaymentPhp: Number(r.downpaymentPhp),
       packingFeePhp: Number(r.packingFeePhp),
       hatianPackingFeePhp: Number(r.hatianFeePhp),
+      cycleKey: r.cycleKey,
       settlementId: r.settlementId,
     };
     const settlementStatus = r.settlementStatus ?? null;
