@@ -128,6 +128,9 @@ export const POST = handler(async (req: Request) => {
     event: 'settlement_placed',
     distinctId: session.sub,
     email: session.email,
+    // Same name the email above greets with — PostHog sends the real mail, so
+    // omitting it here is what actually reaches the customer as a blast.
+    name: customer?.name ?? undefined,
     properties: {
       settlementId: created.settlement.id,
       orderCount: created.orderCount,
