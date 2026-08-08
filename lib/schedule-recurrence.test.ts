@@ -40,6 +40,11 @@ describe('cycleAt — the same-weekday window is a full week', () => {
     // 9:00 AM -> 6:00 PM on the same weekday is the shape most likely to be
     // resolved as a nine-hour window. It is a week: the boards trade Wednesday
     // to Wednesday, not for one morning.
+    //
+    // The close is clamped to the next opening rather than running to 6:00 PM,
+    // which would still be going when the following Wednesday opened. Two
+    // overlapping cycles make "which cycle was this fee paid in" a question
+    // with two answers, so a cycle never outlasts the start of the next.
     const sched: ScheduleRecurrence = {
       openDay: WED, openTime: '09:00', closeDay: WED, closeTime: '18:00',
     };
@@ -48,8 +53,21 @@ describe('cycleAt — the same-weekday window is a full week', () => {
 
     expect(cycle).toEqual({
       opensAt: '2026-08-05T01:00:00.000Z', // Wed Aug 5, 9:00 AM PHT
-      closesAt: '2026-08-12T10:00:00.000Z', // Wed Aug 12, 6:00 PM PHT
+      closesAt: '2026-08-12T01:00:00.000Z', // Wed Aug 12, 9:00 AM PHT — the next opening
     });
+  });
+
+  it('never lets one cycle overlap the next', () => {
+    // The invariant behind the clamp, stated on its own: an instant belongs to
+    // exactly one cycle, which is what makes a cycle key an identity.
+    const sched: ScheduleRecurrence = {
+      openDay: WED, openTime: '09:00', closeDay: WED, closeTime: '23:59',
+    };
+
+    const first = cycleAt(sched, new Date('2026-08-05T02:00:00.000Z'))!;
+    const second = cycleAt(sched, new Date('2026-08-12T02:00:00.000Z'))!;
+
+    expect(Date.parse(first.closesAt)).toBeLessThanOrEqual(Date.parse(second.opensAt));
   });
 
   it('rolls to the current week, not the first week ever', () => {

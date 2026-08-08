@@ -104,11 +104,26 @@ function spanDays(openDay: number, closeDay: number): number {
   return delta === 0 ? DAYS_IN_WEEK : delta;
 }
 
-/** The cycle that opened at `opensAt`, or null if its close cannot be resolved. */
+/**
+ * The cycle that opened at `opensAt`, or null if its close cannot be resolved.
+ *
+ * A cycle NEVER outlasts the start of the next one. An admin who sets a closing
+ * time later in the day than the opening time on the same weekday — 9:00 AM to
+ * 6:00 PM Wednesday — describes a window that would still be running when the
+ * following Wednesday opens, and two overlapping cycles make "which cycle was
+ * this packing fee paid in" a question with two answers. Clamping keeps the
+ * boards continuously open, which is what that admin asked for, while keeping
+ * one instant in exactly one cycle.
+ */
 function cycleFrom(r: Resolved, opensAt: string): Cycle | null {
   const openedOn = phtCalendarDate(new Date(opensAt));
   const closesAt = instantAt(openedOn, spanDays(r.openDay, r.closeDay), r.closeTime);
-  return closesAt ? { opensAt, closesAt } : null;
+  const nextOpensAt = instantAt(openedOn, DAYS_IN_WEEK, r.openTime);
+  if (!closesAt || !nextOpensAt) return null;
+  return {
+    opensAt,
+    closesAt: Date.parse(closesAt) > Date.parse(nextOpensAt) ? nextOpensAt : closesAt,
+  };
 }
 
 /**

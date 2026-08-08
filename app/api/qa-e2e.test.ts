@@ -84,22 +84,26 @@ describe('Phase 1 — the two modules follow one schedule with no manual step', 
   });
 
   it('is a Philippine-time schedule, not a server-local one', async () => {
-    // Opens Wednesday 9:00 AM PHT and closes the following Wednesday 11:59 PM
-    // PHT. Aug 5 and Aug 12 2026 are Wednesdays; Manila is UTC+08:00, so 09:00
-    // PHT is 01:00 UTC and 23:59 PHT is 15:59 UTC.
+    // Opens Wednesday 9:00 AM PHT and closes the following Wednesday 8:00 AM —
+    // a full week of trading with a one-hour changeover before the next cycle.
+    // Aug 5 and Aug 12 2026 are Wednesdays; Manila is UTC+08:00, so 09:00 PHT
+    // is 01:00 UTC and 08:00 PHT is 00:00 UTC.
     const { setScheduleRecurrence, isGroupBuyOpenNow } = await import('@/lib/settings');
-    await setScheduleRecurrence({ openDay: 3, openTime: '09:00', closeDay: 3, closeTime: '23:59' });
+    await setScheduleRecurrence({ openDay: 3, openTime: '09:00', closeDay: 3, closeTime: '08:00' });
 
-    // Wed 08:59 PHT — one minute early.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-05T00:59:00.000Z'))).toBe(false);
-    // Wed 09:00 PHT exactly.
+    // Wed 09:00 PHT exactly — the cycle opens.
     expect(await isGroupBuyOpenNow(new Date('2026-08-05T01:00:00.000Z'))).toBe(true);
-    // The following Wednesday, 23:58 PHT — still inside the same weekly cycle.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-12T15:58:00.000Z'))).toBe(true);
-    // 23:59 PHT — shut.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-12T15:59:00.000Z'))).toBe(false);
-    // And open again the next week with no admin action at all.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-15T00:00:00.000Z'))).toBe(true);
+    // Mid-week.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-08T04:00:00.000Z'))).toBe(true);
+    // The following Wednesday 07:59 PHT — the last minute of the cycle.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-11T23:59:00.000Z'))).toBe(true);
+    // 08:00 PHT — shut, and the changeover hour begins.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-12T00:00:00.000Z'))).toBe(false);
+    // 08:59 PHT — one minute early. A server reading its own clock, or adding
+    // eight hours by hand, is what opens the boards eight hours out.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-12T00:59:00.000Z'))).toBe(false);
+    // 09:00 PHT — open again the next week with no admin action at all.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-12T01:00:00.000Z'))).toBe(true);
   });
 });
 
