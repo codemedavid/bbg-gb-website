@@ -107,6 +107,31 @@ describe('validateAndStoreProofs', () => {
     await expect(validateAndStoreProofs([image(), bad, image()])).rejects.toMatchObject({ status: 400 });
   });
 
+  it('counts proofs an order already carries against the cap', async () => {
+    // The customer who paid twice yesterday and once today. Two already filed
+    // plus four more is six — the same refusal as attaching six at once.
+    await expect(validateAndStoreProofs(files(4), { existingCount: 2 }))
+      .rejects.toMatchObject({ status: 400 });
+  });
+
+  it('allows a batch that exactly fills the remaining slots', async () => {
+    const keys = await validateAndStoreProofs(files(3), { existingCount: 2 });
+
+    expect(keys).toHaveLength(3);
+  });
+
+  it('says how many slots are left rather than repeating the total', async () => {
+    // "Up to 5" is unhelpful to someone who already has four filed; they need
+    // to know they have one.
+    await expect(validateAndStoreProofs(files(2), { existingCount: 4 }))
+      .rejects.toThrow(/1 more/i);
+  });
+
+  it('refuses everything once the order already holds five', async () => {
+    await expect(validateAndStoreProofs(files(1), { existingCount: MAX_PROOFS }))
+      .rejects.toMatchObject({ status: 400 });
+  });
+
   it('accepts a PDF alongside images', async () => {
     const pdf = new File([Buffer.from('%PDF-1.4')], 'receipt.pdf', { type: 'application/pdf' });
 
