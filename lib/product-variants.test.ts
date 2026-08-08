@@ -108,9 +108,12 @@ describe('groupVariants', () => {
       view,
     );
 
-    expect(group.variants).toHaveLength(3);
+    // Numeric collation on the label, so the two that do carry a magnitude
+    // still read in ascending order and the unrankable one lands last. The
+    // point is that the order is stable and defensible, not that ml and mg have
+    // been forced into a comparison they do not have.
     expect(group.variants.map((v) => v.spec))
-      .toEqual(['10ml vial', '5mg vial', 'prefilled syringe']);
+      .toEqual(['5mg vial', '10ml vial', 'prefilled syringe']);
   });
 
   // Rows with no product behind them (a legacy free-text hatian counter) have
