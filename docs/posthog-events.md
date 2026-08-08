@@ -29,7 +29,11 @@ Set these in Vercel → Project Settings → Environment Variables.
 | `order_delivered` | Admin marks it delivered | ” |
 | `order_cancelled` | Admin cancels the order | ” |
 | `kahati_cancelled` | A hatian expired under 7 vials and the batch was dropped | `lib/kahati-server.ts` |
+| `settlement_placed` | The hatian final checkout succeeds — one payment settling every completed hatian | `app/api/settlements/route.ts` |
 | `order_status_changed` | Fallback — only if a status is ever added without a name here | `lib/posthog.ts` |
+
+`order_status_changed` should get **no** workflow. It means a status was added
+without a name in `ORDER_STATUS_EVENT`; it needs a developer, not a customer email.
 
 `kahati_cancelled` is deliberately separate from `order_cancelled`: it carries the
 refund amount and the hatian that fell through, so the email can explain *why*.
@@ -63,6 +67,11 @@ Status-change events add: `statusLabel` (human-readable, e.g. "Payment confirmed
 
 `kahati_cancelled` adds: `kahatiId`, `kahatiName`, `claimedVials`, `minVials` (7),
 `refundPhp` — the downpayment to return.
+
+`settlement_placed` is the one event that is **not** about a single order, so it
+carries no `orderId`/`orderNo`/`status`. It adds: `settlementId`, `orderCount`
+(how many hatian orders this payment settles), `balancePhp`, `packingFeePhp`
+(charged once, not per hatian — say so in the copy), `totalPhp`, `paymentMethod`.
 
 ## Behaviour guarantees
 
