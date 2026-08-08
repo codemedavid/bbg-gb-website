@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
-import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, Product, SettlementPreview } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -111,3 +111,12 @@ export const useSettlementPreview = (enabled = true) =>
 
 export const useOrders = (enabled = true) =>
   useQuery({ queryKey: ['orders'], queryFn: () => apiGet<Order[]>('/orders'), enabled });
+
+// One order in full, for the details page. Keyed by id so opening a second
+// order does not serve the first one's cached body.
+export const useOrderDetail = (id?: string) =>
+  useQuery({
+    queryKey: ['order', id],
+    queryFn: () => apiGet<OrderDetail>(`/orders/${id}`),
+    enabled: !!id,
+  });

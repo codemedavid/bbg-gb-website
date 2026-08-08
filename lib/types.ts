@@ -20,6 +20,9 @@ export type Product = {
   // Optional because the public catalog feeds select a narrower column list —
   // these are admin-surface fields and the storefront never reads them.
   isGroupBuy?: boolean;
+  // Group Buy only — not sold per vial, so no hatian counter may exist for it
+  // (lib/kahati-eligibility.ts).
+  isKorean?: boolean;
   gbPricePerKitPhp?: string | null;
   gbPricePerPiecePhp?: string | null;
   gbVialsPerKit?: number | null;
@@ -126,6 +129,19 @@ export type Order = {
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };
+
+// What GET /api/orders/[id] answers: one order, whole, as the details page
+// renders it. The customer block is joined from the user record because the
+// email is not on the order; the SHIPPING fields stay on `order` because the
+// order's own snapshot is where the parcel actually went.
+export type OrderDetail = {
+  order: Order & { courier?: string | null; notes?: string | null };
+  customer: { name: string | null; email: string | null; phone: string | null };
+  items: OrderItem[];
+  history: OrderHistory[];
+  /** Signed, expiring URL for the uploaded payment proof; null when none. */
+  proofUrl: string | null;
+};
 
 // A payment obligation as the customer and admin see it.
 export type PaymentState = 'paid' | 'under_review' | 'unpaid' | 'cancelled';

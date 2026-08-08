@@ -5,9 +5,9 @@
 // reconstruct it at all. So these tests assert the six blocks the brief names
 // are all present at once, on an order big enough to have been the problem.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 
 const push = vi.fn();
 const back = vi.fn();
@@ -24,9 +24,26 @@ const OrderDetailPage = (await import('./page')).default;
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    {children}
+    {/* The page reads its route params with use(), which suspends until the
+        promise settles. Next supplies the boundary in the real app; the test
+        has to supply its own. */}
+    <Suspense fallback={<div>Loading…</div>}>{children}</Suspense>
   </QueryClientProvider>
 );
+
+/**
+ * Render and let the suspended params settle.
+ *
+ * The act() wrapper is not optional here: use() suspends on the params promise,
+ * and React will not commit the resolved tree until the resolution happens
+ * inside an awaited act scope. Without it the page stays on the Suspense
+ * fallback for the whole test.
+ */
+async function renderPage() {
+  await act(async () => {
+    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  });
+}
 
 const items = [
   { id: 'a', kind: 'product', nameSnapshot: 'Tirzepatide 15mg vial', specSnapshot: 'On-hand · per piece', unitPricePhp: '3200', qty: 1, lineTotalPhp: '3200' },
@@ -62,8 +79,8 @@ beforeEach(() => {
 });
 
 describe('order information', () => {
-  it('names the order and its status', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('names the order and its status', async () => {
+    await renderPage();
 
     expect(screen.getByText('BBG-2419')).toBeInTheDocument();
     expect(screen.getAllByText('Shipped').length).toBeGreaterThan(0);
@@ -71,8 +88,8 @@ describe('order information', () => {
 });
 
 describe('customer information', () => {
-  it('shows the name, contact number and email', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('shows the name, contact number and email', async () => {
+    await renderPage();
 
     const block = screen.getByTestId('customer-block');
     expect(block).toHaveTextContent('Ana Cruz');
@@ -82,8 +99,8 @@ describe('customer information', () => {
 });
 
 describe('shipping information', () => {
-  it('shows the full address, the courier and the tracking number', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('shows the full address, the courier and the tracking number', async () => {
+    await renderPage();
 
     const block = screen.getByTestId('shipping-block');
     expect(block).toHaveTextContent('123 Mabini St, Manila');
@@ -91,25 +108,29 @@ describe('shipping information', () => {
     expect(block).toHaveTextContent('JT-99118822');
   });
 
-  it('says so plainly when there is no tracking number yet', () => {
+  it('says so plainly when there is no tracking number yet', async () => {
     state.detail = { ...detail, order: { ...detail.order, trackingNo: null } };
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+    await renderPage();
 
     expect(screen.getByTestId('shipping-block')).toHaveTextContent(/not yet assigned|no tracking/i);
   });
 });
 
 describe('ordered items', () => {
-  it('lists every line of a twelve-item order', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('lists every line of a twelve-item order', async () => {
+    await renderPage();
 
-    expect(screen.getAllByRole('listitem')).toHaveLength(12);
+    // Scoped to the items block: the status trail on this same page is also a
+    // list, and counting the whole document conflates the two.
+    const rows = within(screen.getByTestId('items-block')).getAllByRole('listitem');
+    expect(rows).toHaveLength(12);
   });
 
-  it('shows quantity, unit price and line total per item', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('shows quantity, unit price and line total per item', async () => {
+    await renderPage();
 
-    const row = screen.getAllByRole('listitem').find((r) => r.textContent?.includes('Retatrutide'))!;
+    const row = within(screen.getByTestId('items-block'))
+      .getAllByRole('listitem').find((r) => r.textContent?.includes('Retatrutide'))!;
     expect(row).toHaveTextContent('Qty: 2');
     expect(row).toHaveTextContent('₱6,875');
     expect(row).toHaveTextContent('₱13,750');
@@ -117,8 +138,8 @@ describe('ordered items', () => {
 });
 
 describe('payment', () => {
-  it('shows the method, the amount and a link to the proof', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('shows the method, the amount and a link to the proof', async () => {
+    await renderPage();
 
     const block = screen.getByTestId('payment-block');
     expect(block).toHaveTextContent('GCash');
@@ -127,17 +148,17 @@ describe('payment', () => {
       .toHaveAttribute('href', 'https://example.test/proof.png');
   });
 
-  it('omits the proof link entirely when none was uploaded', () => {
+  it('omits the proof link entirely when none was uploaded', async () => {
     state.detail = { ...detail, proofUrl: null };
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+    await renderPage();
 
     expect(within(screen.getByTestId('payment-block')).queryByRole('link')).toBeNull();
   });
 });
 
 describe('order summary', () => {
-  it('breaks the charge down to a grand total', () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+  it('breaks the charge down to a grand total', async () => {
+    await renderPage();
 
     const block = screen.getByTestId('summary-block');
     expect(block).toHaveTextContent('₱41,950');  // subtotal
@@ -150,7 +171,7 @@ describe('order summary', () => {
 // on a fresh tab that goes nowhere at all.
 describe('getting back out', () => {
   it('offers a route back to the order list', async () => {
-    render(<OrderDetailPage params={Promise.resolve({ id: 'o9' })} />, { wrapper });
+    await renderPage();
 
     (await screen.findByRole('button', { name: /go back/i })).click();
     expect(push).toHaveBeenCalledWith('/orders');
