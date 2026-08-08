@@ -9,6 +9,7 @@ import { describeBatch } from '@/lib/group-buy';
 import { openDueBatches } from '@/lib/moq-batch-server';
 import { openingStatus } from '@/lib/campaign-schedule';
 import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
+import { assertCampaignProductsAreGroupBuy } from '@/lib/channel-guard';
 
 // Public: list batches with derived MOQ progress and lifecycle outcome.
 //
@@ -35,6 +36,9 @@ export const GET = handler(async () => {
 export const POST = handler(async (req: Request) => {
   await requireAdmin();
   const b = moqCampaignSchema.parse(await req.json());
+  // A campaign may only carry products the admin enabled for Group Buy. Checked
+  // before anything is written, so a refused campaign leaves no row behind.
+  await assertCampaignProductsAreGroupBuy(b.includedProducts ?? []);
   const db = await getDb();
   // New campaigns default to the global pasabay packing fee unless overridden.
   const defaultFee = (await getPackingFees()).group_buy;

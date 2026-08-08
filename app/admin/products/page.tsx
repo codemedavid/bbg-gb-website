@@ -5,14 +5,22 @@ import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS } from '@/lib/pricing';
+import { SALES_CHANNELS, CHANNEL_LABELS, CHANNEL_FIELD } from '@/lib/product-channels';
 import type { Product } from '@/lib/types';
+
+// What each channel actually means for the customer, in one line. The three
+// names alone do not say that Kahati splits a kit per vial while Group Buy
+// pools whole ones — which is the distinction the admin is deciding on.
+const CHANNEL_HINT =
+  'On-Hand sells ready stock from the shop. Group Buy pools whole kits in a campaign batch. '
+  + 'Kahati splits one kit between buyers, so leave it off for anything not sold per vial.';
 
 const blank = (): Partial<Product> => ({
   name: '', spec: '', pricePhp: '0', arrivalGroup: 'white_powder', isOnHand: false,
   stock: 0, imageEmoji: '💧', isActive: true,
   // A batch of one kit — the client's stated default and the largest a hatian
   // can hold. Everything else starts unset, meaning "no figure of its own".
-  isGroupBuy: false, gbMaxVialsPerBatch: KAHATI_MAX_VIALS,
+  isGroupBuy: false, isKahati: false, gbMaxVialsPerBatch: KAHATI_MAX_VIALS,
 });
 
 // The minimum and the batch cap are only ever on screen together here, so this
@@ -21,7 +29,9 @@ const blank = (): Partial<Product> => ({
 // stays joinable — right for a legacy row, but it would silently discard what
 // the admin just entered.
 function groupBuyError(f: Partial<Product>): string | null {
-  if (!f.isGroupBuy) return null;
+  // Either board channel seeds itself from these figures, so either one makes
+  // the contradiction reachable.
+  if (!f.isGroupBuy && !f.isKahati) return null;
   const { gbMinVials: min, gbMaxVialsPerBatch: max } = f;
   if (min != null && max != null && min > max) {
     return `Minimum order (${min} vials) cannot exceed the maximum batch of ${max} vials.`;
@@ -54,6 +64,7 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         // isGroupBuy is the switch, and keeping the figures means an admin who
         // toggles it off and on again does not retype the terms.
         isGroupBuy: f.isGroupBuy ?? false,
+        isKahati: f.isKahati ?? false,
         gbPricePerKitPhp: (f.gbPricePerKitPhp != null && f.gbPricePerKitPhp !== '' ? Number(f.gbPricePerKitPhp) : null) as any,
         gbPricePerPiecePhp: (f.gbPricePerPiecePhp != null && f.gbPricePerPiecePhp !== '' ? Number(f.gbPricePerPiecePhp) : null) as any,
         gbVialsPerKit: f.gbVialsPerKit ?? null, gbMinVials: f.gbMinVials ?? null,
@@ -92,23 +103,53 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         <Labeled label="Supplier kit size (vials)"><input className={field} type="number" min={1} value={f.kitSize ?? 10} onChange={(e) => setF({ ...f, kitSize: Number(e.target.value) })} /></Labeled>
       </div>
 
-      <label className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-ink-body">
-        <input type="checkbox" checked={!!f.isOnHand} onChange={(e) => setF({ ...f, isOnHand: e.target.checked })} /> On-hand (ready stock) — enable on-hand pricing
-      </label>
+      {/* Sales Channels — the shop sells the same catalogue three ways, and the
+          admin decides per product which of them may carry it. Grouped into one
+          labelled block rather than left as checkboxes scattered between the
+          pricing fields: they are one decision with three parts, and reading
+          them together is how you see that a product is Group Buy but not
+          Kahati. Enforced server-side too (lib/product-channels.ts) — this
+          section is where the decision is made, not where it is kept. */}
+      <fieldset className="mt-4 rounded-[12px] border border-line-soft bg-[#fbfbfa] px-3.5 pb-3.5 pt-2.5">
+        <legend className="px-1.5 text-[13px] font-bold text-ink">Sales Channels</legend>
+        <p className="text-[12px] leading-snug text-ink-muted">
+          Select which sales channels this product can be offered through.
+        </p>
+        <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
+          {SALES_CHANNELS.map((channel) => (
+            <label
+              key={channel}
+              className="flex cursor-pointer items-center gap-2 rounded-[10px] border border-line-soft bg-white px-3 py-2.5 text-[13px] font-semibold text-ink-body transition-colors hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-[#eef4ff]"
+            >
+              <input
+                type="checkbox"
+                checked={!!f[CHANNEL_FIELD[channel]]}
+                onChange={(e) => setF({ ...f, [CHANNEL_FIELD[channel]]: e.target.checked })}
+              />
+              {CHANNEL_LABELS[channel]}
+            </label>
+          ))}
+        </div>
+        <p className="mt-2 text-[12px] leading-snug text-ink-muted">
+          {CHANNEL_HINT}
+        </p>
+      </fieldset>
+
       {f.isOnHand && (
         <div className="mt-2 grid grid-cols-2 gap-3">
           <Labeled label="On-hand price / kit ₱"><input className={field} type="number" value={(f.onHandKitPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandKitPhp: num(e.target.value) as any })} /></Labeled>
           <Labeled label="On-hand price / piece ₱"><input className={field} type="number" value={(f.onHandPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandPiecePhp: num(e.target.value) as any })} /></Labeled>
         </div>
       )}
-      {/* Group Buy Configuration — the terms every listing carrying this product
-          starts from. Set once here instead of retyped into each batch. */}
-      <label className="mt-4 flex items-center gap-2 border-t border-line-soft pt-4 text-[13px] font-semibold text-ink-body">
-        <input type="checkbox" checked={!!f.isGroupBuy} onChange={(e) => setF({ ...f, isGroupBuy: e.target.checked })} /> Offer through Group Buy — seed campaigns and hatians from these settings
-      </label>
-      {f.isGroupBuy && (
+      {/* Shared terms for both board channels — the figures every campaign or
+          hatian carrying this product starts from. Shown when either board
+          channel is on, because either one seeds itself from them. */}
+      {(f.isGroupBuy || f.isKahati) && (
         <>
-          <p className="mt-2 text-[12px] leading-snug text-ink-muted">
+          <div className="mt-4 border-t border-line-soft pt-4 text-[13px] font-semibold text-ink-body">
+            Group Buy &amp; Kahati terms
+          </div>
+          <p className="mt-1 text-[12px] leading-snug text-ink-muted">
             Counted in vials. A campaign converts them to kits when it seeds itself, and a hatian
             caps at {KAHATI_MAX_VIALS} vials — one kit — whatever is entered here. Leave a field
             blank to use the shop default.

@@ -390,7 +390,9 @@ describe('the three switches are independent', () => {
   it('honours all three switched on (Example 2)', async () => {
     await signIn();
     const product = await makePeptide();
-    const counter = await makeGroupBuy({ productId: product.id, minVials: 1 });
+    const counter = await makeGroupBuy({
+      name: 'Retatrutide 20mg vial', productId: product.id, minVials: 1,
+    });
 
     const onHand = await placeOrder(checkoutRequest([
       { kind: 'product', refId: product.id, qty: 1, unit: 'piece' },

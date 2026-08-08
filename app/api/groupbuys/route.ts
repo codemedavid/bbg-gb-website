@@ -1,5 +1,5 @@
-import { asc, eq } from 'drizzle-orm';
-import { getDb, groupBuys } from '@/lib/db';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
+import { getDb, groupBuys, products } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { perVialPrice } from '@/lib/pricing';
 import { sweepKahatis } from '@/lib/kahati-server';
@@ -26,8 +26,23 @@ export const GET = handler(async () => {
   await openKahatisForGroupBuyProducts();
   // Ordered oldest-first so that the demand sort's tie-break — earliest counter
   // leads — still decides when two counters were created in the same instant.
-  const rows = await db.select().from(groupBuys)
-    .where(eq(groupBuys.status, 'open')).orderBy(asc(groupBuys.createdAt));
+  // A product with the Kahati switch off never reaches this board, including
+  // any counter that was already open when the switch was turned off — the
+  // change is retroactive. Left-joined rather than filtered in code so the
+  // exclusion is done by the QUERY: this endpoint is public and polled, and a
+  // post-filter is one refactor away from being dropped.
+  //
+  // A counter with no product link is a free-text row an admin made by hand. It
+  // has no product whose switches could refuse it, so it stays — NULL must not
+  // read as off.
+  const rows = await db.select({ gb: groupBuys }).from(groupBuys)
+    .leftJoin(products, eq(products.id, groupBuys.productId))
+    .where(and(
+      eq(groupBuys.status, 'open'),
+      or(isNull(groupBuys.productId), eq(products.isKahati, true)),
+    ))
+    .orderBy(asc(groupBuys.createdAt))
+    .then((r) => r.map((row) => row.gb));
   const board = rows.map((g) => {
     // A counter can no longer be stored over its cap, but a row written before
     // that constraint must still not be published as "13 / 10 vials".

@@ -42,8 +42,14 @@ export type ProductChannels = {
   isActive?: boolean | null;
 };
 
-/** The column behind each switch, so the mapping is stated once. */
-const FLAG_OF: Record<SalesChannel, keyof ProductChannels> = {
+/**
+ * The column behind each switch, so the mapping is stated once.
+ *
+ * Exported because the admin form renders the three checkboxes from it: a
+ * second copy of this mapping over there is how a renamed column ends up
+ * writing to the wrong switch.
+ */
+export const CHANNEL_FIELD: Record<SalesChannel, 'isOnHand' | 'isGroupBuy' | 'isKahati'> = {
   on_hand: 'isOnHand',
   group_buy: 'isGroupBuy',
   kahati: 'isKahati',
@@ -64,7 +70,7 @@ const FLAG_OF: Record<SalesChannel, keyof ProductChannels> = {
  */
 export function isChannelEnabled(p: ProductChannels, channel: SalesChannel): boolean {
   if (p.isActive === false) return false;
-  return p[FLAG_OF[channel]] === true;
+  return p[CHANNEL_FIELD[channel]] === true;
 }
 
 /**

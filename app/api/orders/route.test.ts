@@ -89,7 +89,7 @@ describe('POST /api/orders', () => {
     expect(body.data.totals.subtotal).toBe(550);
   });
 
-  it('rejects a product that is not flagged on-hand', async () => {
+  it('rejects a product whose On-Hand channel is switched off', async () => {
     await signIn();
     const product = await makeProduct({ isOnHand: false });
 
@@ -97,7 +97,7 @@ describe('POST /api/orders', () => {
     const body = await res.json();
 
     expect(res.status).toBe(400);
-    expect(body.error).toContain('not available on-hand');
+    expect(body.error).toContain('not available through On-Hand');
   });
 
   it('rejects a unit the product does not offer', async () => {

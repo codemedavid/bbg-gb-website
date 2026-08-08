@@ -19,6 +19,7 @@ import {
   campaignPayloadFrom, validateCampaignDraft, type CampaignDraft,
 } from '@/lib/campaign-form';
 import { useCampaignDraft } from '@/lib/campaign-draft';
+import { isChannelEnabled } from '@/lib/product-channels';
 import type { IncludedProduct, MoqCampaign } from '@/lib/types';
 
 const CAMPAIGNS_HREF = '/admin/group-buy/campaigns';
@@ -47,6 +48,15 @@ export function CampaignForm({ draftId, initial }: Props) {
 
   const isEdit = Boolean(draft.id ?? initial.id);
   const included = draft.includedProducts;
+  // Only products the admin enabled for Group Buy may be ticked. The route
+  // refuses the rest anyway (lib/channel-guard.ts) — filtering here is so the
+  // admin never picks one and reads the refusal afterwards. Already-included
+  // products survive the filter: a campaign built before the channel was
+  // switched off must still show what it carries, or editing its deadline would
+  // silently empty it.
+  const selectable = products.filter(
+    (p) => isChannelEnabled(p, 'group_buy') || included.some((i) => i.productId === p.id),
+  );
   const set = <K extends keyof CampaignDraft>(k: K, v: CampaignDraft[K]) => setDraft({ ...draft, [k]: v });
 
   const isIncluded = (id: string) => included.some((p) => p.productId === id);
@@ -148,9 +158,11 @@ export function CampaignForm({ draftId, initial }: Props) {
         <div className="mt-5">
           <div className="mb-1 text-[12px] font-semibold text-ink-body">Included products</div>
           <div className="max-h-56 overflow-y-auto rounded-[10px] border border-line">
-            {products.length === 0 ? (
-              <div className="px-3 py-4 text-[13px] text-ink-muted">No products yet.</div>
-            ) : products.map((p) => {
+            {selectable.length === 0 ? (
+              <div className="px-3 py-4 text-[13px] text-ink-muted">
+                No products have the Group Buy channel switched on. Enable it in Product Management first.
+              </div>
+            ) : selectable.map((p) => {
               const on = isIncluded(p.id);
               const oos = included.find((i) => i.productId === p.id)?.outOfStock ?? false;
               return (

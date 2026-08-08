@@ -90,3 +90,43 @@ describe('seedProductRow — group buy terms', () => {
     });
   });
 });
+
+describe('seedProductRow — the Kahati channel', () => {
+  it('leaves an aesthetics product off Kahati while keeping it on Group Buy', () => {
+    // Mirrors drizzle/0019_product_sales_channels.sql. A fresh seed and a
+    // migrated production database must agree on what a hatian may be opened
+    // for, or a local environment quietly disagrees about what is for sale.
+    const row = seedProductRow(
+      { code: null, name: 'Rejuran i', spec: '1 prefilled syringe, 1ml', cat: 'aesthetics',
+        pricePhp: 12000, arrival: 'salt_liquid', isGroupBuy: true },
+      'cat-aesthetics',
+    );
+
+    expect(row.isKahati).toBe(false);
+    expect(row.isGroupBuy).toBe(true);
+  });
+
+  it('gives an ordinary group-buy peptide both board channels', () => {
+    const row = seedProductRow(
+      { code: 'BBG-RETA', name: 'Retatrutide', spec: '20mg vial', cat: 'glp-1',
+        pricePhp: 9000, arrival: 'white_powder', isGroupBuy: true },
+      'cat-glp1',
+    );
+
+    expect(row.isKahati).toBe(true);
+    expect(row.isGroupBuy).toBe(true);
+  });
+
+  it('gives no board channel to a product that is not offered through group buy', () => {
+    // Kahati is not implied by the catalogue: an on-hand-only product has no
+    // counter, and the seed must not invent one.
+    const row = seedProductRow(
+      { code: 'BAC-3', name: 'BAC Water', spec: '3ml', cat: 'bac',
+        pricePhp: 475, arrival: 'white_powder' },
+      'cat-bac',
+    );
+
+    expect(row.isKahati).toBe(false);
+    expect(row.isGroupBuy).toBe(false);
+  });
+})

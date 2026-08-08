@@ -31,6 +31,9 @@ export const productSchema = z.object({
   // read as "use the global default" — distinct from 0, which for a price would
   // mean a free kit and for a count would mean a batch nothing fits in.
   isGroupBuy: z.boolean().optional(),
+  // Korean product: Group Buy only, never Kahati. Not sold per vial, so there
+  // is no vial to split (lib/kahati-eligibility.ts).
+  isKahati: z.boolean().optional(),
   gbPricePerKitPhp: z.number().nonnegative().nullable().optional(),
   gbPricePerPiecePhp: z.number().nonnegative().nullable().optional(),
   gbVialsPerKit: z.number().int().positive().nullable().optional(),

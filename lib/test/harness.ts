@@ -95,7 +95,9 @@ export async function makeProduct(
     isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
     // The group buy permission and its terms. Off by default: most tests are
     // about the shop, and a flagged product auto-lists on both boards.
-    isGroupBuy: boolean; isActive: boolean;
+    // The two board channels, independent of each other: isGroupBuy is the
+    // campaign board, isKahati the vial counters (lib/product-channels.ts).
+    isGroupBuy: boolean; isKahati: boolean; isActive: boolean;
     gbPricePerKitPhp: number | null; gbMinVials: number | null; gbMaxVialsPerBatch: number | null;
   }> = {},
 ): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
@@ -116,6 +118,9 @@ export async function makeProduct(
     onHandPiecePhp: onHandPiecePhp != null ? String(onHandPiecePhp) : null,
     onHandKitPhp: onHandKitPhp != null ? String(onHandKitPhp) : null,
     isGroupBuy: overrides.isGroupBuy ?? false,
+    // Defaults to the group buy flag, so the many tests written before channels
+    // split still get the counter they expect from `isGroupBuy: true` alone.
+    isKahati: overrides.isKahati ?? overrides.isGroupBuy ?? false,
     gbPricePerKitPhp: overrides.gbPricePerKitPhp != null ? String(overrides.gbPricePerKitPhp) : null,
     gbMinVials: overrides.gbMinVials ?? null,
     gbMaxVialsPerBatch: overrides.gbMaxVialsPerBatch ?? null,
@@ -127,6 +132,9 @@ export async function makeGroupBuy(
   overrides: Partial<{
     totalSlots: number; claimedSlots: number; minVials: number; repackFeePhp: number;
     pricePerKitPhp: number; name: string; closesAt: Date | null;
+    // The catalog product this counter is for. A counter without one is a
+    // free-text row an admin made by hand — which is why it is optional here.
+    productId: string | null;
     status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
   }> = {},
 ): Promise<{ id: string; totalSlots: number; minVials: number }> {
@@ -138,6 +146,7 @@ export async function makeGroupBuy(
     totalSlots, claimedSlots: overrides.claimedSlots ?? 0, minVials,
     repackFeePhp: String(overrides.repackFeePhp ?? 150), status: overrides.status ?? 'open',
     closesAt: overrides.closesAt ?? null,
+    productId: overrides.productId ?? null,
   }).returning();
   return { id: row.id, totalSlots, minVials };
 }
@@ -207,13 +216,14 @@ export async function makePaymentMethod(
 // Builds the multipart Request a checkout route handler expects.
 export function checkoutRequest(
   items: unknown,
-  opts: { withProof?: boolean; paymentMethod?: string; courier?: string; idempotencyKey?: string } = {},
+  opts: { withProof?: boolean; paymentMethod?: string; courier?: string; idempotencyKey?: string; note?: string } = {},
 ): Request {
   const form = new FormData();
   form.set('items', JSON.stringify(items));
   form.set('shipName', SHIPPING.shipName);
   form.set('shipPhone', SHIPPING.shipPhone);
   form.set('shipAddress', SHIPPING.shipAddress);
+  if (opts.note !== undefined) form.set('note', opts.note);
   if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.courier) form.set('courier', opts.courier);
   if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);

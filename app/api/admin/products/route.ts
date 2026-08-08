@@ -24,6 +24,7 @@ export const POST = handler(async (req: Request) => {
     // the fallbacks live in lib/pricing.ts, where a listing seeds itself, so a
     // product that states nothing keeps stating nothing.
     isGroupBuy: b.isGroupBuy ?? false,
+    isKahati: b.isKahati ?? false,
     gbPricePerKitPhp: numToStr(b.gbPricePerKitPhp), gbPricePerPiecePhp: numToStr(b.gbPricePerPiecePhp),
     gbVialsPerKit: b.gbVialsPerKit ?? null, gbMinVials: b.gbMinVials ?? null,
     gbMaxVialsPerBatch: b.gbMaxVialsPerBatch ?? null,

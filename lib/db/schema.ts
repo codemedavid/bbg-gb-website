@@ -82,7 +82,20 @@ export const products = pgTable('products', {
   // campaignDefaultsFor). Every column is nullable and counted in VIALS —
   // absent means "not configured", which falls back to the global defaults
   // rather than to zero. A ₱0 group buy price would read as free.
+  // Sales channels. Three independent switches — isOnHand above, plus these two
+  // — deciding which of the shop's three ways to sell may carry this product.
+  // Mind the naming: isGroupBuy governs the CAMPAIGN board (`moq_campaigns`),
+  // isKahati governs the vial counters (the table named `group_buys`).
+  //
+  // They were one flag until sales channels landed, which meant a product could
+  // not be offered on one board without the other. That is what the "Korean
+  // products" exclusion needed: a Rejuran i is a single prefilled syringe, so a
+  // hatian splitting one kit into ten vials has nothing to split, while the
+  // campaign board pooling whole kits is exactly right for it. Expressed as
+  // switches rather than a category rule, an admin can say so for any product
+  // on the form instead of waiting on a migration (see lib/product-channels.ts).
   isGroupBuy: boolean('is_group_buy').notNull().default(false),
+  isKahati: boolean('is_kahati').notNull().default(false),
   gbPricePerKitPhp: numeric('gb_price_per_kit_php', { precision: 12, scale: 2 }),
   gbPricePerPiecePhp: numeric('gb_price_per_piece_php', { precision: 12, scale: 2 }),
   gbVialsPerKit: integer('gb_vials_per_kit'),

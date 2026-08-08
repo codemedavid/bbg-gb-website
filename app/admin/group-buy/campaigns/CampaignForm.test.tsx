@@ -19,7 +19,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, back, replace: vi.fn(), prefetch: vi.fn() }),
 }));
 
-let products: Pick<Product, 'id' | 'name'>[] = [];
+// isGroupBuy is what makes a product selectable here now — the picker only
+// offers products the admin enabled for this channel (lib/product-channels.ts).
+let products: Pick<Product, 'id' | 'name' | 'isGroupBuy'>[] = [];
 const saveMutate = vi.fn();
 let savePending = false;
 
@@ -183,7 +185,10 @@ describe('saving', () => {
 
 describe('included products', () => {
   it('offers the catalog and sends what was ticked', async () => {
-    products = [{ id: 'p1', name: 'Reta 30mg' }, { id: 'p2', name: 'BPC-157' }];
+    products = [
+      { id: 'p1', name: 'Reta 30mg', isGroupBuy: true },
+      { id: 'p2', name: 'BPC-157', isGroupBuy: true },
+    ];
     render(<CampaignForm draftId="new" initial={emptyCampaignDraft} />);
     await fillValid();
     await userEvent.click(screen.getByRole('checkbox', { name: /reta 30mg/i }));
@@ -195,8 +200,36 @@ describe('included products', () => {
     ]);
   });
 
+  it('offers only products whose Group Buy channel is switched on', () => {
+    // §5: "Products with Group Buy = OFF must not be selectable." The route
+    // refuses them too (lib/channel-guard.ts); this keeps the admin from
+    // picking one and reading the refusal afterwards.
+    products = [
+      { id: 'p1', name: 'Reta 30mg', isGroupBuy: true },
+      { id: 'p2', name: 'Kahati Only', isGroupBuy: false },
+    ];
+
+    render(<CampaignForm draftId="new" initial={emptyCampaignDraft} />);
+
+    expect(screen.getByText('Reta 30mg')).toBeInTheDocument();
+    expect(screen.queryByText('Kahati Only')).not.toBeInTheDocument();
+  });
+
+  it('still shows a product a campaign already carries after its channel was switched off', () => {
+    // Editing a deadline must not silently empty the campaign of the products
+    // it was published with.
+    products = [{ id: 'p2', name: 'Kahati Only', isGroupBuy: false }];
+
+    render(<CampaignForm draftId="new" initial={{
+      ...emptyCampaignDraft,
+      includedProducts: [{ productId: 'p2', name: 'Kahati Only', outOfStock: false }],
+    }} />);
+
+    expect(screen.getByText('Kahati Only')).toBeInTheDocument();
+  });
+
   it('says so when the catalog is empty instead of showing a blank box', () => {
     render(<CampaignForm draftId="new" initial={emptyCampaignDraft} />);
-    expect(screen.getByText(/no products yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/no products have the group buy channel/i)).toBeInTheDocument();
   });
 });

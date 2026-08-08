@@ -22,7 +22,7 @@ export type Product = {
   isGroupBuy?: boolean;
   // Group Buy only — not sold per vial, so no hatian counter may exist for it
   // (lib/kahati-eligibility.ts).
-  isKorean?: boolean;
+  isKahati?: boolean;
   gbPricePerKitPhp?: string | null;
   gbPricePerPiecePhp?: string | null;
   gbVialsPerKit?: number | null;

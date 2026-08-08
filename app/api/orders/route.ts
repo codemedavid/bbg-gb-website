@@ -8,6 +8,7 @@ import {
   onHandUnitPrice, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
+import { isChannelEnabled, channelRefusal } from '@/lib/product-channels';
 import { closeFullKahati } from '@/lib/kahati-server';
 import { listCyclePayments } from '@/lib/packing-cycle-server';
 import { chargeCycleFeeOnce, hasPaidPackingFeeThisCycle } from '@/lib/packing-cycle';
@@ -142,9 +143,11 @@ export const POST = handler(async (req: Request) => {
       if (it.kind === 'product') {
         const [p] = await tx.select().from(products).where(and(eq(products.id, it.refId), eq(products.isActive, true)));
         if (!p) throw new ApiError(400, `Product not available: ${it.refId}`);
-        // The shop sells ready stock only — a catalog product that is not flagged
-        // on-hand has no on-hand price and cannot be bought here.
-        if (!p.isOnHand) throw new ApiError(400, `${p.name} ${p.spec} is not available on-hand.`);
+        // The shop sells ready stock only — a catalog product whose On-Hand
+        // switch is off cannot be bought here however its id arrived. Same
+        // predicate and same wording as the Kahati guard below: one rule, three
+        // channels, so a customer reading either refusal reads the same shape.
+        if (!isChannelEnabled(p, 'on_hand')) throw new ApiError(400, channelRefusal(`${p.name} ${p.spec}`, 'on_hand'));
 
         const unit: OnHandUnit = it.unit ?? 'piece';
         const unitPricePhp = onHandUnitPrice(p, unit);
@@ -279,6 +282,23 @@ export const POST = handler(async (req: Request) => {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
         if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
+
+        // The Kahati switch, enforced where the money is taken. The board
+        // already hides an off-channel product's counters, but hiding is not
+        // enforcing: a counter id posted straight to this route, or a cart
+        // persisted from before the switch was turned off, would otherwise
+        // still buy vials of something that is no longer sold that way.
+        //
+        // Skipped for a counter with no product link — a free-text row an admin
+        // made by hand has no product whose switches could refuse it.
+        if (g.productId) {
+          const [linked] = await tx
+            .select({ isKahati: products.isKahati, isActive: products.isActive, name: products.name })
+            .from(products).where(eq(products.id, g.productId));
+          if (linked && !isChannelEnabled(linked, 'kahati')) {
+            throw new ApiError(400, channelRefusal(linked.name, 'kahati'));
+          }
+        }
         // Validate the whole commitment up front. The 10-vial cap belongs to the
         // counter, not to the customer: overflow fills this counter, seals it,
         // and rolls into the sibling that opens — repeatedly, for as many kits as

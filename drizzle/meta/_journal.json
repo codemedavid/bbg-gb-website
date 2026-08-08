@@ -127,6 +127,20 @@
       "when": 1785423261654,
       "tag": "0017_order_cycle_key",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785423262654,
+      "tag": "0018_product_is_korean",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785423263654,
+      "tag": "0019_product_sales_channels",
+      "breakpoints": true
     }
   ]
 }
