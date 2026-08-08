@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { BackHeader } from '@/components/headers';
 import { OrderItemList } from '@/components/OrderItemList';
 import { OrderStatusTrail } from '@/components/OrderStatusTrail';
+import { OrderProofSection } from '@/components/OrderProofSection';
 import { useOrderDetail } from '@/lib/queries';
 import { php, shortDate } from '@/lib/format';
 import { STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
@@ -62,7 +63,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     );
   }
 
-  const { order, customer, items, proofUrl } = data;
+  const { order, customer, items, proofUrl, proofs = [] } = data;
   const downpayment = Number(order.downpaymentPhp ?? 0);
   const shipping = Number(order.shippingPhp ?? 0);
 
@@ -113,12 +114,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <Field label="Method" value={order.paymentMethod || 'Not recorded'} />
           <Field label="Status" value={STATUS_LABEL[order.status] ?? order.status} />
           <Field label="Amount" value={php(order.totalPhp)} />
-          {proofUrl && (
-            <a href={proofUrl} target="_blank" rel="noopener noreferrer"
-              className="mt-2 inline-block rounded-[10px] border-[1.5px] border-[#a9c88f] px-3.5 py-2.5 text-[12.5px] font-bold text-brand-greendark">
-              📎 View proof of payment
-            </a>
-          )}
+          {/* Every proof, plus a way to add one the customer only paid later.
+              A bank that caps each transfer turns one order into several
+              payments, and until this was here the second one had nowhere to go
+              short of placing a duplicate order. Falls back to the legacy single
+              key for orders written before order_payment_proofs existed. */}
+          <div className="mt-3 border-t border-line-soft pt-3">
+            <OrderProofSection
+              orderId={order.id}
+              status={order.status}
+              proofs={proofs.length > 0 || !proofUrl ? proofs : [
+                { id: 'legacy', url: proofUrl, sortOrder: 0, amountPhp: null, reference: null },
+              ]}
+            />
+          </div>
         </Section>
 
         <Section title="Order summary" testId="summary-block">

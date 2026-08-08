@@ -1,5 +1,5 @@
-import { eq } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory, users, settlements } from '@/lib/db';
+import { asc, eq } from 'drizzle-orm';
+import { getDb, orders, orderItems, orderPaymentProofs, orderStatusHistory, users, settlements } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { signedUrl } from '@/lib/storage';
@@ -34,6 +34,20 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
   // Proofs are private, so the storage key never reaches the browser — only a
   // signed, fetchable URL.
   const proofUrl = order.paymentProofKey ? await signedUrl(BUCKETS.proofs, order.paymentProofKey) : null;
+  // Every proof the order carries. The customer needs the whole list to decide
+  // whether to add another — someone who paid in two transfers and can only see
+  // one has no way to tell whether the second upload landed.
+  const proofRows = await db.select().from(orderPaymentProofs)
+    .where(eq(orderPaymentProofs.orderId, id))
+    .orderBy(asc(orderPaymentProofs.sortOrder));
+  const proofs = await Promise.all(proofRows.map(async (p) => ({
+    id: p.id,
+    url: await signedUrl(BUCKETS.proofs, p.storageKey),
+    sortOrder: p.sortOrder,
+    amountPhp: p.amountPhp,
+    reference: p.reference,
+    uploadedAt: p.uploadedAt,
+  })));
 
   return ok({
     order: { ...order, settlementStatus },
@@ -41,5 +55,6 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     items,
     history,
     proofUrl,
+    proofs,
   });
 });

@@ -71,3 +71,25 @@ export function statusSteps(status: string): StatusStep[] {
     state: current < 0 ? 'pending' : i < current ? 'done' : i === current ? 'active' : 'pending',
   }));
 }
+
+/**
+ * Statuses that still take money, and so still take evidence of it.
+ *
+ * A customer whose bank caps each transfer pays over hours or days, and may
+ * also be asked to top up after an admin spots a shortfall — which can happen
+ * once payment is confirmed or the batch is filling. All three are open orders
+ * where another peso can legitimately arrive.
+ *
+ * Shipped and delivered are not: the parcel has gone, and accepting a proof
+ * there tells the customer something was settled when nothing was. Cancelled
+ * takes no money at all.
+ *
+ * Lives here, in the module both sides already import, so the screen that
+ * offers the uploader and the route that accepts the upload cannot disagree
+ * about when it is allowed.
+ */
+export const PROOF_ACCEPTING_STATUSES = ['proof_review', 'payment_confirmed', 'batch_filling'] as const;
+
+/** May another proof of payment be attached to an order in this status? */
+export const acceptsMoreProofs = (status: string): boolean =>
+  (PROOF_ACCEPTING_STATUSES as readonly string[]).includes(status);

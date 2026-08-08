@@ -115,6 +115,38 @@ describe('ProofUploader', () => {
     expect(screen.queryByText('Proof #3')).not.toBeInTheDocument();
   });
 
+  it('numbers from where an order\'s existing proofs left off', () => {
+    // Embedded in an order that already holds two, a freshly picked file is
+    // Proof #3. Numbering from #1 would put a second "Proof #1" on a screen
+    // that is already showing one.
+    render(<ProofUploader files={files(1)} onChange={vi.fn()} startIndex={2} />);
+
+    expect(screen.getByText('Proof #3')).toBeInTheDocument();
+    expect(screen.queryByText('Proof #1')).not.toBeInTheDocument();
+  });
+
+  it('counts the existing proofs toward the five it reports', () => {
+    render(<ProofUploader files={files(1)} onChange={vi.fn()} startIndex={2} />);
+
+    expect(screen.getByText(`3 of ${MAX_PROOFS} attached`)).toBeInTheDocument();
+  });
+
+  it('stops offering the add control when the existing proofs fill the cap', () => {
+    render(<ProofUploader files={[]} onChange={vi.fn()} startIndex={MAX_PROOFS} />);
+
+    expect(fileInput()).toBeNull();
+  });
+
+  it('refuses a batch that would overshoot once existing proofs are counted', () => {
+    const onChange = vi.fn();
+    render(<ProofUploader files={[]} onChange={onChange} startIndex={3} />);
+
+    attach(files(3));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
   it('stops offering the add control once five are attached', () => {
     render(<ProofUploader files={files(MAX_PROOFS)} onChange={vi.fn()} />);
 

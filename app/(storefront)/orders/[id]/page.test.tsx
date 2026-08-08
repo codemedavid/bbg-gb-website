@@ -177,3 +177,42 @@ describe('getting back out', () => {
     expect(push).toHaveBeenCalledWith('/orders');
   });
 });
+
+// Proof of payment on the customer's own order — see what landed, add what
+// only got paid later.
+describe('order details — proof of payment', () => {
+  it('falls back to the legacy single proof for an order placed before the change', async () => {
+    // The fixture carries proofUrl and no proofs list, which is exactly what an
+    // order written before order_payment_proofs looks like. Showing nothing
+    // would read to the customer as though their payment was never received.
+    state.detail = detail;
+    await renderPage();
+
+    expect(screen.getByText('Proof #1')).toBeInTheDocument();
+  });
+
+  it('offers no uploader on a shipped order', async () => {
+    // The fixture's order is 'shipped' — the parcel has gone, so there is no
+    // further payment to evidence.
+    state.detail = detail;
+    await renderPage();
+
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('lists every proof and offers an uploader while payment is under review', async () => {
+    state.detail = {
+      ...detail,
+      order: { ...detail.order, status: 'proof_review' },
+      proofs: [
+        { id: 'p1', url: 'https://files.example/1.png', sortOrder: 0, amountPhp: null, reference: null },
+        { id: 'p2', url: 'https://files.example/2.png', sortOrder: 1, amountPhp: null, reference: null },
+      ],
+    };
+    await renderPage();
+
+    expect(screen.getByText('Proof #1')).toBeInTheDocument();
+    expect(screen.getByText('Proof #2')).toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).not.toBeNull();
+  });
+});

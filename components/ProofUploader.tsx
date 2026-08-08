@@ -15,13 +15,23 @@ import { MAX_PROOFS } from '@/lib/proof';
 type Props = {
   files: File[];
   onChange: (files: File[]) => void;
+  /**
+   * Proofs the order already holds, when this control is adding to an existing
+   * set rather than starting one. Shifts the numbering and the cap, so a file
+   * picked against an order with two filed proofs reads "Proof #3" — and does
+   * not put a second "Proof #1" on a screen already showing one.
+   */
+  startIndex?: number;
 };
 
-export function ProofUploader({ files, onChange }: Props) {
+export function ProofUploader({ files, onChange, startIndex = 0 }: Props) {
   // Rejections are shown, never applied silently. Truncating an over-long
   // selection would tell the customer their last transfer was evidenced.
   const [error, setError] = useState<string | null>(null);
-  const isFull = files.length >= MAX_PROOFS;
+  // Everything counts from the total the ORDER would hold, not from what this
+  // control is currently holding.
+  const total = startIndex + files.length;
+  const isFull = total >= MAX_PROOFS;
 
   // One object URL per image, rebuilt only when the file list itself changes.
   // PDFs get null — there is nothing to show, and an <img> pointed at one
@@ -40,7 +50,7 @@ export function ProofUploader({ files, onChange }: Props) {
   const add = (picked: FileList | null) => {
     const added = Array.from(picked ?? []);
     if (added.length === 0) return;
-    if (files.length + added.length > MAX_PROOFS) {
+    if (total + added.length > MAX_PROOFS) {
       setError(
         `You can attach up to ${MAX_PROOFS} proofs. Remove one before adding another.`,
       );
@@ -62,7 +72,7 @@ export function ProofUploader({ files, onChange }: Props) {
           Proof of payment <span className="text-[#d33]">*</span>
         </div>
         <div className="text-[12px] text-ink-muted">
-          {files.length > 0 ? `${files.length} of ${MAX_PROOFS} attached` : `Upload up to ${MAX_PROOFS} files`}
+          {total > 0 ? `${total} of ${MAX_PROOFS} attached` : `Upload up to ${MAX_PROOFS} files`}
         </div>
       </div>
 
@@ -76,16 +86,16 @@ export function ProofUploader({ files, onChange }: Props) {
               className="flex items-center gap-3 rounded-[12px] border border-line bg-white px-3 py-2.5"
             >
               {previews[i]
-                ? <img src={previews[i]!} alt={`Proof ${i + 1} preview`} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                ? <img src={previews[i]!} alt={`Proof ${startIndex + i + 1} preview`} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
                 : <span aria-hidden className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-surface-mist text-xl">📄</span>}
               <div className="min-w-0 flex-1">
-                <div className="text-[12.5px] font-bold text-brand-greendark">Proof #{i + 1}</div>
+                <div className="text-[12.5px] font-bold text-brand-greendark">Proof #{startIndex + i + 1}</div>
                 <div className="truncate text-[12px] text-ink-muted">{file.name}</div>
               </div>
               <button
                 type="button"
                 onClick={() => removeAt(i)}
-                aria-label={`Remove proof ${i + 1}`}
+                aria-label={`Remove proof ${startIndex + i + 1}`}
                 className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold text-ink-body hover:border-[#d33] hover:text-[#d33]"
               >
                 Remove
@@ -110,7 +120,7 @@ export function ProofUploader({ files, onChange }: Props) {
           />
           <div className="mb-1.5 text-[26px]">🧾</div>
           <div className="text-[13.5px] font-bold text-ink">
-            {files.length === 0 ? 'Upload payment proof' : 'Add another proof'}
+            {total === 0 ? 'Upload payment proof' : 'Add another proof'}
           </div>
           <div className="text-[12px] text-ink-muted">
             Screenshot or photo of each payment — one per transfer

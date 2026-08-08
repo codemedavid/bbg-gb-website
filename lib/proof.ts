@@ -51,13 +51,28 @@ async function store(proof: File): Promise<string> {
  */
 export async function validateAndStoreProofs(
   entries: readonly FormDataEntryValue[],
+  opts: {
+    /**
+     * Proofs the order already carries, for an upload that adds to an existing
+     * set rather than starting one. Bank transfers happen hours or days apart,
+     * so the cap has to count what was filed on previous visits — otherwise
+     * five uploads of one file each slips through five separate checks.
+     */
+    existingCount?: number;
+  } = {},
 ): Promise<string[]> {
+  const existing = opts.existingCount ?? 0;
+  const remaining = Math.max(0, MAX_PROOFS - existing);
   const attached = entries.filter(isAttached);
   if (attached.length === 0) {
     throw new ApiError(400, 'Payment proof is required to place an order.');
   }
-  if (attached.length > MAX_PROOFS) {
-    throw new ApiError(400, `You can attach up to ${MAX_PROOFS} payment proofs — ${attached.length} were submitted.`);
+  if (attached.length > remaining) {
+    // Phrased as what is LEFT, not as the total. "Up to 5" is no help to
+    // someone holding four already; they need to know they have one.
+    throw new ApiError(400, remaining === 0
+      ? `This order already has the maximum of ${MAX_PROOFS} payment proofs.`
+      : `You can add ${remaining} more payment proof${remaining === 1 ? '' : 's'} — ${attached.length} were submitted.`);
   }
   for (const proof of attached) validate(proof);
 

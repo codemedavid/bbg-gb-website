@@ -155,8 +155,15 @@ export type OrderDetail = {
   customer: { name: string | null; email: string | null; phone: string | null };
   items: OrderItem[];
   history: OrderHistory[];
-  /** Signed, expiring URL for the uploaded payment proof; null when none. */
+  /** Signed, expiring URL for the FIRST payment proof; null when none. */
   proofUrl: string | null;
+  /**
+   * Every proof the order carries, oldest first. The customer needs the whole
+   * list to tell whether last night's upload landed before deciding to add
+   * another. Optional so a cached response from before this shipped still
+   * types.
+   */
+  proofs?: PaymentProof[];
 };
 
 // A payment obligation as the customer and admin see it.
