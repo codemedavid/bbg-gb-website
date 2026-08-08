@@ -23,7 +23,13 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   if (isLoading || !data) return <Modal title="Order" onClose={onClose}><div className="py-6 text-ink-muted">Loading…</div></Modal>;
-  const { order, items, customer, proofUrl } = data;
+  // `proofs` is the full set; `proofUrl` is the legacy single key, still read as
+  // a fallback so an order written before order_payment_proofs existed and
+  // never backfilled still shows its screenshot.
+  const { order, items, customer, proofUrl, proofs = [] } = data;
+  const gallery = proofs.length > 0
+    ? proofs
+    : proofUrl ? [{ id: 'legacy', url: proofUrl, sortOrder: 0, amountPhp: null, reference: null }] : [];
 
   const save = async () => {
     setError(null);
@@ -50,6 +56,17 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
           <div className="text-ink-muted">{customer.email}</div>
           <div className="mt-1 text-ink-body">{order.shipAddress}</div>
         </div>
+
+        {/* The customer's own instructions, distinct from the admin note on the
+            status update below. Placed above the items because it may change how
+            the parcel gets packed, and an admin who reads it after packing has
+            read it too late. */}
+        {order.notes && (
+          <div className="mt-3 rounded-[10px] border-[1.5px] border-warn-softln bg-warn-softbg p-3">
+            <div className="mb-1 text-[12px] font-bold text-[#8a6400]">📝 Customer note</div>
+            <p className="m-0 whitespace-pre-wrap text-[13px] leading-snug text-[#6b5a24]">{order.notes}</p>
+          </div>
+        )}
 
         <div className="mt-3">
           {items.map((it) => (
@@ -82,9 +99,35 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
 
         <div className="mt-3">
-          <div className="mb-1 text-[12px] font-semibold text-ink-body">Payment proof</div>
-          {proofUrl
-            ? <a href={proofUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border border-line px-3 py-2 text-[13px] font-semibold text-brand-blue">🧾 View uploaded proof →</a>
+          <div className="mb-1.5 text-[12px] font-semibold text-ink-body">
+            Payment proof{gallery.length > 1 ? ` — ${gallery.length} transfers` : ''}
+          </div>
+          {gallery.length > 0
+            // Thumbnails rather than a link per proof: the admin is checking
+            // these against a bank statement, and three identical "View proof"
+            // links tell them nothing about which is which. Each opens full size.
+            ? (
+              <ul className="flex flex-wrap gap-2.5">
+                {gallery.map((proof, i) => (
+                  <li key={proof.id}>
+                    <a
+                      href={proof.url} target="_blank" rel="noreferrer"
+                      className="block w-[104px] overflow-hidden rounded-[10px] border border-line hover:border-brand-blue"
+                    >
+                      <img
+                        src={proof.url}
+                        alt={`Payment proof ${i + 1}`}
+                        className="h-[104px] w-full bg-surface-mist object-cover"
+                      />
+                      <span className="block px-2 py-1.5 text-[12px] font-semibold text-brand-blue">
+                        Proof #{i + 1}
+                        {proof.amountPhp ? <span className="block font-normal text-ink-muted">{php(Number(proof.amountPhp))}</span> : null}
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )
             // A kahati order whose downpayment was waived collected nothing, so
             // no proof exists to attach. Said plainly, or this reads as a
             // customer who skipped payment and sends the admin chasing a

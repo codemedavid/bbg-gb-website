@@ -101,6 +101,22 @@ export type PaymentMethod = {
 // Shape returned by the public /payment-methods endpoint (active methods only).
 export type CheckoutPaymentMethod = Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl'>;
 
+/**
+ * One uploaded proof of payment. An order may carry up to five
+ * (lib/proof.ts MAX_PROOFS), because a bank transfer cap turns one payment
+ * into several.
+ *
+ * `amountPhp` and `reference` are filled in by the admin while reconciling
+ * against the bank statement, so both are null on a freshly placed order.
+ */
+export type PaymentProof = {
+  id: string;
+  url: string;
+  sortOrder: number;
+  amountPhp: string | null;
+  reference: string | null;
+};
+
 export type OrderItem = {
   // Mirrors the order_item_kind enum — see lib/types-order-modes.test.ts.
   id: string; kind: 'product' | 'group_buy' | 'moq_campaign' | 'moq_product';

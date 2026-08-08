@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import { useKahatiCommitments, usePaymentMethods } from '@/lib/queries';
 import { KahatiCommitmentsCard } from '@/components/KahatiCommitmentsCard';
+import { ProofUploader } from '@/components/ProofUploader';
 import { php } from '@/lib/format';
 import { friendlyCheckoutError, staleCheckoutLine } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
@@ -44,8 +45,9 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState('');
   const [methodId, setMethodId] = useState('');
   const [courier, setCourier] = useState<string>(DEFAULT_COURIER);
-  const [proof, setProof] = useState<File | null>(null);
-  const [preview, setPreview] = useState('');
+  // Several proofs, because a bank transfer cap turns one payment into two or
+  // three. ProofUploader owns the previews and the remove buttons.
+  const [proofs, setProofs] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   // Minted once per submission and reused on retries, so the server can
   // recognize a resubmitted checkout and replay the original orders instead of
@@ -65,15 +67,8 @@ export default function CheckoutPage() {
 
   useEffect(() => { if (!loading && !user) router.replace('/login'); }, [loading, user, router]);
 
-  const onProof = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setProof(f);
-    setPreview(f.type.startsWith('image/') ? URL.createObjectURL(f) : '');
-  };
-
   const place = async () => {
-    if ((!proof && !confirmOnly) || !items.length || submitting) return;
+    if ((proofs.length === 0 && !confirmOnly) || !items.length || submitting) return;
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -86,7 +81,8 @@ export default function CheckoutPage() {
       if (note.trim()) fd.append('note', note.trim());
       if (selectedMethod && !confirmOnly) fd.append('paymentMethod', selectedMethod.label);
       fd.append('courier', courier);
-      if (proof) fd.append('proof', proof);
+      // Appended under one repeated field name; the route reads getAll('proof').
+      for (const proof of proofs) fd.append('proof', proof);
       if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
       fd.append('idempotencyKey', idempotencyKey.current);
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
@@ -135,7 +131,7 @@ export default function CheckoutPage() {
   };
 
   const methodChosen = confirmOnly || methods.length === 0 || !!selectedMethod;
-  const canPlace = (!!proof || confirmOnly) && items.length > 0 && !!name && !!phone && !!address && methodChosen;
+  const canPlace = (proofs.length > 0 || confirmOnly) && items.length > 0 && !!name && !!phone && !!address && methodChosen;
 
   return (
     <OverlayShell>
@@ -175,7 +171,8 @@ export default function CheckoutPage() {
         ) : (
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-3 text-[13px] leading-relaxed text-ink-body">
-            Choose a payment method, send your payment, then upload a screenshot of your proof of payment. We&apos;ll confirm your order once we receive it.
+            Choose a payment method, send your payment, then upload a screenshot of your proof of payment. Paid in several
+            transfers? Attach one screenshot per transfer. We&apos;ll confirm your order once we receive it.
           </div>
 
           {methods.length === 0 ? (
@@ -220,22 +217,7 @@ export default function CheckoutPage() {
 
         {!confirmOnly && (
         <div className="rounded-[14px] bg-white p-4 shadow-card">
-          <div className="mb-2.5 text-[13px] font-bold text-ink">Proof of payment <span className="text-[#d33]">*</span></div>
-          <label className="block cursor-pointer rounded-[12px] border-[1.5px] border-dashed border-[#a9c88f] bg-[#fbfdf9] p-[18px] text-center">
-            <input type="file" accept="image/*,application/pdf" onChange={onProof} className="hidden" />
-            {proof ? (
-              <>
-                {preview ? <img src={preview} alt="proof" className="mx-auto mb-2 max-h-[160px] max-w-full rounded-lg" /> : <div className="mb-1.5 text-2xl">📄</div>}
-                <div className="text-[12.5px] font-bold text-brand-greendark">✓ Proof attached — tap to replace</div>
-              </>
-            ) : (
-              <>
-                <div className="mb-1.5 text-[26px]">🧾</div>
-                <div className="text-[13.5px] font-bold text-ink">Upload payment proof</div>
-                <div className="text-[12px] text-ink-muted">Screenshot or photo of your payment</div>
-              </>
-            )}
-          </label>
+          <ProofUploader files={proofs} onChange={setProofs} />
         </div>
         )}
         </div>
@@ -260,7 +242,7 @@ export default function CheckoutPage() {
         </div>
         <button onClick={place} disabled={!canPlace || submitting}
           className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${canPlace && !submitting ? 'bg-brand-green active:scale-[.99]' : 'bg-[#b9c6b4]'}`}>
-          {submitting ? 'Placing…' : confirmOnly ? 'Confirm order' : proof ? 'Place order' : 'Upload proof to place order'}
+          {submitting ? 'Placing…' : confirmOnly ? 'Confirm order' : proofs.length ? 'Place order' : 'Upload proof to place order'}
         </button>
         </div>
       </div>

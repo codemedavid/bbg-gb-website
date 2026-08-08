@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
+import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 
 const toastError = (fallback: string) => (err: unknown) =>
@@ -79,7 +79,10 @@ export const useAdminOrders = (status?: string) =>
 export const useAdminOrder = (id: string | null) =>
   useQuery({
     queryKey: ['admin', 'order', id],
-    queryFn: () => apiGet<{ order: Order; items: OrderItem[]; history: OrderHistory[]; customer: { name: string; email: string; phone: string }; proofUrl: string | null }>(`/admin/orders/${id}`),
+    queryFn: () => apiGet<{ order: Order; items: OrderItem[]; history: OrderHistory[]; customer: { name: string; email: string; phone: string }; proofUrl: string | null;
+      // Every proof the customer attached, oldest first. proofUrl above is the
+      // first of them, kept for readers that have not moved to the list.
+      proofs: PaymentProof[] }>(`/admin/orders/${id}`),
     enabled: !!id,
   });
 
