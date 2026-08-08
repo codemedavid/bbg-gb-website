@@ -74,8 +74,11 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
       settlementId: row.settlementId,
       settlementStatus: row.settlementStatus as SettlementStatus | null,
       groupBuyStatuses: statuses,
-      // Excludes pre-deferral orders, whose balances were collected off-platform.
+      // Together these exclude pre-deferral orders, whose balances were
+      // collected off-platform. A fee WITH a cycle is an order that paid at
+      // checkout under the per-cycle rule and is settled here as normal.
       packingFeePhp: Number(row.packingFeePhp),
+      cycleKey: row.cycleKey,
     })) continue;
     const order: SettleableOrder = {
       id: row.id,

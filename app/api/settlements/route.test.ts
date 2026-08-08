@@ -56,7 +56,11 @@ beforeEach(async () => {
 });
 
 describe('GET /api/settlements/preview', () => {
-  it('quotes one packing fee for hatians joined across separate visits', async () => {
+  it('charges no packing fee for hatians already paid for at checkout', async () => {
+    // Three commitments in one cycle: the first paid the ₱150, the other two
+    // were waived. The fee is behind them, so the final checkout collects the
+    // goods and nothing else — quoting a fee here would be the second charge
+    // the per-cycle rule exists to prevent.
     await signIn();
     await committedAndClosedHatian(3);
     await committedAndClosedHatian(2);
@@ -65,10 +69,11 @@ describe('GET /api/settlements/preview', () => {
     const body = await (await PREVIEW()).json();
 
     expect(body.data.orders).toHaveLength(3);
-    // 6 vials at ₱900 = ₱5400, less three ₱150 downpayments already paid.
-    expect(body.data.totals.balancePhp).toBe(5400 - 450);
-    expect(body.data.totals.packingFeePhp).toBe(150);
-    expect(body.data.totals.totalPhp).toBe(5400 - 450 + 150);
+    // 6 vials at ₱900 = ₱5400 of goods, whole. The ₱150 was ADDED to the first
+    // order and paid there, so it never came out of what the goods cost.
+    expect(body.data.totals.balancePhp).toBe(5400);
+    expect(body.data.totals.packingFeePhp).toBe(0);
+    expect(body.data.totals.totalPhp).toBe(5400);
   });
 
   it('leaves out commitments whose hatian is still open', async () => {
@@ -87,7 +92,9 @@ describe('GET /api/settlements/preview', () => {
     await signIn();
     const gb = await committedAndClosedHatian(3);
     const db = await getDb();
-    await db.update(orders).set({ packingFeePhp: '150' }); // as an old order looks
+    // As an old order looks: a fee on the row and no trading cycle. The cycle
+    // is what separates it from a modern order that paid its fee at checkout.
+    await db.update(orders).set({ packingFeePhp: '150', cycleKey: null });
 
     const body = await (await PREVIEW()).json();
     expect(body.data.orders).toHaveLength(0);
@@ -99,7 +106,7 @@ describe('GET /api/settlements/preview', () => {
     await signIn();
     await committedAndClosedHatian(3);
     const db = await getDb();
-    await db.update(orders).set({ packingFeePhp: '150' });
+    await db.update(orders).set({ packingFeePhp: '150', cycleKey: null });
 
     const res = await POST(settlementRequest());
     expect(res.status).toBe(400);
@@ -124,7 +131,9 @@ describe('GET /api/settlements/preview', () => {
 });
 
 describe('POST /api/settlements', () => {
-  it('charges the packing fee once for a customer settling several hatians', async () => {
+  it('charges no packing fee again for hatians paid for at checkout', async () => {
+    // Both commitments were in one cycle, so one ₱150 was collected at the
+    // first checkout and nothing is owed for packing here.
     await signIn();
     await makePaymentMethod({ label: 'GCash' });
     await committedAndClosedHatian(3);
@@ -134,12 +143,14 @@ describe('POST /api/settlements', () => {
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(Number(body.data.settlement.packingFeePhp)).toBe(150);
+    expect(Number(body.data.settlement.packingFeePhp)).toBe(0);
 
     const db = await getDb();
     const rows = await db.select().from(settlements);
     expect(rows).toHaveLength(1);
-    expect(Number(rows[0].totalPhp)).toBe(4500 - 300 + 150);
+    // 5 vials at ₱900 = ₱4500 of goods, whole: the ₱150 was added to the first
+    // order and paid there, never taken out of what the goods cost.
+    expect(Number(rows[0].totalPhp)).toBe(4500);
   });
 
   it('attaches every settled order to the settlement', async () => {
@@ -183,8 +194,10 @@ describe('POST /api/settlements', () => {
     expect(await db.select().from(settlements)).toHaveLength(1);
   });
 
-  it('charges a fresh packing fee for a hatian that completes after an earlier settlement', async () => {
-    // A later parcel is a genuinely separate shipment, so it carries its own fee.
+  it('still charges no settlement fee for a hatian joined in the same cycle', async () => {
+    // A second settlement is a genuinely separate shipment, but the fee follows
+    // the CYCLE the commitment was made in — and both of these were made in
+    // one. The fee was collected at the first checkout and is not owed again.
     await signIn();
     await committedAndClosedHatian(3);
     await POST(settlementRequest());
@@ -192,7 +205,7 @@ describe('POST /api/settlements', () => {
     await committedAndClosedHatian(2);
     const body = await (await POST(settlementRequest())).json();
 
-    expect(Number(body.data.settlement.packingFeePhp)).toBe(150);
+    expect(Number(body.data.settlement.packingFeePhp)).toBe(0);
     const db = await getDb();
     expect(await db.select().from(settlements)).toHaveLength(2);
   });
@@ -247,8 +260,10 @@ describe('packing fee status through the settlement lifecycle', () => {
     await signIn();
     await committedAndClosedHatian(3);
 
+    // Paid at checkout with the cycle it belongs to, so it reads as settled
+    // before the final checkout even begins.
     const before = await (await PREVIEW()).json();
-    expect(before.data.orders[0].packingFee).toBe('unpaid');
+    expect(before.data.orders[0].packingFee).toBe('paid');
 
     const created = await (await POST(settlementRequest())).json();
 
