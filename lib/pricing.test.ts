@@ -3,7 +3,7 @@ import {
   computeTotals, subtotal, packingFeeFor, perVialPrice,
   validateKahatiCommit, hasOnHand, hasKahati, hasGroupBuy,
   validateGroupBuyCommit, groupBuyMoqStatus, hasMoq, validateMoqQty,
-  splitKahatiDownpayment, onHandUnitPrice, vialsFor, validateOnHandQty,
+  onHandUnitPrice, vialsFor, validateOnHandQty,
   settlementPackingFee,
   groupBuyUnitPrice, groupBuyVialsPerKit, kahatiDefaultsFor, campaignDefaultsFor,
   PACKING_FEE_PHP, KAHATI_MIN_VIALS, VIALS_PER_KIT, KAHATI_MAX_VIALS, MOQ_BATCH_MAX_KITS,
@@ -286,31 +286,6 @@ describe('validateOnHandQty', () => {
   });
 });
 
-describe('kahati downpayment split', () => {
-  it('splits total into the default ₱150 downpayment and the balance', () => {
-    expect(splitKahatiDownpayment(6450)).toEqual({ downpayment: 150, balance: 6300 });
-  });
-  it('honours an admin-set downpayment amount', () => {
-    expect(splitKahatiDownpayment(6450, 500)).toEqual({ downpayment: 500, balance: 5950 });
-  });
-  it('caps the downpayment at the order total so balance never goes negative', () => {
-    expect(splitKahatiDownpayment(100, 150)).toEqual({ downpayment: 100, balance: 0 });
-  });
-  it('floors a negative downpayment at zero', () => {
-    expect(splitKahatiDownpayment(1000, -50)).toEqual({ downpayment: 0, balance: 1000 });
-  });
-  it('rounds to centavos', () => {
-    expect(splitKahatiDownpayment(1000.505, 150.004)).toEqual({ downpayment: 150, balance: 850.51 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// MOQ (Minimum Order Quantity) — the fourth purchasing mode.
-//
-// MOQ products are a curated, admin-managed shelf sold on their own page with a
-// per-product minimum order quantity. They never share an order with on-hand,
-// kahati or group-buy items, so they carry their own packing fee.
-// ---------------------------------------------------------------------------
 describe('MOQ mode pricing', () => {
   const moqItem = (price: number, qty = 1): PriceableItem => ({ kind: 'moq_product', unitPricePhp: price, qty });
 

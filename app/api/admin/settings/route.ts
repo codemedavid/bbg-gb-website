@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import {
-  getCurrentCycle, getKahatiDownpayment, getMoqPageEnabled, getPackingFees,
-  getSchedulePausedUntil, getScheduleRecurrence, setKahatiDownpayment, setMoqPageEnabled,
+  getCurrentCycle, getMoqPageEnabled, getPackingFees,
+  getSchedulePausedUntil, getScheduleRecurrence, setMoqPageEnabled,
   setPackingFees, setSchedulePausedUntil, setScheduleRecurrence,
 } from '@/lib/settings';
 import { nextCycle } from '@/lib/schedule-recurrence';
@@ -44,7 +44,6 @@ const patchSchema = z.object({
     group_buy: feeSchema.optional(),
     moq: feeSchema.optional(),
   }).optional(),
-  kahatiDownpayment: feeSchema.optional(),
   moqPageEnabled: z.boolean().optional(),
   scheduleRecurrence: recurrenceSchema.optional(),
   schedulePausedUntil: instantSchema.optional(),
@@ -55,7 +54,6 @@ async function currentSettings() {
   const now = new Date();
   return {
     packingFees: await getPackingFees(),
-    kahatiDownpayment: await getKahatiDownpayment(),
     moqPageEnabled: await getMoqPageEnabled(),
     scheduleRecurrence: recurrence,
     schedulePausedUntil: await getSchedulePausedUntil(),
@@ -75,10 +73,9 @@ export const GET = handler(async () => {
 export const PATCH = handler(async (req: Request) => {
   await requireAdmin();
   const body = await req.json();
-  const { packingFees, kahatiDownpayment, moqPageEnabled, scheduleRecurrence } =
+  const { packingFees, moqPageEnabled, scheduleRecurrence } =
     patchSchema.parse(body);
   if (packingFees) await setPackingFees(packingFees);
-  if (kahatiDownpayment != null) await setKahatiDownpayment(kahatiDownpayment);
   if (moqPageEnabled != null) await setMoqPageEnabled(moqPageEnabled);
   // An all-null recurrence is a real instruction (clear the schedule), so this
   // checks for the key's presence rather than its truthiness.

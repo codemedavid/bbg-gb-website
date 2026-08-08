@@ -3,7 +3,7 @@
 // table yields the documented defaults (solo 200 / kahati 150 / group_buy 300).
 import { eq, inArray } from 'drizzle-orm';
 import { getDb, settings } from '@/lib/db';
-import { KAHATI_DOWNPAYMENT_PHP, PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
+import { PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
 import { cycleAt, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
 
 export type { PackingFees, Cycle, ScheduleRecurrence };
@@ -24,24 +24,6 @@ export async function getPackingFees(): Promise<PackingFees> {
     return v != null && Number.isFinite(v) && v >= 0 ? v : PACKING_FEE_PHP[mode];
   };
   return { solo: read('solo'), kahati: read('kahati'), group_buy: read('group_buy'), moq: read('moq') };
-}
-
-const DOWNPAYMENT_KEY = 'kahati_downpayment';
-
-// Downpayment due at checkout for kahati orders; falls back to the code default.
-export async function getKahatiDownpayment(): Promise<number> {
-  const db = await getDb();
-  const [row] = await db.select().from(settings).where(eq(settings.key, DOWNPAYMENT_KEY));
-  const v = row ? Number(row.value) : NaN;
-  return Number.isFinite(v) && v >= 0 ? v : KAHATI_DOWNPAYMENT_PHP;
-}
-
-export async function setKahatiDownpayment(value: number): Promise<number> {
-  const db = await getDb();
-  await db.insert(settings)
-    .values({ key: DOWNPAYMENT_KEY, value: String(value) })
-    .onConflictDoUpdate({ target: settings.key, set: { value: String(value) } });
-  return getKahatiDownpayment();
 }
 
 const MOQ_PAGE_KEY = 'moq_page_enabled';

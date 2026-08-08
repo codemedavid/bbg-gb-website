@@ -10,11 +10,10 @@ beforeEach(async () => {
 });
 
 describe('GET /api/settings', () => {
-  it('returns packing-fee defaults and the kahati downpayment without auth', async () => {
+  it('returns the packing-fee defaults without auth', async () => {
     const res = await GET();
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.data.packingFees).toEqual({ solo: 200, kahati: 150, group_buy: 300, moq: 300 });
-    expect(body.data.kahatiDownpayment).toBe(150);
   });
 });
