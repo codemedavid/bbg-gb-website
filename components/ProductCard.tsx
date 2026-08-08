@@ -63,7 +63,11 @@ export function ProductCard({ group }: { group: VariantGroup<Product> }) {
           </span>
         )}
       </button>
-      <button onClick={open} className="break-words text-left text-[13.5px] font-bold leading-tight text-ink">{group.name}</button>
+      {/* py-1 is a tap target, not spacing. The bare text button measured 17px
+          tall — under the 24px WCAG 2.2 AA minimum, and an awkward thing to hit
+          on a phone even where it technically passes via the card image above
+          being an equivalent target. */}
+      <button onClick={open} className="break-words py-1 text-left text-[13.5px] font-bold leading-tight text-ink">{group.name}</button>
 
       {/* A choice of one is not a choice — a lone strength reads as a label. */}
       {group.isSingle ? (
