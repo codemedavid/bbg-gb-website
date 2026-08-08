@@ -53,12 +53,28 @@ export async function resetDb(): Promise<void> {
  * schedule tests assert on, and seeding it here would make that unreachable.
  */
 export async function openBoards(): Promise<void> {
-  const DAY = 24 * 60 * 60 * 1000;
-  const { setGroupBuySchedule } = await import('@/lib/settings');
-  await setGroupBuySchedule({
-    opensAt: new Date(Date.now() - DAY).toISOString(),
-    closesAt: new Date(Date.now() + DAY).toISOString(),
+  const { setScheduleRecurrence } = await import('@/lib/settings');
+  const { phtCalendarDate } = await import('@/lib/schedule');
+  // A cycle that opened at midnight today, Manila time, and runs the full week.
+  // Anchored to today's weekday rather than a fixed one so the boards are open
+  // whenever the suite happens to run, which is the precondition these tests
+  // want — not a particular calendar day.
+  const today = phtCalendarDate(new Date()).weekday;
+  await setScheduleRecurrence({
+    openDay: today, openTime: '00:00', closeDay: today, closeTime: '00:00',
   });
+}
+
+/**
+ * Takes both boards dark by clearing the schedule.
+ *
+ * "Elapsed" and "not yet opened" are the same state to every caller — the
+ * boards are shut — so there is one helper rather than two that differ only in
+ * which side of the window they sit on.
+ */
+export async function closeBoards(): Promise<void> {
+  const { setScheduleRecurrence } = await import('@/lib/settings');
+  await setScheduleRecurrence({ openDay: null, openTime: null, closeDay: null, closeTime: null });
 }
 
 export async function makeUser(

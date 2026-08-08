@@ -1,188 +1,105 @@
-// The quick controls over the ONE shared Group Buy + Hatian window.
+// What the shared Group Buy + Hatian schedule is DOING, as the admin card reads
+// it back.
 //
-// Every one of these produces a window that lib/settings.ts will accept and
-// lib/schedule.ts will read back the same way. That is the whole risk here: a
-// convenience button that writes a window the server rejects is an admin
-// pressing "Close now" and staying open, and a button that writes a window
-// which reads as half-set takes BOTH boards dark as a side effect.
-//
-// So the controls are pure functions of (window, now) and are pinned against
-// isScheduleOpen itself rather than against a second opinion about the rules.
+// The recurrence itself is pinned in lib/schedule-recurrence.test.ts. This is
+// the layer above it: given the cycle that resolved and whether a pause is in
+// force, which of the four things is true right now, and how long until it
+// changes. Kept pure so the card, a test and any future caller all get the same
+// answer, and so the state can be checked against the gate's own rule rather
+// than a second opinion about it.
 import { describe, it, expect } from 'vitest';
-import { isScheduleOpen, type GroupBuySchedule } from './schedule';
-import {
-  scheduleStatus, windowOpeningNow, windowStartedNow, windowClosedNow, formatTimeLeft,
-} from './schedule-controls';
+import { scheduleStatus, formatTimeLeft } from '@/lib/schedule-controls';
 
-const at = (iso: string): Date => new Date(iso);
-const DAY_MS = 86_400_000;
+// Opens Wed Aug 5 2026 8:00 PM PHT, closes Wed Aug 12 6:00 PM PHT.
+const CYCLE = { opensAt: '2026-08-05T12:00:00.000Z', closesAt: '2026-08-12T10:00:00.000Z' };
 
-// Aug 4 09:00 PHT through Aug 11 23:59 PHT, the shape the card already stores.
-const OPENS = '2026-08-04T01:00:00.000Z';
-const CLOSES = '2026-08-11T15:59:00.000Z';
-const WINDOW: GroupBuySchedule = { opensAt: OPENS, closesAt: CLOSES };
-const UNSET: GroupBuySchedule = { opensAt: null, closesAt: null };
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
 
 describe('scheduleStatus', () => {
-  it('reports an in-force window as open, with the time until it closes', () => {
-    const now = at('2026-08-09T01:59:00.000Z'); // 2d 14h before it closes
+  it('is open inside the cycle, counting down to the close', () => {
+    // Arrange — one day before the close.
+    const now = new Date(Date.parse(CYCLE.closesAt) - DAY);
 
-    const status = scheduleStatus(WINDOW, now);
+    // Act
+    const status = scheduleStatus({ cycle: CYCLE, pausedUntil: null }, now);
 
-    expect(status.state).toBe('open');
-    expect(status.msUntil).toBe(Date.parse(CLOSES) - now.getTime());
+    // Assert
+    expect(status).toEqual({ state: 'open', msUntil: DAY });
   });
 
-  it('reports a window that has not started as scheduled, with the time until it opens', () => {
-    const now = at('2026-08-03T01:00:00.000Z');
+  it('is scheduled before the cycle opens, counting down to the opening', () => {
+    const now = new Date(Date.parse(CYCLE.opensAt) - 2 * HOUR);
 
-    const status = scheduleStatus(WINDOW, now);
+    const status = scheduleStatus({ cycle: CYCLE, pausedUntil: null }, now);
 
-    expect(status.state).toBe('scheduled');
-    expect(status.msUntil).toBe(Date.parse(OPENS) - now.getTime());
+    expect(status).toEqual({ state: 'scheduled', msUntil: 2 * HOUR });
   });
 
-  it('reports an elapsed window as closed', () => {
-    expect(scheduleStatus(WINDOW, at('2026-08-12T00:00:00.000Z')).state).toBe('closed');
+  it('is unset when no schedule has ever been configured', () => {
+    // Kept distinct from closed: an unset schedule is the state a lost or
+    // never-written recurrence leaves behind — both boards shut with nothing on
+    // screen to say why — and it is the one that needs a decision from the admin.
+    const status = scheduleStatus({ cycle: null, pausedUntil: null }, new Date());
+
+    expect(status).toEqual({ state: 'unset', msUntil: null });
   });
 
-  it('reports a window with no configuration as unset, not merely closed', () => {
-    // The two differ for the admin: "unset" is the state that needs a decision,
-    // and it is the one that quietly shuts both boards after a deploy.
-    expect(scheduleStatus(UNSET, at('2026-08-09T00:00:00.000Z')).state).toBe('unset');
+  it('is paused while a pause is in force, counting down to its end', () => {
+    // A pause outranks an open cycle: the admin closed the boards by hand and
+    // the card must say so, not report the window they are inside.
+    const now = new Date(Date.parse(CYCLE.opensAt) + HOUR);
+    const pausedUntil = new Date(now.getTime() + 3 * HOUR).toISOString();
+
+    const status = scheduleStatus({ cycle: CYCLE, pausedUntil }, now);
+
+    expect(status).toEqual({ state: 'paused', msUntil: 3 * HOUR });
   });
 
-  it('treats a half-set window as unset, the way the storefront reads it', () => {
-    const half: GroupBuySchedule = { opensAt: OPENS, closesAt: null };
+  it('ignores a pause that has already elapsed', () => {
+    const now = new Date(Date.parse(CYCLE.opensAt) + HOUR);
+    const pausedUntil = new Date(now.getTime() - MINUTE).toISOString();
 
-    expect(scheduleStatus(half, at('2026-08-09T00:00:00.000Z')).state).toBe('unset');
+    expect(scheduleStatus({ cycle: CYCLE, pausedUntil }, now).state).toBe('open');
   });
 
-  it('reads a backwards window as closed, agreeing with isScheduleOpen', () => {
-    const backwards: GroupBuySchedule = { opensAt: CLOSES, closesAt: OPENS };
-    const now = at('2026-08-09T00:00:00.000Z');
+  it('ignores an unparseable pause rather than reporting the boards paused forever', () => {
+    const now = new Date(Date.parse(CYCLE.opensAt) + HOUR);
 
-    expect(scheduleStatus(backwards, now).state).toBe('closed');
-    expect(isScheduleOpen(backwards, now)).toBe(false);
+    expect(scheduleStatus({ cycle: CYCLE, pausedUntil: 'whenever' }, now).state).toBe('open');
   });
 
-  it('agrees with isScheduleOpen at the exact opening and closing instants', () => {
-    // Opening inclusive, closing exclusive — the boundary the gate uses.
-    const opening = at(OPENS);
-    const closing = at(CLOSES);
+  it('reports a pause even with no cycle resolved', () => {
+    // Paused outranks unset too: the admin needs to know the pause is the
+    // reason before they go looking for a schedule that is fine.
+    const pausedUntil = new Date(Date.now() + HOUR).toISOString();
 
-    expect(scheduleStatus(WINDOW, opening).state).toBe('open');
-    expect(isScheduleOpen(WINDOW, opening)).toBe(true);
-    expect(scheduleStatus(WINDOW, closing).state).toBe('closed');
-    expect(isScheduleOpen(WINDOW, closing)).toBe(false);
-  });
-});
-
-describe('windowOpeningNow', () => {
-  it('opens at this instant and closes the requested number of days later', () => {
-    const now = at('2026-08-06T05:30:00.000Z');
-
-    const next = windowOpeningNow(7, now);
-
-    expect(next.opensAt).toBe('2026-08-06T05:30:00.000Z');
-    expect(next.closesAt).toBe(new Date(now.getTime() + 7 * DAY_MS).toISOString());
-  });
-
-  it('produces a window that is open right away', () => {
-    const now = at('2026-08-06T05:30:00.000Z');
-
-    expect(isScheduleOpen(windowOpeningNow(3, now), now)).toBe(true);
-  });
-
-  it('refuses a non-positive duration, which would store a window nobody can use', () => {
-    const now = at('2026-08-06T05:30:00.000Z');
-
-    expect(() => windowOpeningNow(0, now)).toThrow();
-    expect(() => windowOpeningNow(-1, now)).toThrow();
-  });
-});
-
-describe('windowStartedNow', () => {
-  it('brings a scheduled window forward, keeping its planned close', () => {
-    const now = at('2026-08-03T01:00:00.000Z'); // a day before it was due to open
-
-    const next = windowStartedNow(WINDOW, now);
-
-    expect(next.opensAt).toBe(now.toISOString());
-    expect(next.closesAt).toBe(CLOSES);
-    expect(isScheduleOpen(next, now)).toBe(true);
-  });
-
-  it('refuses to start a window whose close has already passed', () => {
-    // Moving the opening past the close writes a backwards window, which the
-    // server rejects and the storefront reads as shut.
-    const now = at('2026-08-12T00:00:00.000Z');
-
-    expect(() => windowStartedNow(WINDOW, now)).toThrow();
-  });
-
-  it('refuses to start a window that is not configured', () => {
-    expect(() => windowStartedNow(UNSET, at('2026-08-09T00:00:00.000Z'))).toThrow();
-  });
-});
-
-describe('windowClosedNow', () => {
-  it('ends an open window at this instant, keeping when it opened', () => {
-    const now = at('2026-08-09T01:59:00.000Z');
-
-    const next = windowClosedNow(WINDOW, now);
-
-    expect(next.opensAt).toBe(OPENS);
-    expect(next.closesAt).toBe(now.toISOString());
-    expect(isScheduleOpen(next, now)).toBe(false);
-  });
-
-  it('clears a window that has not started yet rather than truncating it', () => {
-    // Truncating a future window stores closesAt before opensAt — a backwards
-    // window the server refuses, so "Close now" would report an error while
-    // leaving the boards due to open on schedule.
-    const now = at('2026-08-03T01:00:00.000Z');
-
-    expect(windowClosedNow(WINDOW, now)).toEqual(UNSET);
-  });
-
-  it('clears a window being closed at the very instant it opened', () => {
-    // Truncating here stores a zero-length window, which reads as closed but is
-    // refused on the way in.
-    expect(windowClosedNow(WINDOW, at(OPENS))).toEqual(UNSET);
-  });
-
-  it('leaves the boards closed when there was no window to begin with', () => {
-    expect(windowClosedNow(UNSET, at('2026-08-09T00:00:00.000Z'))).toEqual(UNSET);
-  });
-
-  it('closes an already-elapsed window without reopening anything', () => {
-    const now = at('2026-08-12T00:00:00.000Z');
-
-    expect(isScheduleOpen(windowClosedNow(WINDOW, now), now)).toBe(false);
+    expect(scheduleStatus({ cycle: null, pausedUntil }, new Date()).state).toBe('paused');
   });
 });
 
 describe('formatTimeLeft', () => {
-  it('reads in days and hours once more than a day remains', () => {
-    expect(formatTimeLeft(2 * DAY_MS + 14 * 3_600_000)).toBe('2d 14h');
+  // Coarsens by one unit as it grows — nobody schedules to the minute a week
+  // out, and the minutes on their own are what matter in the last hour.
+  it('reads in days and hours beyond a day', () => {
+    expect(formatTimeLeft(2 * DAY + 14 * HOUR)).toBe('2d 14h');
   });
 
-  it('reads in hours and minutes within the last day', () => {
-    expect(formatTimeLeft(14 * 3_600_000 + 3 * 60_000)).toBe('14h 3m');
+  it('reads in hours and minutes within a day', () => {
+    expect(formatTimeLeft(14 * HOUR + 3 * MINUTE)).toBe('14h 3m');
   });
 
-  it('reads in minutes within the last hour', () => {
-    expect(formatTimeLeft(3 * 60_000)).toBe('3m');
+  it('reads in minutes within an hour', () => {
+    expect(formatTimeLeft(3 * MINUTE)).toBe('3m');
   });
 
-  it('says less than a minute rather than counting down to 0m', () => {
-    // "0m" reads as closed while the boards are still trading.
+  it('says so in words below a minute', () => {
+    // Counting down to "0m" reads as closed while both boards are still trading.
     expect(formatTimeLeft(30_000)).toBe('under a minute');
   });
 
-  it('says less than a minute for an elapsed or negative interval', () => {
-    expect(formatTimeLeft(0)).toBe('under a minute');
-    expect(formatTimeLeft(-5_000)).toBe('under a minute');
+  it('says so in words for an elapsed interval', () => {
+    expect(formatTimeLeft(-1)).toBe('under a minute');
   });
 });

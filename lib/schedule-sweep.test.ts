@@ -31,18 +31,14 @@ const { openDueBatches } = await import('./moq-batch-server');
 const { GET: listKahatis } = await import('@/app/api/groupbuys/route');
 const { GET: listCampaigns } = await import('@/app/api/campaigns/route');
 const { getDb, groupBuys, moqCampaigns } = await import('@/lib/db');
-const { setGroupBuySchedule } = await import('@/lib/settings');
-const { resetDb, makeUser } = await import('@/lib/test/harness');
+const { resetDb, makeUser, openBoards, closeBoards } = await import('@/lib/test/harness');
 
 const HOUR = 60 * 60 * 1000;
 // Both boards now sit behind one storefront window (lib/schedule-gate.ts). These
 // tests are about the OTHER schedule — the per-campaign open date — so they run
 // with the storefront window held open; the interaction between the two is
 // pinned separately at the bottom of this file.
-const openStorefront = () => setGroupBuySchedule({
-  opensAt: new Date(Date.now() - HOUR).toISOString(),
-  closesAt: new Date(Date.now() + HOUR).toISOString(),
-});
+const openStorefront = () => openBoards();
 
 const DAY = 24 * 60 * 60 * 1000;
 const past = (ms = DAY) => new Date(Date.now() - ms);
@@ -221,10 +217,7 @@ describe('Group Buy scheduled opening', () => {
   // first read after the window reopens, which is the first moment anyone could
   // have seen it anyway.
   it('leaves a due batch closed while the storefront window is shut', async () => {
-    await setGroupBuySchedule({
-      opensAt: new Date(Date.now() - 2 * HOUR).toISOString(),
-      closesAt: new Date(Date.now() - HOUR).toISOString(),
-    });
+    await closeBoards();
     const campaign = await scheduledCampaign(past());
 
     await listCampaigns();
