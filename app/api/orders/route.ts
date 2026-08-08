@@ -16,7 +16,8 @@ import { campaignPackingFeeDue, seriesWithPaidPackingFee } from '@/lib/campaign-
 import { canCommit } from '@/lib/group-buy';
 import { BatchAllocationError, allocateCommitment, resolveOpenBatch, seriesOf } from '@/lib/moq-batch-server';
 import { splitCartIntoOrders } from '@/lib/order-modes';
-import { getKahatiDownpayment, getPackingFees } from '@/lib/settings';
+import { getCurrentCycle, getKahatiDownpayment, getPackingFees } from '@/lib/settings';
+import { cycleKeyOf } from '@/lib/schedule-recurrence';
 import { requireCommitmentsOpen } from '@/lib/schedule-gate';
 import { validateAndStoreProof } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
@@ -111,6 +112,13 @@ export const POST = handler(async (req: Request) => {
   if (body.items.some((i) => i.kind === 'group_buy' || i.kind === 'moq_campaign')) {
     await requireCommitmentsOpen();
   }
+
+  // The cycle those boards are trading in, resolved ONCE for this checkout.
+  // Every order the cart splits into carries the same key, and asking again per
+  // order could straddle a close — one half of a cart landing in this cycle and
+  // the other in the next is exactly how a customer gets billed twice.
+  const cycle = await getCurrentCycle();
+  const cycleKey = cycle ? cycleKeyOf(cycle) : null;
 
   // Store the proof before opening the transaction — it is an external side effect.
   // A rolled-back order leaves an orphaned object, which is harmless.
@@ -397,6 +405,11 @@ export const POST = handler(async (req: Request) => {
         // Keyed per split index: one submission may legitimately create several
         // orders, but never the same one twice — the unique index enforces it.
         idempotencyKey: body.idempotencyKey ? `${body.idempotencyKey}:${splitIndex}` : null,
+        // The trading cycle this order belongs to, for the boards that have
+        // one. On-hand and MOQ orders are not gated by the schedule and ship as
+        // their own parcels, so they belong to no cycle and must not be able to
+        // satisfy a cycle's packing fee.
+        cycleKey: buyType === 'kahati' || buyType === 'group_buy' ? cycleKey : null,
       }).returning();
 
       await tx.insert(orderItems).values(lines.map((p) => ({

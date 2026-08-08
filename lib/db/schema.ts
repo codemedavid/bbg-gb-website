@@ -314,6 +314,14 @@ export const orders = pgTable('orders', {
   // at most one settlement, which is what makes a duplicate packing fee
   // impossible rather than merely unlikely.
   settlementId: uuid('settlement_id').references(() => settlements.id),
+  // The Group Buy/Hatian trading cycle this order was placed in, as the cycle's
+  // opening instant (lib/schedule-recurrence.ts). NULL for on-hand and MOQ
+  // orders, which are not gated by the schedule, and for every order placed
+  // before the cycle existed. Stamped once at checkout and never recomputed:
+  // deriving it from created_at would re-resolve it against whatever recurrence
+  // is configured today, so an admin moving the schedule would silently re-bill
+  // customers for cycles that have already happened.
+  cycleKey: varchar('cycle_key', { length: 40 }),
   trackingNo: varchar('tracking_no', { length: 80 }),
   // Weekly-report fulfilment fields (admin-editable). courier = Shipping column,
   // packedBy = the "Admin" handler column, totalUsd = the report's USD order total
@@ -328,6 +336,9 @@ export const orders = pgTable('orders', {
   userIdx: index('orders_user_idx').on(t.userId),
   createdIdx: index('orders_created_idx').on(t.createdAt),
   statusIdx: index('orders_status_idx').on(t.status),
+  // "What has this customer already paid for in this cycle" is asked on every
+  // gated checkout, and it is exactly this pair.
+  userCycleIdx: index('orders_user_cycle_idx').on(t.userId, t.cycleKey),
 }));
 
 export const orderItems = pgTable('order_items', {
