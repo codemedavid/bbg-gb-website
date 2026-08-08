@@ -129,18 +129,20 @@ describe('repeat kahati checkout', () => {
     expect(Number(body.data.order.downpaymentPhp)).toBe(0);
   });
 
-  it('asks for a downpayment again once every hatian they joined has sealed', async () => {
+  it('charges nothing more in the same cycle even after a hatian has sealed', async () => {
     await signIn();
     const sealed = await makeGroupBuy({ name: 'Reta 20mg', minVials: 1, pricePerKitPhp: 9000 });
     await joinFirstKahati(sealed.id);
     const db = await getDb();
     await db.update(groupBuys).set({ status: 'closed' }).where(eq(groupBuys.id, sealed.id));
 
+    // The fee follows the CYCLE, not the counter: a hatian sealing mid-cycle
+    // does not start a second parcel to pay for.
     const fresh = await makeGroupBuy({ name: 'Sema 10mg', minVials: 1, pricePerKitPhp: 9000 });
     const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: fresh.id, qty: 2 }]));
     const body = await res.json();
 
-    expect(Number(body.data.order.downpaymentPhp)).toBe(150);
+    expect(Number(body.data.order.downpaymentPhp)).toBe(0);
   });
 
   it('does not count a cancelled order as a live commitment', async () => {
