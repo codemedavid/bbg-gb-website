@@ -61,7 +61,9 @@ describe('GET /api/admin/settlements', () => {
 
     expect(body.data).toHaveLength(1);
     expect(body.data[0]).toMatchObject({ status: 'proof_review', orderCount: 1 });
-    expect(Number(body.data[0].packingFeePhp)).toBe(150);
+    // Nothing for packing: the fee was collected at checkout with the cycle
+    // the commitment was made in, so the settlement covers the goods only.
+    expect(Number(body.data[0].packingFeePhp)).toBe(0);
     expect(body.data[0].customerEmail).toBeTruthy();
   });
 
@@ -106,7 +108,10 @@ describe('PATCH /api/admin/settlements/[id]', () => {
     session.current = customerSession;
     const quote = await (await PREVIEW()).json();
     expect(quote.data.orders.length).toBeGreaterThan(0);
-    expect(quote.data.totals.packingFeePhp).toBeGreaterThan(0);
+    // Still no packing fee to quote — cancelling a settlement releases the
+    // orders, it does not un-pay a fee that was collected at checkout.
+    expect(quote.data.totals.packingFeePhp).toBe(0);
+    expect(quote.data.totals.balancePhp).toBeGreaterThan(0);
   });
 
   it('re-attaches the released orders when a cancelled settlement is confirmed after all', async () => {
