@@ -27,9 +27,8 @@ vi.mock('@/lib/queries', () => ({
     data: [{ id: 'pm1', label: 'GCash', accountName: 'BBG', accountNumber: '0917', qrUrl: null }],
   }),
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300 } }),
-  useKahatiDownpayment: () => ({ data: 150 }),
   useKahatiCommitments: () => ({ data: kahatiCommitments.current }),
-  useCampaignPackingFeeWaivers: () => ({ data: undefined }),
+  useCyclePackingFeePaid: () => ({ data: false }),
 }));
 
 const CheckoutPage = (await import('./page')).default;
@@ -232,7 +231,7 @@ describe('CheckoutPage with a kahati commitment already live', () => {
     });
   };
   const alreadyCommitted = {
-    downpaymentWaived: true,
+    paidThisCycle: true,
     commitments: [],
     summary: {
       groups: [{ kahatiName: 'Reta 20mg', vials: 5, totalPhp: 4500, orderNos: ['BBG-2418', 'BBG-2419'] }],

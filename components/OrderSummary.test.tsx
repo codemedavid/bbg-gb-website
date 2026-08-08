@@ -8,11 +8,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { useCart, type CartItem } from '@/lib/store/cart';
 
-const waivers: { current: Set<string> | undefined } = { current: undefined };
+const paidThisCycle: { current: boolean } = { current: false };
 vi.mock('@/lib/queries', () => ({
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300, moq: 300 } }),
-  useKahatiDownpayment: () => ({ data: 150 }),
-  useCampaignPackingFeeWaivers: () => ({ data: waivers.current }),
+  useCyclePackingFeePaid: () => ({ data: paidThisCycle.current }),
 }));
 
 const { OrderSummary } = await import('./OrderSummary');
@@ -25,7 +24,7 @@ const campaign = (o: Partial<CartItem> = {}): CartItem => ({
 
 beforeEach(() => {
   useCart.getState().clear();
-  waivers.current = undefined;
+  paidThisCycle.current = false;
 });
 
 describe('OrderSummary — group buy packing fee', () => {
@@ -39,19 +38,19 @@ describe('OrderSummary — group buy packing fee', () => {
 
   it('shows no fee and explains why once the parcel is already paid for', () => {
     useCart.getState().add(campaign());
-    waivers.current = new Set(['s1']);
+    paidThisCycle.current = true;
     render(<OrderSummary />);
 
     expect(screen.queryByText('₱300')).toBeNull();
     expect(screen.getByText(/bayad na ang packing fee/i)).toBeInTheDocument();
   });
 
-  it('does not promise "no new charge" when another group buy in the cart is still charged', () => {
-    // Series s1 is paid for; s2 is new and its ₱300 IS charged. Telling the
-    // customer there is no new charge here contradicts the total above it.
+  it('charges one fee for two group buys when the cycle is not yet paid for', () => {
+    // Two campaigns, one cycle, one parcel — so ₱300 once, and no promise of
+    // "no new charge" over a total that carries one.
     useCart.getState().add(campaign({ seriesId: 's1' }));
     useCart.getState().add(campaign({ key: 'gbuy:c2', refId: 'c2', seriesId: 's2' }));
-    waivers.current = new Set(['s1']);
+    paidThisCycle.current = false;
     render(<OrderSummary />);
 
     expect(screen.getByText('₱300')).toBeInTheDocument();
