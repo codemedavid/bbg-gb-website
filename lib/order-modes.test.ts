@@ -60,10 +60,12 @@ describe('splitCartIntoOrders', () => {
     expect(soloOrder.totals.packingFee).toBe(PACKING_FEE_PHP.solo);
     expect(soloOrder.totals.total).toBe(3200 + PACKING_FEE_PHP.solo);
 
-    // The hatian order carries no fee — it is billed once at settlement.
+    // The hatian order carries its fee, added on top of the goods. Whether it
+    // is actually charged alongside the group buy leg is the cycle rule's call
+    // (lib/packing-cycle.ts), applied before the cart reaches this splitter.
     const kahatiOrder = orders.find((o) => o.mode === 'kahati')!;
-    expect(kahatiOrder.totals.packingFee).toBe(0);
-    expect(kahatiOrder.totals.total).toBe(900 * 7);
+    expect(kahatiOrder.totals.packingFee).toBe(PACKING_FEE_PHP.kahati);
+    expect(kahatiOrder.totals.total).toBe(900 * 7 + PACKING_FEE_PHP.kahati);
 
     const groupBuyOrder = orders.find((o) => o.mode === 'group_buy')!;
     expect(groupBuyOrder.totals.packingFee).toBe(PACKING_FEE_PHP.group_buy);
