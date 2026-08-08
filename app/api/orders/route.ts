@@ -9,14 +9,12 @@ import {
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
 import { closeFullKahati } from '@/lib/kahati-server';
-import { listKahatiCommitments } from '@/lib/kahati-commitment-server';
-import { hasOpenKahatiCommitment, kahatiDownpaymentDue } from '@/lib/kahati-commitment';
-import { listCampaignCommitments } from '@/lib/campaign-commitment-server';
-import { campaignPackingFeeDue, seriesWithPaidPackingFee } from '@/lib/campaign-commitment';
+import { listCyclePayments } from '@/lib/packing-cycle-server';
+import { chargeCycleFeeOnce, hasPaidPackingFeeThisCycle } from '@/lib/packing-cycle';
 import { canCommit } from '@/lib/group-buy';
 import { BatchAllocationError, allocateCommitment, resolveOpenBatch, seriesOf } from '@/lib/moq-batch-server';
 import { splitCartIntoOrders } from '@/lib/order-modes';
-import { getCurrentCycle, getKahatiDownpayment, getPackingFees } from '@/lib/settings';
+import { getCurrentCycle, getPackingFees } from '@/lib/settings';
 import { cycleKeyOf } from '@/lib/schedule-recurrence';
 import { requireCommitmentsOpen } from '@/lib/schedule-gate';
 import { validateAndStoreProof } from '@/lib/proof';
@@ -39,6 +37,11 @@ const checkoutSchema = z.object({
   shipPhone: z.string().min(7).max(40),
   shipAddress: z.string().min(5).max(500),
   paymentMethod: z.string().min(1).max(40).optional(),
+  // Free-text instructions the customer added in the cart. Bounded rather than
+  // truncated: silently storing half a note reads as a complete instruction to
+  // whoever packs the parcel, and nobody can tell afterwards that it was cut.
+  // Whitespace-only collapses to absent, so a stray space is not "a note".
+  note: z.string().trim().max(500).optional().transform((v) => v || undefined),
   // Customer-chosen shipping method; only the offered options are accepted.
   courier: z.enum(SHIPPING_OPTIONS).optional(),
   // Client-minted once per submission and reused on retries, so a resubmitted
@@ -72,6 +75,7 @@ export const POST = handler(async (req: Request) => {
     paymentMethod: form.get('paymentMethod') ?? undefined,
     courier: form.get('courier') ?? undefined,
     idempotencyKey: form.get('idempotencyKey') ?? undefined,
+    note: form.get('note') ?? undefined,
   });
 
   const db = await getDb();
@@ -82,23 +86,6 @@ export const POST = handler(async (req: Request) => {
     const replayed = await findReplayedCheckout(db, session.sub, body.idempotencyKey);
     if (replayed) return ok(replayed, 201);
   }
-
-  // Is this customer's place in the next parcel already paid for? The kahati
-  // downpayment is charged once while a commitment is live, not once per hatian
-  // joined (see lib/kahati-commitment.ts). Read before the transaction opens:
-  // it must reflect the orders that existed BEFORE this checkout, never the one
-  // being placed.
-  const downpaymentWaived = hasOpenKahatiCommitment(await listKahatiCommitments(db, session.sub));
-  // Which group buys this customer already has a parcel going in. The packing
-  // fee buys the parcel, not the commitment, so a further order in the same
-  // series joins one already paid for (see lib/campaign-commitment.ts). Read
-  // before the transaction for the same reason as the kahati waiver above: it
-  // must reflect the orders that existed BEFORE this checkout.
-  const packedSeriesIds = seriesWithPaidPackingFee(await listCampaignCommitments(db, session.sub));
-  // A cart that is nothing but waived kahati lines owes nothing at all now, so
-  // there is no payment to prove. Any other cart — an on-hand item alongside it,
-  // or a first commitment — is paid for at checkout and must carry its proof.
-  const confirmOnly = downpaymentWaived && body.items.every((i) => i.kind === 'group_buy');
 
   // Group Buy and Hatian only accept commitments while the shared window is
   // open. Checked before the proof is stored: a refused checkout must not leave
@@ -120,15 +107,24 @@ export const POST = handler(async (req: Request) => {
   const cycle = await getCurrentCycle();
   const cycleKey = cycle ? cycleKeyOf(cycle) : null;
 
+  // Has this customer already paid to have this cycle's parcel packed? Read
+  // before the transaction opens: it must reflect the orders that existed
+  // BEFORE this checkout, never the one being placed.
+  const paidThisCycle = hasPaidPackingFeeThisCycle(
+    await listCyclePayments(db, session.sub, cycleKey),
+  );
+  // A cart that is nothing but hatian lines with the cycle fee already paid owes
+  // nothing at all now, so there is no payment to prove. Any other cart — an
+  // on-hand item alongside it, or the cycle's first commitment — is paid for at
+  // checkout and must carry its proof.
+  const confirmOnly = paidThisCycle && body.items.every((i) => i.kind === 'group_buy');
+
   // Store the proof before opening the transaction — it is an external side effect.
   // A rolled-back order leaves an orphaned object, which is harmless.
   const proofKey = confirmOnly ? null : await validateAndStoreProof(form.get('proof'));
   // Global packing-fee defaults; the on-hand fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
   const packingFees = await getPackingFees();
-  // Kahati reservation downpayment (admin-editable). Deducted from the total —
-  // the customer pays this now and settles the balance after the kahati ends.
-  const kahatiDownpaymentSetting = await getKahatiDownpayment();
 
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
@@ -260,10 +256,12 @@ export const POST = handler(async (req: Request) => {
           });
 
         const unitPrice = Number(c.pricePerKitPhp);
-        // The fee is charged per parcel: nothing if this customer already has an
-        // order standing in this series. Every fragment carries the same figure
-        // — packingFeeFor bills a mode once, so a split batch is still one fee.
-        const packingFeePhp = campaignPackingFeeDue(seriesOf(c), Number(c.shippingPhp), packedSeriesIds);
+        // The listing's fee. Whether it is actually charged is decided once for
+        // the whole cart by chargeCycleFeeOnce below — a cycle buys one parcel,
+        // however many boards and batches the cart spans. Every fragment carries
+        // the same figure: packingFeeFor bills a mode once, so a split batch is
+        // still one fee.
+        const packingFeePhp = Number(c.shippingPhp);
 
         for (const f of fragments) {
           priced.push({
@@ -338,7 +336,9 @@ export const POST = handler(async (req: Request) => {
             unitPricePhp: perVialPrice(Number(current.pricePerKitPhp)),
             unitPriceUsd: null, // kahati vials are priced in PHP only
             qty: take,
-            packingFeePhp: Number(current.repackFeePhp), // kahati packing fee, admin-editable per group buy
+            // The hatian's own fee. chargeCycleFeeOnce decides whether it is
+            // actually charged — one fee per cycle, across both boards.
+            packingFeePhp: Number(current.repackFeePhp),
             nameSnapshot: `${current.name} — kahati`,
             specSnapshot: `Kahati · min ${current.minVials} vials`,
             groupBuyId: current.id,
@@ -365,7 +365,12 @@ export const POST = handler(async (req: Request) => {
     // so a mixed cart becomes one order per mode. Splitting here rather than at
     // the call site keeps it inside the transaction — a failure in any mode rolls
     // back every order and every stock draw.
-    const drafts = splitCartIntoOrders(priced);
+    // One packing fee for the whole cycle, decided across the cart before it is
+    // split: each split order prices its own lines, so a cart spanning both
+    // boards would otherwise pay one fee per board for a single parcel.
+    const chargeable = chargeCycleFeeOnce(priced, paidThisCycle);
+
+    const drafts = splitCartIntoOrders(chargeable);
 
     const created = [];
     for (const [splitIndex, draft] of drafts.entries()) {
@@ -375,17 +380,20 @@ export const POST = handler(async (req: Request) => {
       const totals = draft.totals;
       // USD order total for the weekly report — sum of USD-priced lines only.
       const totalUsd = round2(lines.reduce((s, p) => s + (p.unitPriceUsd ?? 0) * p.qty, 0));
-      const orderNo = await nextOrderNo(tx);
 
       // Every mode checks out here, so a draft's mode is always a buy type.
       const buyType = draft.mode;
 
-      // Only kahati orders carry a reservation downpayment; on-hand pays in full.
-      // A customer already holding a live commitment has paid theirs, so this
-      // one owes nothing up front.
-      const downpayment = buyType === 'kahati'
-        ? kahatiDownpaymentDue(totals.total, kahatiDownpaymentSetting, downpaymentWaived)
-        : 0;
+      // The reference carries its system: KH- for a hatian, GB- for a group buy,
+      // BBG- for on-hand and MOQ. Minted after the mode is known, from the one
+      // shared sequence, so the two boards can never issue the same number.
+      const orderNo = await nextOrderNo(tx, buyType);
+
+      // A hatian pays only the packing fee now — the goods are settled once the
+      // hatian ends — so what is due today IS the fee, added on top of the
+      // products rather than taken out of them. Zero when the cycle's fee is
+      // already paid, and zero for every other mode, which pays in full.
+      const downpayment = buyType === 'kahati' ? totals.packingFee : 0;
 
       // Nothing was paid and no proof exists, so there is nothing for an admin
       // to verify — parking it in 'proof_review' would queue a review that can
@@ -400,6 +408,10 @@ export const POST = handler(async (req: Request) => {
         paymentMethod: body.paymentMethod ?? null,
         // Same chosen shipping method on every split order the cart produces.
         courier: body.courier ?? DEFAULT_COURIER,
+        // The customer's note goes on EVERY order the cart splits into. One note
+        // was written for one checkout; attaching it only to the first would
+        // hide "pack these carefully" from whoever packs the other parcel.
+        notes: body.note ?? null,
         // Each split order references the same proof — one payment covers the cart.
         paymentProofKey: proofKey,
         // Keyed per split index: one submission may legitimately create several
