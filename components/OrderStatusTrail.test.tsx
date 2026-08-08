@@ -12,10 +12,12 @@ describe('OrderStatusTrail', () => {
   it('lists every step of the fulfilment flow', () => {
     render(<OrderStatusTrail status="proof_review" />);
 
+    // Each step also carries an sr-only note ("— not started"), so this asserts
+    // the label is present rather than that it is the whole of the text.
     const steps = screen.getAllByRole('listitem');
-    expect(steps.map((s) => s.textContent)).toEqual([
-      'Payment Pending', 'Payment Confirmed', 'Processing', 'Shipped', 'Delivered',
-    ]);
+    expect(steps).toHaveLength(5);
+    ['Payment Pending', 'Payment Confirmed', 'Processing', 'Shipped', 'Delivered']
+      .forEach((label, i) => expect(steps[i]).toHaveTextContent(label));
   });
 
   it('marks the step the order is actually on', () => {
