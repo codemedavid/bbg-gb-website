@@ -354,6 +354,40 @@ export const orders = pgTable('orders', {
   userCycleIdx: index('orders_user_cycle_idx').on(t.userId, t.cycleKey),
 }));
 
+// ---- Order payment proofs ----------------------------------------------
+// One row per uploaded proof, up to five per order (lib/proof.ts MAX_PROOFS).
+//
+// A real one-to-many rather than more columns or a JSON array on `orders`,
+// because the reason for it is arithmetic: banks cap a single transfer, so a
+// ₱4,500 order is often paid as ₱2,000 + ₱1,500 + ₱1,000. Each of those is a
+// distinct payment with its own screenshot, its own amount and its own bank
+// reference, and the admin verifies them one at a time. Three payments do NOT
+// make three orders — the whole point is that they hang off one.
+//
+// `orders.payment_proof_key` is deliberately still there and still filled with
+// the first proof. Five readers use it (the admin drawer, the customer's order
+// page, the commitments export, the reports, the settlement view); keeping it
+// current makes this table additive rather than a simultaneous rewrite of all
+// five, and a row written before this table existed still resolves.
+export const orderPaymentProofs = pgTable('order_payment_proofs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  storageKey: text('storage_key').notNull(),
+  // Submission order, which is what "Proof #1" counts. Stored rather than
+  // derived from uploaded_at: several proofs of one checkout are written in the
+  // same transaction and can share a timestamp to the millisecond.
+  sortOrder: integer('sort_order').notNull().default(0),
+  // What this particular transfer was for, and its bank reference. Both
+  // nullable and both admin-entered: the customer uploads a picture, and only
+  // someone reading the bank statement can say it was ₱1,500. Present so the
+  // three transfers behind one total can be reconciled against it (§13).
+  amountPhp: numeric('amount_php', { precision: 12, scale: 2 }),
+  reference: varchar('reference', { length: 80 }),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  orderIdx: index('order_payment_proofs_order_idx').on(t.orderId),
+}));
+
 export const orderItems = pgTable('order_items', {
   id: uuid('id').primaryKey().defaultRandom(),
   orderId: uuid('order_id').references(() => orders.id, { onDelete: 'cascade' }).notNull(),

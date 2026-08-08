@@ -13,7 +13,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 
 // Cleared between tests, children before parents.
 const TABLES = [
-  'order_status_history', 'order_items', 'orders', 'settlements',
+  'order_status_history', 'order_items', 'order_payment_proofs', 'orders', 'settlements',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories', 'users',
   'settings',
 ];
@@ -93,10 +93,10 @@ export async function makeProduct(
   overrides: Partial<{
     pricePhp: number; stock: number; name: string; spec: string;
     isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
-    // The group buy permission and its terms. Off by default: most tests are
-    // about the shop, and a flagged product auto-lists on both boards.
     // The two board channels, independent of each other: isGroupBuy is the
     // campaign board, isKahati the vial counters (lib/product-channels.ts).
+    // Both off by default: most tests are about the shop, and a flagged product
+    // auto-lists on its board.
     isGroupBuy: boolean; isKahati: boolean; isActive: boolean;
     gbPricePerKitPhp: number | null; gbMinVials: number | null; gbMaxVialsPerBatch: number | null;
   }> = {},
@@ -216,7 +216,12 @@ export async function makePaymentMethod(
 // Builds the multipart Request a checkout route handler expects.
 export function checkoutRequest(
   items: unknown,
-  opts: { withProof?: boolean; paymentMethod?: string; courier?: string; idempotencyKey?: string; note?: string } = {},
+  opts: {
+    withProof?: boolean; paymentMethod?: string; courier?: string;
+    idempotencyKey?: string; note?: string;
+    /** How many proofs to attach — a customer who paid in several transfers. */
+    proofCount?: number;
+  } = {},
 ): Request {
   const form = new FormData();
   form.set('items', JSON.stringify(items));
@@ -228,7 +233,11 @@ export function checkoutRequest(
   if (opts.courier) form.set('courier', opts.courier);
   if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
   if (opts.withProof !== false) {
-    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
+    // Appended under one repeated field name, which is what a multi-file input
+    // posts and what the route reads with getAll().
+    for (let i = 0; i < (opts.proofCount ?? 1); i++) {
+      form.append('proof', new File([Buffer.from(`fake-proof-${i}`)], `proof-${i}.png`, { type: 'image/png' }));
+    }
   }
   return new Request('http://localhost/api/orders', { method: 'POST', body: form });
 }

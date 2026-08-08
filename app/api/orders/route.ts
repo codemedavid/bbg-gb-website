@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements } from '@/lib/db';
+import { getDb, orders, orderItems, orderPaymentProofs, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
@@ -18,7 +18,7 @@ import { splitCartIntoOrders } from '@/lib/order-modes';
 import { getCurrentCycle, getPackingFees } from '@/lib/settings';
 import { cycleKeyOf } from '@/lib/schedule-recurrence';
 import { requireCommitmentsOpen } from '@/lib/schedule-gate';
-import { validateAndStoreProof } from '@/lib/proof';
+import { validateAndStoreProofs } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
 import { captureEvent } from '@/lib/posthog';
@@ -120,9 +120,11 @@ export const POST = handler(async (req: Request) => {
   // checkout and must carry its proof.
   const confirmOnly = paidThisCycle && body.items.every((i) => i.kind === 'group_buy');
 
-  // Store the proof before opening the transaction — it is an external side effect.
-  // A rolled-back order leaves an orphaned object, which is harmless.
-  const proofKey = confirmOnly ? null : await validateAndStoreProof(form.get('proof'));
+  // Every proof the customer attached — up to five, because a bank transfer cap
+  // means one order is often paid across several transfers. Stored before the
+  // transaction opens (external side effect); a rolled-back order leaves
+  // harmless orphaned objects rather than a claimed slot.
+  const proofKeys = confirmOnly ? [] : await validateAndStoreProofs(form.getAll('proof'));
   // Global packing-fee defaults; the on-hand fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
   const packingFees = await getPackingFees();
@@ -432,8 +434,11 @@ export const POST = handler(async (req: Request) => {
         // was written for one checkout; attaching it only to the first would
         // hide "pack these carefully" from whoever packs the other parcel.
         notes: body.note ?? null,
-        // Each split order references the same proof — one payment covers the cart.
-        paymentProofKey: proofKey,
+        // The first proof, kept in the original column so every existing reader
+        // — the admin drawer, the customer's order page, the commitments export,
+        // the reports — keeps working untouched. The full set lives in
+        // order_payment_proofs below.
+        paymentProofKey: proofKeys[0] ?? null,
         // Keyed per split index: one submission may legitimately create several
         // orders, but never the same one twice — the unique index enforces it.
         idempotencyKey: body.idempotencyKey ? `${body.idempotencyKey}:${splitIndex}` : null,
@@ -451,6 +456,14 @@ export const POST = handler(async (req: Request) => {
         unitPricePhp: String(p.unitPricePhp), unitPriceUsd: p.unitPriceUsd != null ? String(p.unitPriceUsd) : null,
         qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),
       })));
+      // Every order this cart split into carries the same proofs: the customer
+      // paid one total and evidenced it once, so an order left without them
+      // would read as unpaid to the admin reviewing it.
+      if (proofKeys.length) {
+        await tx.insert(orderPaymentProofs).values(proofKeys.map((storageKey, i) => ({
+          orderId: order.id, storageKey, sortOrder: i,
+        })));
+      }
       await tx.insert(orderStatusHistory).values({
         orderId: order.id,
         status,
