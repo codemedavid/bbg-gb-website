@@ -6,6 +6,7 @@ import { SectionHeader } from '@/components/headers';
 import { useSettlementPreview, usePaymentMethods } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
+import { ProofUploader } from '@/components/ProofUploader';
 import { php, shortDate } from '@/lib/format';
 
 // Hatian final checkout.
@@ -24,8 +25,10 @@ export default function SettlePage() {
   const toast = useToast((s) => s.show);
 
   const [methodId, setMethodId] = useState('');
-  const [proof, setProof] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState('');
+  // Several proofs: a settlement clears every hatian's balance plus the packing
+  // fee, so it is the largest amount a customer pays and the one a bank's
+  // per-transfer cap most often splits.
+  const [proofs, setProofs] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   // Minted once per submission and reused on retries, so a resubmitted final
   // checkout replays the original settlement rather than charging a second fee.
@@ -40,20 +43,14 @@ export default function SettlePage() {
   const orders = preview?.orders ?? [];
   const totals = preview?.totals ?? { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 };
 
-  const onProof = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setProof(f);
-    setPreviewUrl(f.type.startsWith('image/') ? URL.createObjectURL(f) : '');
-  };
-
   const pay = async () => {
-    if (!proof || !orders.length || submitting) return;
+    if (proofs.length === 0 || !orders.length || submitting) return;
     setSubmitting(true);
     try {
       const fd = new FormData();
       if (selectedMethod) fd.append('paymentMethod', selectedMethod.label);
-      fd.append('proof', proof);
+      // Repeated field name; the route reads them with getAll('proof').
+      for (const proof of proofs) fd.append('proof', proof);
       if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
       fd.append('idempotencyKey', idempotencyKey.current);
 
@@ -103,7 +100,7 @@ export default function SettlePage() {
   // A settlement claims every ready order and marks them awaiting review, so it
   // must not be submittable when there is no method to have paid into — that
   // would file a payment nobody could have made.
-  const canPay = !!proof && orders.length > 0 && !!selectedMethod;
+  const canPay = proofs.length > 0 && orders.length > 0 && !!selectedMethod;
 
   return (
     <>
@@ -186,27 +183,12 @@ export default function SettlePage() {
         </section>
 
         <section className="rounded-[14px] bg-white p-4 shadow-card">
-          <div className="mb-2.5 text-[13px] font-bold text-ink">Proof of payment <span className="text-[#d33]">*</span></div>
-          <label className="block cursor-pointer rounded-[12px] border-[1.5px] border-dashed border-[#a9c88f] bg-[#fbfdf9] p-[18px] text-center">
-            <input type="file" accept="image/*,application/pdf" onChange={onProof} className="hidden" />
-            {proof ? (
-              <>
-                {previewUrl ? <img src={previewUrl} alt="proof" className="mx-auto mb-2 max-h-[160px] max-w-full rounded-lg" /> : <div className="mb-1.5 text-2xl">📄</div>}
-                <div className="text-[12.5px] font-bold text-brand-greendark">✓ Proof attached — tap to replace</div>
-              </>
-            ) : (
-              <>
-                <div className="mb-1.5 text-[26px]">🧾</div>
-                <div className="text-[13.5px] font-bold text-ink">Upload payment proof</div>
-                <div className="text-[12px] text-ink-muted">Screenshot or photo of your payment</div>
-              </>
-            )}
-          </label>
+          <ProofUploader files={proofs} onChange={setProofs} />
         </section>
 
         <button onClick={pay} disabled={!canPay || submitting}
           className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${canPay && !submitting ? 'bg-brand-green active:scale-[.99]' : 'bg-[#b9c6b4]'}`}>
-          {submitting ? 'Sending…' : proof ? `Pay ${php(totals.totalPhp)}` : 'Upload proof to pay'}
+          {submitting ? 'Sending…' : proofs.length ? `Pay ${php(totals.totalPhp)}` : 'Upload proof to pay'}
         </button>
       </div>
     </>

@@ -13,7 +13,8 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 
 // Cleared between tests, children before parents.
 const TABLES = [
-  'order_status_history', 'order_items', 'order_payment_proofs', 'orders', 'settlements',
+  'order_status_history', 'order_items', 'order_payment_proofs', 'orders',
+  'settlement_payment_proofs', 'settlements',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories', 'users',
   'settings',
 ];
@@ -246,13 +247,21 @@ export function checkoutRequest(
 // route picks the orders to settle itself, so the client sends payment details
 // only — never a list of orders it could under- or over-report.
 export function settlementRequest(
-  opts: { withProof?: boolean; paymentMethod?: string; idempotencyKey?: string } = {},
+  opts: {
+    withProof?: boolean; paymentMethod?: string; idempotencyKey?: string;
+    /** How many proofs to attach — a customer who paid in several transfers. */
+    proofCount?: number;
+  } = {},
 ): Request {
   const form = new FormData();
   if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
   if (opts.withProof !== false) {
-    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
+    // Appended under one repeated field name, which is what a multi-file input
+    // posts and what the route reads with getAll().
+    for (let i = 0; i < (opts.proofCount ?? 1); i++) {
+      form.append('proof', new File([Buffer.from(`fake-proof-${i}`)], `proof-${i}.png`, { type: 'image/png' }));
+    }
   }
   return new Request('http://localhost/api/settlements', { method: 'POST', body: form });
 }

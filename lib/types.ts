@@ -239,6 +239,11 @@ export type AdminSettlement = {
   id: string; status: 'proof_review' | 'paid' | 'cancelled';
   packingFeePhp: string; balancePhp: string; totalPhp: string;
   paymentMethod: string | null; paymentProofKey: string | null;
+  /**
+   * Every proof this settlement carries, oldest first. paymentProofKey above is
+   * the first of them, kept for readers that have not moved to the list.
+   */
+  proofs?: PaymentProof[];
   createdAt: string; paidAt: string | null;
   customerName: string | null; customerEmail: string | null;
   orderCount: number;

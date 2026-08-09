@@ -294,6 +294,30 @@ export const settlements = pgTable('settlements', {
   statusIdx: index('settlements_status_idx').on(t.status),
 }));
 
+// ---- Settlement payment proofs -----------------------------------------
+// The same one-to-many as order_payment_proofs, for the hatian final checkout.
+//
+// A settlement is usually the LARGEST payment a customer makes — it clears the
+// balance on every hatian they joined this cycle plus the packing fee — so it
+// is the one a bank's per-transfer cap is most likely to split. Its own table
+// rather than a shared one because a settlement covers several orders at once:
+// hanging its proofs off order_payment_proofs would mean either duplicating
+// every row per order or inventing a nullable order_id that means "not this".
+//
+// settlements.payment_proof_key stays and still holds the first proof, for the
+// same reason the orders column does: existing readers.
+export const settlementPaymentProofs = pgTable('settlement_payment_proofs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  settlementId: uuid('settlement_id').notNull().references(() => settlements.id, { onDelete: 'cascade' }),
+  storageKey: text('storage_key').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  amountPhp: numeric('amount_php', { precision: 12, scale: 2 }),
+  reference: varchar('reference', { length: 80 }),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  settlementIdx: index('settlement_payment_proofs_settlement_idx').on(t.settlementId),
+}));
+
 // ---- Orders ------------------------------------------------------------
 export const orders = pgTable('orders', {
   id: uuid('id').primaryKey().defaultRandom(),
