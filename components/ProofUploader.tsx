@@ -10,7 +10,7 @@
 // The cap is repeated on the server (lib/proof.ts) — this is the courteous half,
 // not the enforcing one.
 import { useEffect, useMemo, useState } from 'react';
-import { MAX_PROOFS } from '@/lib/proof';
+import { MAX_PROOFS } from '@/lib/proof-limits';
 
 type Props = {
   files: File[];

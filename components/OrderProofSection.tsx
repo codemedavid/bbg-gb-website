@@ -12,7 +12,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ProofUploader } from '@/components/ProofUploader';
-import { MAX_PROOFS } from '@/lib/proof';
+import { MAX_PROOFS } from '@/lib/proof-limits';
 import { acceptsMoreProofs } from '@/lib/order-status';
 import { php } from '@/lib/format';
 import type { PaymentProof } from '@/lib/types';

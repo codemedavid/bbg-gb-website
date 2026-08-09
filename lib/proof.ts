@@ -2,17 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { putFile } from '@/lib/storage';
 import { BUCKETS } from '@/lib/env';
 import { ApiError } from '@/lib/session';
+import { MAX_PROOFS, MAX_PROOF_BYTES, PROOF_TYPES } from '@/lib/proof-limits';
 
-export const MAX_PROOF_BYTES = 8 * 1024 * 1024;
-export const PROOF_TYPES = /^(image\/(jpe?g|png|webp|heic)|application\/pdf)$/;
-
-// How many proofs one order may carry.
-//
-// Banks cap a single transfer, so a ₱4,500 order is often paid in three: the
-// customer ends up with three screenshots and, until now, one slot. Five is the
-// client's number and it is generous — it exists so nobody has to choose which
-// of their own payments to leave unevidenced.
-export const MAX_PROOFS = 5;
+// Re-exported so server callers keep one import, while the browser reaches for
+// lib/proof-limits.ts directly — this module pulls in ApiError from the
+// `server-only` session module and cannot be in a client bundle.
+export { MAX_PROOFS, MAX_PROOF_BYTES, PROOF_TYPES };
 
 // An untouched <input type="file"> still submits an entry, so "did the customer
 // attach anything" is a question about size, not presence.
