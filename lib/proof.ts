@@ -82,14 +82,3 @@ export async function validateAndStoreProofs(
   for (const proof of attached) keys.push(await store(proof));
   return keys;
 }
-
-/**
- * Single-proof form, kept for the settlement flow, which still takes one.
- *
- * Delegates so both paths share one set of size and type rules — a settlement
- * proof and an order proof are the same screenshot of the same bank app.
- */
-export async function validateAndStoreProof(proof: FormDataEntryValue | null): Promise<string> {
-  const [key] = await validateAndStoreProofs(proof ? [proof] : []);
-  return key;
-}
