@@ -94,6 +94,11 @@ export function useMutate() {
     archiveProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not archive product.') }),
     saveGroupBuy: useMutation({ mutationFn: (g: any) => g.id ? apiSend(`/admin/groupbuys/${g.id}`, 'PATCH', g) : apiSend('/admin/groupbuys', 'POST', g), onSuccess: invalidate, onError: toastError('Could not save group buy.') }),
     deleteGroupBuy: useMutation({ mutationFn: (id: string) => apiSend(`/admin/groupbuys/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete group buy.') }),
+    // What one transfer was worth. Separate from setOrderStatus because it is a
+    // different question — not "where is this order" but "has it been paid" —
+    // and an admin types several of these against one order without ever
+    // touching its status.
+    setProofAmount: useMutation({ mutationFn: (v: { orderId: string; proofId: string; amountPhp: number | null; reference?: string | null }) => apiSend(`/admin/orders/${v.orderId}/proofs/${v.proofId}`, 'PATCH', { amountPhp: v.amountPhp, reference: v.reference }), onSuccess: invalidate, onError: toastError('Could not record the payment amount.') }),
     setOrderStatus: useMutation({ mutationFn: (v: { id: string; status: string; trackingNo?: string; note?: string; courier?: string; packedBy?: string; paymentMethod?: string }) => apiSend(`/admin/orders/${v.id}/status`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the order.') }),
     // Confirming a hatian final checkout is what flips the customer's packing fee
     // and balance to Paid; cancelling releases its orders to be settled again.

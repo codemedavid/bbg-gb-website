@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAdminOrders, useAdminOrder, useMutate } from '@/lib/admin-api';
 import { Modal, field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { php, shortDate } from '@/lib/format';
+import { reconcileProofs } from '@/lib/proof-reconciliation';
 import { STATUS_FLOW, STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
 import { PACKERS, COURIERS } from '@/lib/report/constants';
 import { WeeklyReportButton } from './WeeklyReportButton';
@@ -107,26 +108,16 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
             // these against a bank statement, and three identical "View proof"
             // links tell them nothing about which is which. Each opens full size.
             ? (
-              <ul className="flex flex-wrap gap-2.5">
-                {gallery.map((proof, i) => (
-                  <li key={proof.id}>
-                    <a
-                      href={proof.url} target="_blank" rel="noreferrer"
-                      className="block w-[104px] overflow-hidden rounded-[10px] border border-line hover:border-brand-blue"
-                    >
-                      <img
-                        src={proof.url}
-                        alt={`Payment proof ${i + 1}`}
-                        className="h-[104px] w-full bg-surface-mist object-cover"
-                      />
-                      <span className="block px-2 py-1.5 text-[12px] font-semibold text-brand-blue">
-                        Proof #{i + 1}
-                        {proof.amountPhp ? <span className="block font-normal text-ink-muted">{php(Number(proof.amountPhp))}</span> : null}
-                      </span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="flex flex-wrap gap-2.5">
+                  {gallery.map((proof, i) => (
+                    <li key={proof.id}>
+                      <ProofCard orderId={order.id} proof={proof} index={i} />
+                    </li>
+                  ))}
+                </ul>
+                <ProofReconciliation proofs={gallery} totalPhp={order.totalPhp} />
+              </>
             )
             // A kahati order whose downpayment was waived collected nothing, so
             // no proof exists to attach. Said plainly, or this reads as a
@@ -177,6 +168,93 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
         <button className={btnPrimary} disabled={setOrderStatus.isPending} onClick={save}>{setOrderStatus.isPending ? 'Saving…' : 'Save update'}</button>
       </div>
     </Modal>
+  );
+}
+
+// One proof, with the box the admin types its amount into.
+//
+// Editing lives on the thumbnail rather than in a separate form because the
+// admin is doing one thing: looking at a screenshot and writing down what it
+// says. Splitting the picture from the field would make them hold a figure in
+// their head while they scroll.
+function ProofCard({ orderId, proof, index }: {
+  orderId: string;
+  proof: { id: string; url: string; amountPhp: string | null };
+  index: number;
+}) {
+  const { setProofAmount } = useMutate();
+  const stored = proof.amountPhp ?? '';
+  const [value, setValue] = useState(stored);
+
+  // Saved on blur, not on every keystroke: a per-character PATCH would put a
+  // dozen writes behind one four-digit figure. Unchanged blurs write nothing,
+  // so a stray click costs a request.
+  const commit = () => {
+    if (value === stored) return;
+    const amountPhp = value.trim() === '' ? null : Number(value);
+    if (amountPhp != null && !Number.isFinite(amountPhp)) return;
+    setProofAmount.mutateAsync({ orderId, proofId: proof.id, amountPhp }).catch(() => {});
+  };
+
+  return (
+    <div className="w-[124px] overflow-hidden rounded-[10px] border border-line">
+      <a href={proof.url} target="_blank" rel="noreferrer" className="block hover:opacity-90">
+        <img src={proof.url} alt={`Payment proof ${index + 1}`} className="h-[104px] w-full bg-surface-mist object-cover" />
+        <span className="block px-2 pt-1.5 text-[12px] font-semibold text-brand-blue">Proof #{index + 1}</span>
+      </a>
+      <label className="block px-2 pb-2 pt-1">
+        <span className="sr-only">{`Amount for proof ${index + 1}`}</span>
+        <input
+          type="number"
+          min={0}
+          inputMode="decimal"
+          placeholder="Amount ₱"
+          aria-label={`Amount for proof ${index + 1}`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          className="w-full rounded-md border border-line-soft px-1.5 py-1 text-[12px] text-ink"
+        />
+      </label>
+    </div>
+  );
+}
+
+// Does what is recorded add up to what is owed?
+//
+// The question §13 is actually asking. Three thumbnails and a bank statement
+// should not require the admin to do the sum in their head, and "unrecorded" is
+// kept distinct from "short" — every fresh order has no amounts against it, and
+// showing those as underpaid would make the line worth ignoring.
+function ProofReconciliation({ proofs, totalPhp }: {
+  proofs: { amountPhp: string | null }[];
+  totalPhp: string;
+}) {
+  const r = reconcileProofs(proofs, totalPhp);
+  if (r.state === 'unrecorded') {
+    return (
+      <p className="mt-2 text-[12px] text-ink-muted">
+        No amounts recorded yet — type what each transfer was worth to check this order adds up.
+      </p>
+    );
+  }
+  const tone =
+    r.state === 'settled' ? 'text-brand-greendark'
+    : r.state === 'over' ? 'text-[#8a6d1f]'
+    : 'text-[#a33]';
+  const verdict =
+    r.state === 'settled' ? 'fully paid'
+    : r.state === 'over' ? `overpaid by ${php(Math.abs(r.outstanding))}`
+    : `${php(r.outstanding)} short`;
+  return (
+    <p className={`mt-2 text-[12.5px] font-semibold ${tone}`}>
+      {php(r.recorded)} of {php(totalPhp)} recorded — {verdict}
+      {r.unrecordedCount > 0 && (
+        <span className="block font-normal text-ink-muted">
+          {r.unrecordedCount} proof{r.unrecordedCount > 1 ? 's' : ''} still without an amount.
+        </span>
+      )}
+    </p>
   );
 }
 

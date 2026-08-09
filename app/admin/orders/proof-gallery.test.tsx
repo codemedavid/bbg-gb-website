@@ -8,7 +8,7 @@
 // matching these against a bank statement, and a link tells them nothing about
 // which transfer it is.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 type Proof = { id: string; url: string; sortOrder: number; amountPhp: string | null; reference: string | null };
 
@@ -16,6 +16,7 @@ const detail: { proofUrl: string | null; proofs: Proof[]; downpaymentPhp: string
   proofUrl: null, proofs: [], downpaymentPhp: '0', buyType: 'solo',
 };
 
+const setAmountMutate = vi.fn();
 vi.mock('./WeeklyReportButton', () => ({ WeeklyReportButton: () => null }));
 vi.mock('@/lib/admin-api', () => ({
   useAdminOrders: () => ({
@@ -42,7 +43,11 @@ vi.mock('@/lib/admin-api', () => ({
     },
     isLoading: false,
   }),
-  useMutate: () => ({ setOrderStatus: { mutateAsync: vi.fn(), isPending: false } }),
+  useMutate: () => ({
+    setOrderStatus: { mutateAsync: vi.fn(), isPending: false },
+    setProofAmount: { mutateAsync: setAmountMutate, isPending: false },
+  }),
+
 }));
 
 const Page = (await import('./page')).default;
@@ -58,6 +63,8 @@ const openOrder = async () => {
 };
 
 beforeEach(() => {
+  setAmountMutate.mockReset();
+  setAmountMutate.mockResolvedValue({});
   detail.proofUrl = null;
   detail.proofs = [];
   detail.downpaymentPhp = '0';
@@ -105,13 +112,14 @@ describe('admin order sheet — payment proofs', () => {
 
   it('shows the amount once an admin has recorded it against a proof', async () => {
     // §13: the admin reconciles ₱2,000 + ₱1,500 + ₱1,000 against one ₱4,500
-    // total, and needs to see what they already attributed.
+    // total, and needs to see what they already attributed. Editable rather
+    // than static, so the figure appears in its own field.
     detail.proofs = [proof(1, '2000.00'), proof(2, '1500.00')];
 
     await openOrder();
 
-    expect(screen.getByText('₱2,000')).toBeInTheDocument();
-    expect(screen.getByText('₱1,500')).toBeInTheDocument();
+    expect(screen.getByLabelText(/amount for proof 1/i)).toHaveValue(2000);
+    expect(screen.getByLabelText(/amount for proof 2/i)).toHaveValue(1500);
   });
 
   it('does not label a single proof as several transfers', async () => {
@@ -149,5 +157,83 @@ describe('admin order sheet — payment proofs', () => {
     await openOrder();
 
     expect(screen.getByText(/no payment was due/i)).toBeInTheDocument();
+  });
+});
+
+// §13 — the admin attributes each transfer and sees whether the order is paid.
+describe('admin order sheet — reconciling the amounts', () => {
+  it('offers an amount field against each proof', async () => {
+    detail.proofs = [proof(1), proof(2)];
+
+    await openOrder();
+
+    expect(screen.getByLabelText(/amount for proof 1/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/amount for proof 2/i)).toBeInTheDocument();
+  });
+
+  it('sends what the admin typed against the right proof', async () => {
+    detail.proofs = [proof(1), proof(2)];
+    await openOrder();
+
+    const field = screen.getByLabelText(/amount for proof 2/i);
+    fireEvent.change(field, { target: { value: '1500' } });
+    fireEvent.blur(field);
+
+    await waitFor(() => expect(setAmountMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'o1', proofId: 'p2', amountPhp: 1500 }),
+    ));
+  });
+
+  it('does not resend an amount that was not changed', async () => {
+    // Every blur firing a write would put a request behind every stray click.
+    detail.proofs = [proof(1, '2000.00')];
+    await openOrder();
+
+    fireEvent.blur(screen.getByLabelText(/amount for proof 1/i));
+
+    expect(setAmountMutate).not.toHaveBeenCalled();
+  });
+
+  it('shows what has been recorded against the order total', async () => {
+    detail.proofs = [proof(1, '2000.00'), proof(2, '1500.00')];
+
+    await openOrder();
+
+    expect(screen.getByText(/₱3,500 of ₱4,500/)).toBeInTheDocument();
+  });
+
+  it('names the shortfall so the admin knows what to chase', async () => {
+    detail.proofs = [proof(1, '2000.00'), proof(2, '1500.00')];
+
+    await openOrder();
+
+    expect(screen.getByText(/₱1,000 short/i)).toBeInTheDocument();
+  });
+
+  it('says an order is fully paid once the amounts meet the total', async () => {
+    detail.proofs = [proof(1, '2000.00'), proof(2, '2500.00')];
+
+    await openOrder();
+
+    expect(screen.getByText(/fully paid/i)).toBeInTheDocument();
+  });
+
+  it('flags an overpayment rather than calling it paid', async () => {
+    detail.proofs = [proof(1, '3000.00'), proof(2, '2000.00')];
+
+    await openOrder();
+
+    expect(screen.getByText(/overpaid by ₱500/i)).toBeInTheDocument();
+  });
+
+  it('says nothing has been checked yet when no amount is recorded', async () => {
+    // Not "₱0 of ₱4,500 — ₱4,500 short". Nobody has looked yet, and lumping
+    // every fresh order in with the genuinely underpaid ones makes the whole
+    // line worth ignoring.
+    detail.proofs = [proof(1), proof(2)];
+
+    await openOrder();
+
+    expect(screen.getByText(/no amounts recorded yet/i)).toBeInTheDocument();
   });
 });
