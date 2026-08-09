@@ -1,9 +1,9 @@
 // The storefront tab bar.
 //
-// The MOQ tab is the seventh, and it only exists while the admin has the MOQ
-// page switched on. That is not cosmetic: a tab pointing at a route that 404s
-// is a broken link, so the nav must never advertise a hidden page. With the
-// page off the bar is back to its original six tabs.
+// Search is a fixed tab. The MOQ tab is conditional, and it only exists while
+// the admin has the MOQ page switched on. That is not cosmetic: a tab pointing
+// at a route that 404s is a broken link, so the nav must never advertise a
+// hidden page.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -26,10 +26,10 @@ describe('BottomNav MOQ tab', () => {
     expect(screen.queryByRole('link', { name: /MOQ/i })).not.toBeInTheDocument();
   });
 
-  it('keeps the original six tabs when MOQ is off', () => {
+  it('renders the fixed seven tabs when MOQ is off', () => {
     moqEnabled = { data: false };
     render(<BottomNav />);
-    expect(screen.getAllByRole('link')).toHaveLength(6);
+    expect(screen.getAllByRole('link')).toHaveLength(7);
   });
 
   it('shows the MOQ tab once the page is switched on', () => {
@@ -40,10 +40,10 @@ describe('BottomNav MOQ tab', () => {
     expect(moq).toHaveAttribute('href', '/moq');
   });
 
-  it('renders seven tabs when MOQ is on', () => {
+  it('renders eight tabs when MOQ is on', () => {
     moqEnabled = { data: true };
     render(<BottomNav />);
-    expect(screen.getAllByRole('link')).toHaveLength(7);
+    expect(screen.getAllByRole('link')).toHaveLength(8);
   });
 
   it('treats an unresolved setting as off, so no tab flashes in before it loads', () => {
@@ -56,40 +56,46 @@ describe('BottomNav MOQ tab', () => {
     moqEnabled = { data: true };
     render(<BottomNav />);
     const names = tabNames().join(' ');
-    for (const label of ['Home', 'Kahati', 'Group Buy', 'On-hand', 'Orders', 'Account']) {
+    for (const label of ['Home', 'Search', 'Kahati', 'Group Buy', 'On-hand', 'Orders', 'Account']) {
       expect(names).toContain(label);
     }
   });
 });
 
-// Fitting seven tabs into 320px.
+// Fitting eight tabs into 320px.
 //
-// At six tabs each slot is 53px and the widest label ("Group Buy") renders at
-// 47px, so it fits on one line. The seventh tab drops slots to 46px and that
-// label wraps, spilling below the bar — verified in Chrome at a true 320px
-// viewport, which jsdom cannot measure. The nav therefore tightens its label
-// type scale only in the seven-tab state, leaving the six-tab bar untouched.
-describe('BottomNav seven-tab typography', () => {
+// Fixed columns get too narrow once Search and conditional MOQ are both present,
+// so the bar uses stable-width tabs and horizontal overflow instead. JSDOM
+// cannot measure the rendered width; these assertions pin the classes that
+// prevent labels from wrapping under the bar.
+describe('BottomNav compact typography', () => {
   const labelClassOf = (name: RegExp) =>
     screen.getByRole('link', { name }).className;
 
-  it('uses the compact label size when the MOQ tab is present', () => {
+  it('uses the tightest label size when the MOQ tab is present', () => {
     moqEnabled = { data: true };
+    render(<BottomNav />);
+    expect(labelClassOf(/Group Buy/i)).toContain('text-[9px]');
+  });
+
+  it('uses the standard compact label size when only fixed tabs render', () => {
+    moqEnabled = { data: false };
     render(<BottomNav />);
     expect(labelClassOf(/Group Buy/i)).toContain('text-[9.5px]');
   });
 
-  it('keeps the roomier label size when only six tabs render', () => {
-    moqEnabled = { data: false };
-    render(<BottomNav />);
-    expect(labelClassOf(/Group Buy/i)).toContain('text-[10.5px]');
-  });
-
-  it('applies one consistent label size across all seven tabs', () => {
+  it('applies one consistent label size across all eight tabs', () => {
     moqEnabled = { data: true };
     render(<BottomNav />);
     const sizes = screen.getAllByRole('link')
       .map((a) => (a.className.match(/text-\[[\d.]+px\]/) ?? [''])[0]);
     expect(new Set(sizes).size).toBe(1);
+  });
+
+  it('keeps each tab from shrinking below a usable tap target', () => {
+    moqEnabled = { data: true };
+    render(<BottomNav />);
+    expect(labelClassOf(/Group Buy/i)).toContain('min-w-[54px]');
+    expect(labelClassOf(/Group Buy/i)).toContain('whitespace-nowrap');
   });
 });

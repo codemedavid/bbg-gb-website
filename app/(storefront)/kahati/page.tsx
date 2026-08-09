@@ -1,10 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { SectionHeader } from '@/components/headers';
+import { BoardControls } from '@/components/BoardControls';
 import { GroupBuyCard } from '@/components/GroupBuyCard';
 import { JoinSheet } from '@/components/JoinSheet';
 import { useGroupBuys } from '@/lib/queries';
 import { KAHATI_MIN_VIABLE_VIALS } from '@/lib/kahati';
+import { filterAndSortBoard, type BoardSort } from '@/lib/board-filter';
 import type { GroupBuy } from '@/lib/types';
 
 const STEPS = [
@@ -15,9 +17,26 @@ const STEPS = [
   'Once the hatian is complete, settle the balance — then we split, repack & ship direct to you. ₱150 packing fee, local shipping included.',
 ];
 
+// A counter's name is seeded as "<product> <spec>" (lib/kahati-seed.ts), so the
+// variant a customer types is already in it; the description carries whatever
+// the admin added on top.
+const searchFields = (g: GroupBuy): (string | null | undefined)[] => [g.name, g.description];
+
 export default function KahatiPage() {
   const { data: gbs = [] } = useGroupBuys();
   const [joining, setJoining] = useState<GroupBuy | null>(null);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<BoardSort>('default');
+
+  // 'default' leaves the server's demand ranking alone — the counters closest to
+  // filling already lead (lib/kahati.ts sortHatiansByDemand). 'progress' asks
+  // for the same thing explicitly, so a customer who picks it gets what the
+  // label promises rather than a silently identical list.
+  const shown = useMemo(() => filterAndSortBoard(gbs, {
+    query, sort, fields: searchFields,
+    name: (g) => g.name,
+    progress: (g) => g.claimedSlots,
+  }), [gbs, query, sort]);
 
   return (
     <>
@@ -51,9 +70,36 @@ export default function KahatiPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {gbs.map((g) => <GroupBuyCard key={g.id} g={g} onJoin={setJoining} />)}
-        </div>
+        <BoardControls
+          query={query} onQueryChange={setQuery}
+          sort={sort} onSortChange={setSort}
+          placeholder="Search hatians by product or variant…"
+          progressLabel="Most vials committed"
+          resultCount={shown.length}
+        />
+
+        {shown.length === 0 ? (
+          <div className="rounded-[14px] border-[1.5px] border-dashed border-line bg-white px-4 py-10 text-center">
+            {query.trim() ? (
+              <>
+                <p className="m-0 text-[14px] font-bold text-ink">No hatians match “{query.trim()}”</p>
+                <button onClick={() => setQuery('')}
+                  className="mt-2 rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-body transition-colors hover:border-brand-green hover:text-brand-greendark">
+                  Clear search
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="m-0 text-[14px] font-bold text-ink">No hatians open right now</p>
+                <p className="mt-1 text-[12.5px] text-ink-muted">New counters post here — try the Group Buy board in the meantime.</p>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {shown.map((g) => <GroupBuyCard key={g.id} g={g} onJoin={setJoining} />)}
+          </div>
+        )}
       </div>
       {joining && <JoinSheet g={joining} onClose={() => setJoining(null)} />}
     </>

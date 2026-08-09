@@ -1,11 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { SectionHeader } from '@/components/headers';
+import { BoardControls } from '@/components/BoardControls';
 import { CampaignCard } from '@/components/CampaignCard';
 import { CommitSheet } from '@/components/CommitSheet';
 import { useCampaigns } from '@/lib/queries';
 import { useToast } from '@/lib/store/toast';
+import { filterAndSortBoard, type BoardSort } from '@/lib/board-filter';
 import type { MoqCampaign } from '@/lib/types';
 
 // The Group Buy (MOQ) board — its own route, layout and lifecycle, separate from
@@ -23,10 +25,22 @@ const STEPS = [
   'Once the MOQ is met, the batch is ordered from the supplier and we ship to you. A cancelled group buy refunds everyone in full.',
 ];
 
+// What a search looks through on this board. A campaign's own name and blurb,
+// plus the names of every product the batch carries — a customer searching
+// "retatrutide" means the vial, and on this board the vial is a line inside the
+// batch rather than the batch's own title.
+const searchFields = (c: MoqCampaign): (string | null | undefined)[] => [
+  c.name,
+  c.description,
+  ...c.includedProducts.map((p) => p.name),
+];
+
 export default function GroupBuyPage() {
   const router = useRouter();
   const { data: campaigns = [], isLoading } = useCampaigns();
   const [committing, setCommitting] = useState<MoqCampaign | null>(null);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<BoardSort>('default');
   const toast = useToast((s) => s.show);
 
   // No login gate. Committing used to place a real order from this page, so an
@@ -35,11 +49,22 @@ export default function GroupBuyPage() {
   // where the session is required, and it redirects there itself.
   const startCommit = (c: MoqCampaign) => setCommitting(c);
 
-  const open = campaigns.filter((c) => c.status === 'open');
+  // Searched and sorted before the open/closed split, so both lists answer the
+  // same query — a closed batch of the thing you searched for is still the
+  // thing you searched for, and hiding it would read as "we never carried it".
+  const shown = useMemo(() => filterAndSortBoard(campaigns, {
+    query, sort, fields: searchFields,
+    name: (c) => c.name,
+    // Kits committed, not fill percentage: a batch 5/10 has more people behind
+    // it than one 1/2, and "most popular" is about people, not proportion.
+    progress: (c) => c.committed,
+  }), [campaigns, query, sort]);
+
+  const open = shown.filter((c) => c.status === 'open');
   // A scheduled batch has not happened yet, so it belongs in neither list. The
   // API already withholds it from customers; this keeps an admin browsing the
   // storefront from seeing their unannounced campaign filed under "closed".
-  const closed = campaigns.filter((c) => c.status !== 'open' && c.status !== 'scheduled');
+  const closed = shown.filter((c) => c.status !== 'open' && c.status !== 'scheduled');
 
   return (
     <>
@@ -70,12 +95,35 @@ export default function GroupBuyPage() {
           </div>
         </div>
 
+        <BoardControls
+          query={query} onQueryChange={setQuery}
+          sort={sort} onSortChange={setSort}
+          placeholder="Search group buys by name or product…"
+          progressLabel="Most kits committed"
+          resultCount={shown.length}
+        />
+
         {isLoading ? (
           <p className="py-8 text-center text-[13px] text-ink-muted">Loading group buys…</p>
-        ) : campaigns.length === 0 ? (
+        ) : shown.length === 0 ? (
           <div className="rounded-[14px] border-[1.5px] border-dashed border-line bg-white px-4 py-10 text-center">
-            <p className="m-0 text-[14px] font-bold text-ink">No group buys open right now</p>
-            <p className="mt-1 text-[12.5px] text-ink-muted">New campaigns post here — check the Kahati board in the meantime.</p>
+            {/* An empty board and an empty search are different problems, and
+                telling a searching customer "no group buys open" would read as
+                "we do not run these" rather than "not that one". */}
+            {query.trim() ? (
+              <>
+                <p className="m-0 text-[14px] font-bold text-ink">No group buys match “{query.trim()}”</p>
+                <button onClick={() => setQuery('')}
+                  className="mt-2 rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-body transition-colors hover:border-brand-green hover:text-brand-greendark">
+                  Clear search
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="m-0 text-[14px] font-bold text-ink">No group buys open right now</p>
+                <p className="mt-1 text-[12.5px] text-ink-muted">New campaigns post here — check the Kahati board in the meantime.</p>
+              </>
+            )}
           </div>
         ) : (
           <>

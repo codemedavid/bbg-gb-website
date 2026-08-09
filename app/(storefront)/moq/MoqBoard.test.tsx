@@ -21,7 +21,9 @@ const add = vi.fn();
 // line the storefront actually builds, not a restatement of it.
 vi.mock('@/lib/store/cart', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/store/cart')>()),
-  useCart: (sel: (s: unknown) => unknown) => sel({ add }),
+  // `count` is read by the cart shortcut in SectionHeader, which every board
+  // header now carries.
+  useCart: (sel: (s: unknown) => unknown) => sel({ add, count: () => 0 }),
 }));
 
 const toast = vi.fn();
