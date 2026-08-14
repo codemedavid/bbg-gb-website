@@ -1,5 +1,5 @@
-import { asc, eq } from 'drizzle-orm';
-import { getDb, groupBuys } from '@/lib/db';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
+import { getDb, groupBuys, products } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { perVialPrice } from '@/lib/pricing';
 import { sweepKahatis } from '@/lib/kahati-server';
@@ -26,8 +26,23 @@ export const GET = handler(async () => {
   await openKahatisForGroupBuyProducts();
   // Ordered oldest-first so that the demand sort's tie-break — earliest counter
   // leads — still decides when two counters were created in the same instant.
-  const rows = await db.select().from(groupBuys)
-    .where(eq(groupBuys.status, 'open')).orderBy(asc(groupBuys.createdAt));
+  // A product with the Kahati switch off never reaches this board, including
+  // any counter that was already open when the switch was turned off — the
+  // change is retroactive. Left-joined rather than filtered in code so the
+  // exclusion is done by the QUERY: this endpoint is public and polled, and a
+  // post-filter is one refactor away from being dropped.
+  //
+  // A counter with no product link is a free-text row an admin made by hand. It
+  // has no product whose switches could refuse it, so it stays — NULL must not
+  // read as off.
+  const rows = await db.select({ gb: groupBuys }).from(groupBuys)
+    .leftJoin(products, eq(products.id, groupBuys.productId))
+    .where(and(
+      eq(groupBuys.status, 'open'),
+      or(isNull(groupBuys.productId), eq(products.isKahati, true)),
+    ))
+    .orderBy(asc(groupBuys.createdAt))
+    .then((r) => r.map((row) => row.gb));
   const board = rows.map((g) => {
     // A counter can no longer be stored over its cap, but a row written before
     // that constraint must still not be published as "13 / 10 vials".
@@ -43,5 +58,11 @@ export const GET = handler(async () => {
   // Sorted after the mapping, so the ranking uses the vials the board DISPLAYS.
   // An over-cap legacy row shows 10 and holds 13; ranking it on the stored 13
   // would put it above a genuine 10/10 on strength of vials nobody can see.
-  return ok(sortHatiansByDemand(board));
+  const response = ok(sortHatiansByDemand(board));
+  // This response is anonymous and identical for every visitor. Briefly share
+  // it at the edge so a burst of storefront traffic results in one Supabase
+  // read/reconciliation cycle instead of one per browser. The stale window lets
+  // the previous board render while the edge refreshes it in the background.
+  response.headers.set('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
+  return response;
 });

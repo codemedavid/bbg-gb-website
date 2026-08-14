@@ -54,19 +54,19 @@ describe('GET /api/kahati/commitments', () => {
 
     const data = await commitments();
 
-    expect(data.downpaymentWaived).toBe(false);
+    expect(data.paidThisCycle).toBe(false);
     expect(data.summary).toMatchObject({ vials: 0, totalPhp: 0, orderCount: 0 });
     expect(data.commitments).toEqual([]);
   });
 
-  it('waives the downpayment once a commitment on an open hatian exists', async () => {
+  it('reports the cycle fee as paid once a commitment exists', async () => {
     await signIn();
     const kahati = await makeGroupBuy({ name: 'Reta 20mg', minVials: 1, pricePerKitPhp: 9000 });
     await placeOrder(checkoutRequest([{ kind: 'group_buy', refId: kahati.id, qty: 2 }]));
 
     const data = await commitments();
 
-    expect(data.downpaymentWaived).toBe(true);
+    expect(data.paidThisCycle).toBe(true);
   });
 
   it('totals what the customer already holds on each hatian', async () => {
@@ -85,7 +85,7 @@ describe('GET /api/kahati/commitments', () => {
     expect(data.summary.groups[0]).toMatchObject({ kahatiName: 'Reta 20mg', vials: 5 });
   });
 
-  it('stops waiving once every hatian the customer joined has sealed', async () => {
+  it('keeps reporting the cycle fee as paid after the hatians seal', async () => {
     await signIn();
     const kahati = await makeGroupBuy({ name: 'Reta 20mg', minVials: 1, pricePerKitPhp: 9000 });
     await placeOrder(checkoutRequest([{ kind: 'group_buy', refId: kahati.id, qty: 2 }]));
@@ -94,7 +94,9 @@ describe('GET /api/kahati/commitments', () => {
 
     const data = await commitments();
 
-    expect(data.downpaymentWaived).toBe(false);
+    // The fee follows the CYCLE, not the counter. A hatian sealing mid-cycle
+    // does not entitle anyone to charge for the same parcel a second time.
+    expect(data.paidThisCycle).toBe(true);
     // The commitment itself still shows: the customer has those vials on order.
     expect(data.summary.vials).toBe(2);
   });
@@ -107,7 +109,7 @@ describe('GET /api/kahati/commitments', () => {
     await signIn(); // a different customer
 
     const data = await commitments();
-    expect(data.downpaymentWaived).toBe(false);
+    expect(data.paidThisCycle).toBe(false);
     expect(data.commitments).toEqual([]);
   });
 });

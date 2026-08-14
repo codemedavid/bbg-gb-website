@@ -2,7 +2,8 @@
 //
 // There is no scheduler in this app, so counters are resolved lazily: callers
 // invoke sweepKahatis() when they read the board (public + admin). That sweep
-// seals hatians that filled their kit AND resolves ones whose deadline passed.
+// opens hatians whose scheduled open date arrived, seals ones that filled their
+// kit AND resolves ones whose deadline passed.
 // Filling also rolls over eagerly inside the checkout transaction (see the
 // orders route) and on admin edits that fill the kit — both through
 // closeFullKahati — so the sweep is the backstop for a fill that no later
@@ -13,7 +14,7 @@
 // never ordered, so every participant's order is cancelled, any on-hand stock in
 // that order is returned, and the customer is emailed about their refund. An
 // admin cancelling a hatian outright runs the same release flow (cancelKahati).
-import { and, eq, gte, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, users } from '@/lib/db';
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { VIALS_PER_KIT } from './pricing';
@@ -26,6 +27,7 @@ type Db = Awaited<ReturnType<typeof getDb>>;
 type GroupBuyRow = typeof groupBuys.$inferSelect;
 
 export type KahatiSweepResult = {
+  opened: string[];      // scheduled hatian ids whose open date arrived
   closed: string[];      // hatian ids that met the minimum
   cancelled: string[];   // hatian ids that fell short
   rolled: string[];      // hatian ids that filled their kit and were sealed
@@ -101,6 +103,7 @@ async function sweepFullKahatis(db: Db): Promise<string[]> {
 // (10 vials clears the 7-vial minimum) and open no successor, which is the very
 // state this sweep exists to prevent.
 export async function sweepKahatis(db: Db, now: Date = new Date()): Promise<KahatiSweepResult> {
+  const opened = await openDueKahatis(db, now);
   const rolled = await sweepFullKahatis(db);
 
   const closed = await db.update(groupBuys).set({ status: 'closed' })
@@ -127,11 +130,37 @@ export async function sweepKahatis(db: Db, now: Date = new Date()): Promise<Kaha
   await notifyKahatiCancellations(notices);
 
   return {
+    opened,
     closed: closed.map((r) => r.id),
     cancelled,
     rolled,
     ordersCancelled: notices.length,
   };
+}
+
+// Put every counter whose open date has arrived on the board.
+//
+// This is the whole of "scheduled opening" on this side: one guarded UPDATE, run
+// at the top of the sweep so a counter whose entire window elapsed between two
+// board reads is opened and then resolved in the same pass — rather than
+// appearing as an already-expired counter until somebody loads the page again.
+//
+// The isNotNull guard matters: a 'scheduled' row with no open date has no moment
+// to arrive, so it stays off the board. Publishing it would put a counter live
+// that the admin never scheduled to publish, and staying dark is the safe
+// direction for a row that could only have been hand-written.
+//
+// RETURNING is what makes `opened` mean "this sweep opened it": the second sweep
+// over the same counter matches nothing and reports nobody.
+async function openDueKahatis(db: Db, now: Date): Promise<string[]> {
+  const opened = await db.update(groupBuys).set({ status: 'open' })
+    .where(and(
+      eq(groupBuys.status, 'scheduled'),
+      isNotNull(groupBuys.opensAt),
+      lte(groupBuys.opensAt, now),
+    ))
+    .returning({ id: groupBuys.id });
+  return opened.map((r) => r.id);
 }
 
 // Guarded transition for the sweep: cancel this hatian only if it is still an
@@ -205,6 +234,10 @@ export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<KahatiRol
     name: g.name, pricePerKitPhp: g.pricePerKitPhp, totalSlots: g.totalSlots,
     claimedSlots: 0, minVials: g.minVials, repackFeePhp: g.repackFeePhp,
     status: 'open', arrivalGroup: g.arrivalGroup, description: g.description,
+    // Deliberately not inherited: a successor opens because its parent just
+    // filled, so its moment is now. Copying the parent's open date would park a
+    // counter that customers are already trying to join.
+    opensAt: null,
     closesAt: nextKahatiClosesAt(g.createdAt, g.closesAt, new Date()),
   }).returning();
   return { sealed, opened };

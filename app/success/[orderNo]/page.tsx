@@ -17,8 +17,20 @@ export default function SuccessPage({ params }: { params: Promise<{ orderNo: str
   const isSplit = orderNos.length > 1;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-center bg-surface-mist">
-      <div className="flex w-full max-w-app flex-col items-center justify-center px-8 text-center">
+    // overflow-y-auto is load-bearing, not decoration. This is a fixed,
+    // full-viewport overlay, so content taller than the screen has nowhere to
+    // go: the page itself cannot scroll behind it. On a 320x568 screen an extra
+    // ~300px of confirmation detail put BOTH buttons below the fold with no way
+    // to reach them — the customer is stranded on the screen that is supposed to
+    // tell them their order went through.
+    //
+    // min-h-full on the inner column is the other half: with justify-center
+    // alone, content taller than the container centres and overflows off BOTH
+    // edges, and the top half is unreachable even once the parent scrolls.
+    // Letting the column grow to its content means centring only applies while
+    // there is room to centre in.
+    <div className="fixed inset-0 z-40 flex justify-center overflow-y-auto bg-surface-mist">
+      <div className="flex min-h-full w-full max-w-app flex-col items-center justify-center px-8 py-10 text-center">
         <div className="mb-4 flex h-[74px] w-[74px] items-center justify-center rounded-full bg-brand-green text-[34px] text-white">✓</div>
         <div className="mb-2 font-display text-[22px] font-bold text-ink">Salamat{user ? `, ${user.name.split(' ')[0]}` : ''}!</div>
 

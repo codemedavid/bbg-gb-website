@@ -8,16 +8,20 @@ const report: WeeklyReport = {
   rangeLabel: 'Mon May 25 – Sun May 31',
   orderCount: 2,
   counts: { paid: 1, pending: 1, cancelled: 0 },
-  totals: { usd: 100, php: 5000, packingFeePhp: 300 },
+  totals: { usd: 100, php: 5000, packingFee: 350 },
   rows: [
     {
-      index: 1, invoice: 'BBG-2500', buyType: 'solo', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
+      index: 1, invoice: 'BBG-2500', buyType: 'kahati', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
       phone: '09171234567', email: 'ana@example.com', address: 'QC',
-      productCodes: ['RT10'], products: ['Retatrutide x5 @ $6.80'], courier: 'Lalamove', packedBy: 'Cza',
+      productCodes: ['RT30'], products: ['Retatrutide x5 @ $6.80'], courier: 'Lalamove', packedBy: 'Cza',
       payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
-      packingFeePhp: 300,
+      packingFeePhp: 350,
     },
   ],
+  productTotals: {
+    rows: [{ index: 1, name: 'Retatrutide', code: 'RT30', spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
+    totals: { usd: 100, qty: 5 },
+  },
 };
 
 describe('OrderSummaryReport', () => {
@@ -27,13 +31,13 @@ describe('OrderSummaryReport', () => {
     expect(screen.getByText('BBG-2500')).toBeInTheDocument();
     expect(screen.getByText('Ana Reyes')).toBeInTheDocument();
     expect(screen.getByText('Retatrutide x5 @ $6.80')).toBeInTheDocument();
-    expect(screen.getByText(/RT10/)).toBeInTheDocument();
+    expect(screen.getByText(/RT30/)).toBeInTheDocument();
     expect(screen.getByText('Lalamove')).toBeInTheDocument();
     // Rollup tiles present (unique labels).
     expect(screen.getByText('Orders')).toBeInTheDocument();
     expect(screen.getByText('Revenue (PHP)')).toBeInTheDocument();
-    expect(screen.getByText('Packing Fees (PHP)')).toBeInTheDocument();
-    expect(screen.getByText('₱300')).toBeInTheDocument();
+    expect(screen.getByText('Total packing fees')).toBeInTheDocument();
+    expect(screen.getByText('₱350')).toBeInTheDocument();
     expect(screen.getAllByText('Paid').length).toBeGreaterThanOrEqual(1);
   });
 

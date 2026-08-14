@@ -50,7 +50,15 @@ export async function openKahatisForGroupBuyProducts(
   const db = await getDb();
 
   const flagged = await db.select().from(products)
-    .where(and(eq(products.isGroupBuy, true), eq(products.isActive, true)));
+    .where(and(
+      // The Kahati switch alone, not the Group Buy one: the two channels are
+      // independent, so a product may carry counters without ever appearing on
+      // the campaign board. Filtered in the query rather than after it, so an
+      // off-channel product is never counted as "scanned" either; the report
+      // should not imply it was considered and skipped.
+      eq(products.isKahati, true),
+      eq(products.isActive, true),
+    ));
 
   const live = await db.select({ productId: groupBuys.productId })
     .from(groupBuys)

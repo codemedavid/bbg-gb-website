@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { CartButton } from '@/components/BottomNav';
 import { ProductCard } from '@/components/ProductCard';
 import { useProducts, useCategories } from '@/lib/queries';
+import { groupVariants } from '@/lib/product-variants';
 
 function ShopInner() {
   const router = useRouter();
@@ -14,6 +15,15 @@ function ShopInner() {
   const catSlug = activeCat === 'All' ? undefined : categories.find((c) => c.name === activeCat)?.slug;
   // The shop sells ready stock only — everything else is reached through kahati.
   const { data: products = [], isLoading } = useProducts({ category: catSlug, q, onHand: true });
+
+  // Grouped AFTER the server has filtered and searched, so category and query
+  // semantics are untouched: a search for "30mg" still narrows to the rows that
+  // match, it just presents them under one card per peptide.
+  const groups = groupVariants(products, {
+    key: (p) => p.name,
+    name: (p) => p.name,
+    variantLabel: (p) => p.spec,
+  });
 
   const chips = ['All', ...categories.map((c) => c.name)];
   const setCat = (c: string) => router.push(c === 'All' ? '/shop' : `/shop?cat=${encodeURIComponent(c)}`);
@@ -40,7 +50,7 @@ function ShopInner() {
           ))}
         </div>
         {isLoading ? <div className="py-16 text-center text-[13px] text-ink-muted">Loading…</div>
-          : products.length ? <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 md:gap-3 lg:grid-cols-4">{products.map((p) => <ProductCard key={p.id} p={p} />)}</div>
+          : groups.length ? <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 md:gap-3 lg:grid-cols-4">{groups.map((g) => <ProductCard key={g.key} group={g} />)}</div>
           : <div className="py-16 text-center text-[13px] text-ink-muted">
               Walang on-hand dito ngayon. Try another search — or join a kahati para sa pre-order.
             </div>}

@@ -53,7 +53,8 @@ describe('AdminProductsPage — group buy configuration', () => {
     await screen.findByText('New product');
   };
 
-  const enableGroupBuy = () => fireEvent.click(screen.getByLabelText(/offer through group buy/i));
+  // The Sales Channels section: three independent switches, one per channel.
+  const enableGroupBuy = () => fireEvent.click(screen.getByLabelText('Group Buy'));
 
   const type = (label: RegExp, value: string) =>
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -174,5 +175,88 @@ describe('AdminProductsPage — group buy configuration', () => {
     // they had set a minimum of 20.
     expect(await screen.findByRole('alert')).toHaveTextContent(/minimum/i);
     expect(saveMutate).not.toHaveBeenCalled();
+  });
+});
+
+// §4 of the requirement: one labelled section holding all three switches, saved
+// to the database and loaded back when the product is edited again.
+describe('AdminProductsPage — Sales Channels', () => {
+  const openNewProduct = async () => {
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /new product/i }));
+    await screen.findByText('New product');
+  };
+
+  beforeEach(() => {
+    saveMutate.mockReset();
+    saveMutate.mockResolvedValue({});
+  });
+
+  it('offers all three channels as independent checkboxes', async () => {
+    await openNewProduct();
+
+    for (const label of ['On-Hand', 'Group Buy', 'Kahati']) {
+      expect(screen.getByLabelText(label)).toHaveProperty('type', 'checkbox');
+    }
+  });
+
+  it('explains what the section is for', async () => {
+    await openNewProduct();
+
+    expect(screen.getByText(/select which sales channels this product can be offered through/i))
+      .toBeInTheDocument();
+  });
+
+  it('starts a new product with every channel off', async () => {
+    await openNewProduct();
+
+    for (const label of ['On-Hand', 'Group Buy', 'Kahati']) {
+      expect(screen.getByLabelText(label)).not.toBeChecked();
+    }
+  });
+
+  it('saves the requirement\'s Example 1 — On-Hand and Group Buy, not Kahati', async () => {
+    await openNewProduct();
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Rejuran i' } });
+    fireEvent.click(screen.getByLabelText('On-Hand'));
+    fireEvent.click(screen.getByLabelText('Group Buy'));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(saveMutate).toHaveBeenCalled());
+    expect(saveMutate.mock.calls[0][0]).toMatchObject({
+      isOnHand: true, isGroupBuy: true, isKahati: false,
+    });
+  });
+
+  it('saves Example 3 — Kahati without Group Buy', async () => {
+    // The combination the old single flag could not express. If the two ever
+    // re-couple, this is the test that says so.
+    await openNewProduct();
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Kahati Only' } });
+    fireEvent.click(screen.getByLabelText('On-Hand'));
+    fireEvent.click(screen.getByLabelText('Kahati'));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(saveMutate).toHaveBeenCalled());
+    expect(saveMutate.mock.calls[0][0]).toMatchObject({
+      isOnHand: true, isGroupBuy: false, isKahati: true,
+    });
+  });
+
+  it('loads the saved selections when an existing product is edited', async () => {
+    // §4: "When editing an existing product, the saved selections must load
+    // correctly." A form that silently reset them would un-list the product on
+    // the next save the admin made for an unrelated reason.
+    catalog.rows = [{
+      id: 'p1', name: 'Rejuran i', spec: '1ml', pricePhp: '12000', stock: 0,
+      isActive: true, isOnHand: true, isGroupBuy: true, isKahati: false,
+    }];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    await screen.findByText('Edit product');
+
+    expect(screen.getByLabelText('On-Hand')).toBeChecked();
+    expect(screen.getByLabelText('Group Buy')).toBeChecked();
+    expect(screen.getByLabelText('Kahati')).not.toBeChecked();
   });
 });

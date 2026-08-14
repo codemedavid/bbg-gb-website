@@ -23,7 +23,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { POST } = await import('./route');
-const { getDb, groupBuys, orders, products } = await import('@/lib/db');
+const { getDb, emailLog, groupBuys, orders, products } = await import('@/lib/db');
 const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
 beforeEach(async () => {
@@ -50,6 +50,7 @@ describe('checkout idempotency key', () => {
 
     const db = await getDb();
     expect(await db.select().from(orders)).toHaveLength(1);
+    expect(await db.select().from(emailLog)).toHaveLength(1); // one receipt, not one per retry
     const [g] = await db.select().from(groupBuys).where(eq(groupBuys.id, gb.id));
     expect(g.claimedSlots).toBe(3); // vials claimed once, not twice
   });

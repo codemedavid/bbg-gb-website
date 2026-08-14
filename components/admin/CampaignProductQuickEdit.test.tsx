@@ -19,7 +19,7 @@ const product = (overrides: Partial<Product> = {}): Product => ({
   pricePhp: '3200', priceUsd: null,
   categoryId: null, categorySlug: null, categoryName: null,
   isOnHand: false, onHandKitPhp: null, onHandPiecePhp: null,
-  stock: 5, arrivalGroup: 'white_powder', description: null, imageEmoji: '💧',
+  stock: 5, kitSize: 10, arrivalGroup: 'white_powder', description: null, imageEmoji: '💧',
   soldCount: 0, isActive: true,
   isGroupBuy: true,
   gbPricePerKitPhp: '4500', gbPricePerPiecePhp: '480',

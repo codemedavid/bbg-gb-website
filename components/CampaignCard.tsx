@@ -20,6 +20,9 @@ const OUTCOME: Record<MoqCampaign['outcome'], Badge> = {
 // The batch's own state, shown next to the outcome: the outcome answers "what
 // happens to my money", this answers "can I still join THIS batch".
 const STATUS: Record<MoqCampaign['status'], Badge> = {
+  // Only an admin ever sees this one — the public board withholds scheduled
+  // batches — but the map is total, so it cannot render a blank badge.
+  scheduled: { label: 'Scheduled', className: 'bg-[#f5eddb] text-brand-navy' },
   open: { label: 'Open', className: 'bg-[#e8f5db] text-brand-greendark' },
   completed: { label: 'Completed', className: 'bg-[#dbe8f5] text-brand-navy' },
   approved: { label: 'Approved', className: 'bg-[#dbe8f5] text-brand-blue' },

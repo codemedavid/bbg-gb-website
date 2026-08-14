@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CartButton } from './BottomNav';
+import { CartShortcut } from './CartShortcut';
 import { useAuth } from '@/lib/useAuth';
 
 const Logo = () => (
@@ -42,6 +43,10 @@ export function AppHeader({ greeting }: { greeting?: string }) {
   );
 }
 
+// Every board tab's header. The cart shortcut lives here rather than on each
+// page, so adding it once covers Kahati, Group Buy, MOQ, Orders and Account —
+// the customer can open their basket from whichever tab they are browsing
+// instead of hunting for the bottom nav.
 export function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <header className="sticky top-0 z-10 flex items-center gap-3 border-b-2 border-brand-green bg-white px-4 py-3.5 md:px-6">
@@ -49,7 +54,7 @@ export function SectionHeader({ title, sub }: { title: string; sub?: string }) {
         <div className="font-display text-[18px] font-bold text-ink">{title}</div>
         {sub && <div className="truncate text-[12px] text-ink-muted">{sub}</div>}
       </div>
-      <div className="ml-auto flex items-center gap-2"><AuthControl /></div>
+      <div className="ml-auto flex items-center gap-2"><CartShortcut /><AuthControl /></div>
     </header>
   );
 }

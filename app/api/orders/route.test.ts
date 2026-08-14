@@ -89,7 +89,7 @@ describe('POST /api/orders', () => {
     expect(body.data.totals.subtotal).toBe(550);
   });
 
-  it('rejects a product that is not flagged on-hand', async () => {
+  it('rejects a product whose On-Hand channel is switched off', async () => {
     await signIn();
     const product = await makeProduct({ isOnHand: false });
 
@@ -97,7 +97,7 @@ describe('POST /api/orders', () => {
     const body = await res.json();
 
     expect(res.status).toBe(400);
-    expect(body.error).toContain('not available on-hand');
+    expect(body.error).toContain('not available through On-Hand');
   });
 
   it('rejects a unit the product does not offer', async () => {
@@ -184,34 +184,40 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(400);
   });
 
-  it('charges no packing fee on a hatian commitment — it is collected at settlement', async () => {
+  it('charges the hatian packing fee at checkout, on top of the vials', async () => {
     await signIn();
     const gb = await makeGroupBuy({ repackFeePhp: 200, pricePerKitPhp: 9000 });
     const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
     const body = await res.json();
     expect(res.status).toBe(201);
-    expect(body.data.totals).toMatchObject({ packingFee: 0, total: 900 * 7 });
-    expect(Number(body.data.order.packingFeePhp)).toBe(0);
+    expect(body.data.totals).toMatchObject({ packingFee: 200, total: 900 * 7 + 200 });
+    expect(Number(body.data.order.packingFeePhp)).toBe(200);
   });
 
-  it('charges one packing fee per hatian commitment, never accumulating across visits', async () => {
-    // The rule this feature exists for: joining several hatians must not stack a
-    // packing fee per commitment. Each commitment is billed ₱0 now.
+  it('charges one packing fee per cycle, never accumulating across visits', async () => {
+    // The rule this feature exists for: joining several hatians in one trading
+    // cycle must not stack a packing fee per commitment. The first pays, the
+    // rest ride on the parcel it already paid for.
     await signIn();
     const a = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000, minVials: 1 });
     const b = await makeGroupBuy({ repackFeePhp: 150, pricePerKitPhp: 9000, minVials: 1 });
 
+    const fees: number[] = [];
     for (const gb of [a, b]) {
       const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
       const body = await res.json();
       expect(res.status).toBe(201);
-      expect(body.data.totals.packingFee).toBe(0);
+      fees.push(body.data.totals.packingFee);
     }
+    expect(fees).toEqual([150, 0]);
   });
 });
 
-describe('kahati downpayment at checkout', () => {
-  it('snapshots the default ₱150 downpayment on a kahati order', async () => {
+describe('what a kahati commitment collects at checkout', () => {
+  // The packing fee IS the payment taken at commit time. There is no separate
+  // reservation deposit: one ₱150 leaves the customer's pocket, it is the fee,
+  // and it is added to the goods rather than carved out of them.
+  it('collects the packing fee and records it as the amount paid now', async () => {
     await signIn();
     const gb = await makeGroupBuy({ pricePerKitPhp: 9000, repackFeePhp: 150 });
 
@@ -220,34 +226,33 @@ describe('kahati downpayment at checkout', () => {
 
     expect(res.status).toBe(201);
     expect(Number(body.data.order.downpaymentPhp)).toBe(150);
-    // The full total is the vials alone — the downpayment is deducted from it,
-    // not added, and the packing fee is not charged until settlement.
-    expect(body.data.totals.total).toBe(900 * 7);
+    // The vials plus the fee. A total of ₱6,300 here would mean the fee had
+    // been taken out of the goods instead of added to them.
+    expect(body.data.totals.total).toBe(900 * 7 + 150);
   });
 
-  it('uses the admin-set downpayment when configured', async () => {
+  it("uses the hatian's own admin-set fee when configured", async () => {
     await signIn();
-    const db = await getDb();
-    await db.insert(settings).values({ key: 'kahati_downpayment', value: '500' });
-    const gb = await makeGroupBuy({ pricePerKitPhp: 9000 });
+    const gb = await makeGroupBuy({ pricePerKitPhp: 9000, repackFeePhp: 500 });
 
     const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
     const body = await res.json();
 
     expect(res.status).toBe(201);
     expect(Number(body.data.order.downpaymentPhp)).toBe(500);
+    expect(body.data.totals.total).toBe(900 * 7 + 500);
   });
 
-  it('caps the downpayment at the order total', async () => {
+  it('collects nothing now when the hatian carries no fee', async () => {
     await signIn();
-    // 7 vials × ₱10 + ₱0 packing = ₱70 total, below the ₱150 default downpayment.
     const gb = await makeGroupBuy({ pricePerKitPhp: 100, repackFeePhp: 0 });
 
     const res = await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 7 }]));
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(Number(body.data.order.downpaymentPhp)).toBe(70);
+    expect(Number(body.data.order.downpaymentPhp)).toBe(0);
+    expect(body.data.totals.total).toBe(70);
   });
 
   it('records no downpayment on an on-hand order', async () => {

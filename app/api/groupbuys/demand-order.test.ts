@@ -8,8 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 const { GET } = await import('./route');
-const { setGroupBuySchedule } = await import('@/lib/settings');
-const { resetDb, makeGroupBuy } = await import('@/lib/test/harness');
+const { resetDb, makeGroupBuy, openBoards } = await import('@/lib/test/harness');
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -17,10 +16,7 @@ const DAY = 24 * HOUR;
 beforeEach(async () => {
   await resetDb();
   // The board is gated by the shared schedule, so every test here opens it.
-  await setGroupBuySchedule({
-    opensAt: new Date(Date.now() - HOUR).toISOString(),
-    closesAt: new Date(Date.now() + HOUR).toISOString(),
-  });
+  await openBoards();
 });
 
 const namesOf = async (): Promise<string[]> => {

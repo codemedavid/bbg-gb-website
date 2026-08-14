@@ -23,7 +23,10 @@ async function seedProduct(overrides: Partial<typeof products.$inferInsert> = {}
   }).returning();
   const [row] = await db.insert(products).values({
     name: 'Retatrutide', spec: '20mg vial', categoryId: cat.id,
-    pricePhp: '900', stock: 100, isActive: true, isGroupBuy: true,
+    // isKahati is what this seeder reads. isGroupBuy rides along because the
+    // fixture stands for an ordinary peptide, which is offered both ways — but
+    // the two are independent switches now, and only the first one matters here.
+    pricePhp: '900', stock: 100, isActive: true, isGroupBuy: true, isKahati: true,
     ...overrides,
   }).returning();
   return row;
@@ -100,12 +103,23 @@ describe('openKahatisForGroupBuyProducts', () => {
     expect(report.created).toBe(0);
   });
 
-  it('skips products that are not flagged for a group buy', async () => {
-    await seedProduct({ isGroupBuy: false });
+  it('skips products whose Kahati channel is switched off', async () => {
+    await seedProduct({ isKahati: false });
 
     const report = await openKahatisForGroupBuyProducts();
 
     expect(report.created).toBe(0);
+  });
+
+  it('still opens a counter for a product that is Kahati but not Group Buy', async () => {
+    // The two channels are independent switches. This combination could not
+    // exist while one flag drove both boards, and a seeder that still read the
+    // Group Buy flag would silently deny this product the counter it is for.
+    await seedProduct({ isGroupBuy: false, isKahati: true });
+
+    const report = await openKahatisForGroupBuyProducts();
+
+    expect(report.created).toBe(1);
   });
 
   it('names an unpriceable product rather than opening a free counter', async () => {

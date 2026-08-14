@@ -124,6 +124,11 @@ describe('kahatiBadge', () => {
     expect(kahatiBadge('closed', 4, 10)).toBe('CLOSED');
     expect(kahatiBadge('cancelled', 0, 10)).toBe('CLOSED');
   });
+  // A counter waiting on its open date has not closed — it has not started.
+  // Only an admin ever sees this badge; the public board withholds the row.
+  it('marks a scheduled hatian as scheduled, not closed', () => {
+    expect(kahatiBadge('scheduled', 0, 10)).toBe('SCHEDULED');
+  });
   it('shows OPEN on a fresh hatian rather than "10 VIALS LEFT"', () => {
     // Regression: the old `remaining <= 10` threshold was always true at a
     // 10-vial cap, so every hatian rendered as "N VIALS LEFT".

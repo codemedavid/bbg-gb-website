@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
-import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, Product, SettlementPreview } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -11,17 +11,10 @@ export const usePackingFees = () =>
     staleTime: 5 * 60 * 1000,
   });
 
-export const useKahatiDownpayment = () =>
-  useQuery({
-    queryKey: ['kahati-downpayment'],
-    queryFn: () => apiGet<{ kahatiDownpayment: number }>('/settings').then((d) => d.kahatiDownpayment),
-    staleTime: 5 * 60 * 1000,
-  });
-
-// The kahati commitments this customer already holds, and whether that covers
-// the reservation downpayment. Never cached stale: a hatian sealing flips the
-// waiver, and showing "nothing to pay" for a checkout the server then charges
-// for is the failure to avoid.
+// The kahati commitments this customer already holds, and whether this cycle's
+// packing fee is already paid. Never cached stale: a cycle turning over flips
+// the answer, and showing "nothing to pay" for a checkout the server then
+// charges for is the failure to avoid.
 export const useKahatiCommitments = (enabled = true) =>
   useQuery({
     queryKey: ['kahati-commitments'],
@@ -30,14 +23,14 @@ export const useKahatiCommitments = (enabled = true) =>
     staleTime: 0,
   });
 
-// The group buys this customer already has a parcel going in, so the cart can
-// show ₱0 packing fee exactly where the server will charge none. Never cached
-// stale, for the same reason as the kahati waiver above.
-export const useCampaignPackingFeeWaivers = (enabled = true) =>
+// Whether this customer has already paid to have this cycle's parcel packed, so
+// the cart can show ₱0 packing fee exactly where the server will charge none.
+// Never cached stale, for the same reason as the kahati commitments above.
+export const useCyclePackingFeePaid = (enabled = true) =>
   useQuery({
-    queryKey: ['campaign-commitments'],
-    queryFn: () => apiGet<{ paidSeriesIds: string[] }>('/campaigns/commitments')
-      .then((d) => new Set(d.paidSeriesIds)),
+    queryKey: ['cycle-packing-fee'],
+    queryFn: () => apiGet<{ paidThisCycle: boolean }>('/campaigns/commitments')
+      .then((d) => d.paidThisCycle),
     enabled,
     staleTime: 0,
   });
@@ -70,21 +63,23 @@ export const useProducts = (p: { category?: string; q?: string; onHand?: boolean
 export const useProduct = (id?: string) =>
   useQuery({ queryKey: ['product', id], queryFn: () => apiGet<Product>(`/products/${id}`), enabled: !!id });
 
-// The hatian board is shared state: other customers claim vials while this page
-// sits open. The global defaults (30s stale, no refocus refetch) left the counter
-// and progress bar frozen until a hard reload, so this query opts into polling.
-export const KAHATI_POLL_MS = 15_000;
+// The live boards are shared state, but polling them too aggressively sends the
+// same small reads across the Supabase/Vercel boundary all day. One minute keeps
+// unattended boards current without making every open storefront tab query the
+// database four times a minute. Mutations still invalidate these queries
+// immediately, and returning to a backgrounded tab refreshes stale data.
+export const KAHATI_POLL_MS = 60_000;
 
 export const useGroupBuys = () =>
   useQuery({
     queryKey: ['groupbuys'],
     queryFn: () => apiGet<GroupBuy[]>('/groupbuys'),
-    staleTime: 0,
+    staleTime: KAHATI_POLL_MS,
     refetchInterval: KAHATI_POLL_MS,
     // Pause polling on a backgrounded tab; the refocus refetch covers the return.
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: true,
   });
 
 // Group Buy (MOQ) campaigns are shared state in the same way the hatian board is
@@ -94,11 +89,11 @@ export const useCampaigns = () =>
   useQuery({
     queryKey: ['campaigns'],
     queryFn: () => apiGet<MoqCampaign[]>('/campaigns'),
-    staleTime: 0,
+    staleTime: KAHATI_POLL_MS,
     refetchInterval: KAHATI_POLL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: true,
   });
 
 export const usePaymentMethods = () =>
@@ -118,3 +113,12 @@ export const useSettlementPreview = (enabled = true) =>
 
 export const useOrders = (enabled = true) =>
   useQuery({ queryKey: ['orders'], queryFn: () => apiGet<Order[]>('/orders'), enabled });
+
+// One order in full, for the details page. Keyed by id so opening a second
+// order does not serve the first one's cached body.
+export const useOrderDetail = (id?: string) =>
+  useQuery({
+    queryKey: ['order', id],
+    queryFn: () => apiGet<OrderDetail>(`/orders/${id}`),
+    enabled: !!id,
+  });

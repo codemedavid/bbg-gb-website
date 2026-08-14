@@ -90,9 +90,9 @@ describe('mixed cart splits into one order per mode', () => {
         [o.order.buyType, o.totals.packingFee]),
     );
     expect(byMode.solo).toBe(200);
-    // The hatian parcel is not billed at commit time — one fee is charged when
-    // the customer settles their completed hatian orders.
-    expect(byMode.kahati).toBe(0);
+    // Two parcels on two timings, so two fees: the on-hand one ships now, the
+    // hatian one when the cycle's goods arrive.
+    expect(byMode.kahati).toBe(150);
   });
 
   it('keeps each order total to its own lines', async () => {
@@ -112,8 +112,9 @@ describe('mixed cart splits into one order per mode', () => {
     );
     // 2 x 550 on-hand, + its own 200 fee
     expect(byMode.solo).toMatchObject({ subtotal: 1100, total: 1300 });
-    // one vial of a 9000 kit = 900, with no fee — the hatian parcel is billed at settlement
-    expect(byMode.kahati).toMatchObject({ subtotal: 900, total: 900 });
+    // one vial of a 9000 kit = 900, plus the ₱150 to pack it — added on top of
+    // the goods, never taken out of them
+    expect(byMode.kahati).toMatchObject({ subtotal: 900, total: 1050 });
   });
 
   it('puts only the kahati downpayment on the kahati order', async () => {

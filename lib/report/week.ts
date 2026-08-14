@@ -68,6 +68,23 @@ export function weekBounds(mondayYmd: string): { start: Date; end: Date } {
   };
 }
 
+/** Inclusive Manila calendar range converted to half-open UTC instants. */
+export function dateRangeBounds(fromYmd: string, toYmd: string): { start: Date; end: Date } {
+  return {
+    start: new Date(`${fromYmd}T00:00:00${PH_OFFSET}`),
+    end: new Date(`${addDays(toYmd, 1)}T00:00:00${PH_OFFSET}`),
+  };
+}
+
+/** Compact label for a customer-selected inclusive calendar range. */
+export function formatDateRange(startYmd: string, toYmd: string): string {
+  const fmt = (ymd: string) => {
+    const d = fromYmd(ymd);
+    return `${MONTH_SHORT[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  };
+  return startYmd === toYmd ? fmt(startYmd) : `${fmt(startYmd)} – ${fmt(toYmd)}`;
+}
+
 /** ISO-8601 week number of the week identified by its Monday. */
 export function isoWeekNumber(mondayYmd: string): number {
   // The Thursday of the same week determines the ISO week's owning year.

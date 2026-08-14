@@ -2,7 +2,7 @@
 
 ## User journey and interpretation
 
-No plan file was supplied. The request was interpreted as: as an admin, I want Group Buy and Kahati orders separated in the downloaded weekly workbook so that each order mode can be reviewed and pivoted independently, while retaining the complete weekly report.
+No plan file was supplied. The request was interpreted as: as an admin, I want Group Buy and Kahati orders presented as separate report sections and downloads so that each order mode can be reviewed and exported independently.
 
 ## RED
 
@@ -15,9 +15,9 @@ No plan file was supplied. The request was interpreted as: as an admin, I want G
 ## GREEN
 
 - Carried the database order mode through the weekly API and report model.
-- Preserved the complete `Week N` worksheet and its `WeeklyOrders` table.
-- Added `Group Buy` / `GroupBuyOrders` and `Kahati` / `KahatiOrders` worksheet-table pairs.
-- Each dedicated worksheet filters to its own mode, renumbers its rows, and calculates independent paid/pending/cancelled counts and monetary totals while excluding cancelled orders from money totals.
+- After integrating the newer report architecture from `origin/main`, the API and admin UI expose three independent segments: On-Hand, Group Buy, and Kahati.
+- Group Buy retains its canonical supplier product-totals workbook. Kahati downloads an independent order workbook with the `KahatiOrders` pivot-ready table, product codes, and packing-fee column.
+- Each segment renumbers its rows and calculates independent paid/pending/cancelled counts and monetary totals while excluding cancelled orders from money totals.
 - Command: `npm test -- lib/report/build.test.ts lib/report/weekly-xlsx.test.ts app/api/admin/report/weekly/route.test.ts --reporter=verbose`.
 - Result: **GREEN**, 3 files and 20 tests passed.
 - Checkpoint: `8d4698d feat: separate group buy and kahati report sheets`.
@@ -27,11 +27,10 @@ No plan file was supplied. The request was interpreted as: as an admin, I want G
 | Guarantee | Test | Type | Result |
 |---|---|---|---|
 | Order mode survives from the API database row into the report | `route.test.ts` and `build.test.ts` | Integration/unit | PASS |
-| The original complete weekly sheet remains available | `weekly-xlsx.test.ts` | Real XLSX round trip | PASS |
-| Group Buy orders appear only on the Group Buy sheet | `weekly-xlsx.test.ts` | Real XLSX round trip | PASS |
-| Kahati orders appear only on the Kahati sheet | `weekly-xlsx.test.ts` | Real XLSX round trip | PASS |
-| Both separated sheets are named Excel Tables ready for PivotTable use | `weekly-xlsx.test.ts` | Real XLSX round trip | PASS |
-| Each separated report carries its own PHP total | `weekly-xlsx.test.ts` | Integration | PASS |
+| Group Buy and Kahati orders appear in different API/UI report segments | `segment.test.ts`, `segments.test.ts`, `page.test.tsx` | Unit/integration/component | PASS |
+| Group Buy retains its canonical supplier totals workbook | `weekly-xlsx.test.ts` | Real XLSX round trip | PASS |
+| Kahati exports its own pivot-ready order workbook | `weekly-xlsx.test.ts` | Real XLSX round trip | PASS |
+| Each separated report carries its own counts and money totals | `build.test.ts`, `segments.test.ts` | Unit/integration | PASS |
 
 ## Coverage and validation
 
@@ -42,3 +41,10 @@ No plan file was supplied. The request was interpreted as: as an admin, I want G
 - Admin/API regression command: `npm test -- app/admin/reports/OrderSummaryReport.test.tsx app/admin/reports/page.test.tsx app/api/admin/report/weekly/route.test.ts --reporter=verbose`.
 - Result: **PASS**, 3 files and 4 tests passed.
 - No feature tests are skipped or disabled.
+
+## Main-branch integration
+
+- Merged the 106 newer `origin/main` commits without force-pushing and resolved seven overlapping report files against main's date-range, segment, and product-total architecture.
+- Validation command: `npm test -- lib/report/segment.test.ts lib/report/build.test.ts lib/report/product-codes.test.ts lib/report/weekly-xlsx.test.ts app/api/admin/report/weekly/segments.test.ts app/api/admin/report/weekly/route.test.ts app/admin/reports/page.test.tsx app/admin/reports/OrderSummaryReport.test.tsx app/admin/orders/WeeklyReportButton.test.tsx --reporter=dot`.
+- Result: **PASS**, 9 files and 89 tests passed.
+- TypeScript: `npx tsc --noEmit` — **PASS**.

@@ -5,7 +5,10 @@ export type Product = {
   pricePhp: string; priceUsd: string | null; categoryId: string | null;
   categorySlug: string | null; categoryName: string | null;
   isOnHand: boolean; onHandKitPhp: string | null; onHandPiecePhp: string | null;
-  stock: number; arrivalGroup: 'white_powder' | 'salt_liquid';
+  stock: number;
+  /** Vials per supplier kit; drives the weekly report's Kits column. */
+  kitSize: number;
+  arrivalGroup: 'white_powder' | 'salt_liquid';
   description: string | null; imageEmoji: string | null; soldCount: number;
   isActive?: boolean;
   coaFiles?: CoaFile[];
@@ -17,6 +20,9 @@ export type Product = {
   // Optional because the public catalog feeds select a narrower column list —
   // these are admin-surface fields and the storefront never reads them.
   isGroupBuy?: boolean;
+  // Group Buy only — not sold per vial, so no hatian counter may exist for it
+  // (lib/kahati-eligibility.ts).
+  isKahati?: boolean;
   gbPricePerKitPhp?: string | null;
   gbPricePerPiecePhp?: string | null;
   gbVialsPerKit?: number | null;
@@ -27,7 +33,10 @@ export type CoaFile = { id: string; productId: string; batch: string | null; fil
 
 export type GroupBuy = {
   id: string; name: string; pricePerKitPhp: string; totalSlots: number; claimedSlots: number;
-  minVials: number; repackFeePhp: string; status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+  minVials: number; repackFeePhp: string;
+  status: 'scheduled' | 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+  // When the counter goes on the board; null means it already is.
+  opensAt: string | null;
   closesAt: string | null; arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
   perVialPhp: number; remaining: number; progress: number;
 };
@@ -60,7 +69,9 @@ export type MoqCampaign = {
   id: string; name: string; pricePerKitPhp: string; moq: number; committed: number;
   // Admin-set floor on one customer's commitment; the cart seeds the line here.
   perCustomerMin: number;
-  shippingPhp: string; status: 'open' | 'approved' | 'completed' | 'cancelled';
+  shippingPhp: string; status: 'scheduled' | 'open' | 'approved' | 'completed' | 'cancelled';
+  // When the batch goes on the board; null means it already is.
+  opensAt: string | null;
   deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null; createdAt: string;
   // Which batch of which series this row is. seriesId resolves to the row's own
@@ -78,7 +89,7 @@ export type MoqCampaign = {
 // `status` is intentionally omitted — it is lifecycle-owned (see /campaigns/:id/action).
 export type CampaignPayload = {
   id?: string; name: string; pricePerKitPhp: number; moq: number;
-  shippingPhp: number; deadline: string | null; includedProducts: IncludedProduct[];
+  shippingPhp: number; opensAt: string | null; deadline: string | null; includedProducts: IncludedProduct[];
   arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
 };
 
@@ -89,6 +100,22 @@ export type PaymentMethod = {
 
 // Shape returned by the public /payment-methods endpoint (active methods only).
 export type CheckoutPaymentMethod = Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl'>;
+
+/**
+ * One uploaded proof of payment. An order may carry up to five
+ * (lib/proof.ts MAX_PROOFS), because a bank transfer cap turns one payment
+ * into several.
+ *
+ * `amountPhp` and `reference` are filled in by the admin while reconciling
+ * against the bank statement, so both are null on a freshly placed order.
+ */
+export type PaymentProof = {
+  id: string;
+  url: string;
+  sortOrder: number;
+  amountPhp: string | null;
+  reference: string | null;
+};
 
 export type OrderItem = {
   // Mirrors the order_item_kind enum — see lib/types-order-modes.test.ts.
@@ -101,7 +128,9 @@ export type Order = {
   id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy' | 'moq';
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
-  // Kahati reservation downpayment paid at checkout; balance = total - downpayment. 0 for solo.
+  // Kahati amount paid at checkout. The order total already includes it as the
+  // added packing-fee line; balance views subtract it only from the amount still
+  // to collect. 0 for non-kahati orders.
   downpaymentPhp?: string;
   shipName: string; shipPhone: string; shipAddress: string; trackingNo: string | null;
   // Weekly-report fulfilment fields (admin-editable). paymentMethod drives the Payment column.
@@ -111,9 +140,33 @@ export type Order = {
   // awaiting verification from a confirmed payment — the id alone does not.
   settlementId?: string | null;
   settlementStatus?: 'proof_review' | 'paid' | 'cancelled' | null;
+  // The instructions the customer wrote in the cart before checking out. Shown
+  // back to them so they can confirm what they asked for, and to the admin who
+  // has to act on it.
+  notes?: string | null;
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };
+
+// What GET /api/orders/[id] answers: one order, whole, as the details page
+// renders it. The customer block is joined from the user record because the
+// email is not on the order; the SHIPPING fields stay on `order` because the
+// order's own snapshot is where the parcel actually went.
+export type OrderDetail = {
+  order: Order & { courier?: string | null; notes?: string | null };
+  customer: { name: string | null; email: string | null; phone: string | null };
+  items: OrderItem[];
+  history: OrderHistory[];
+  /** Signed, expiring URL for the FIRST payment proof; null when none. */
+  proofUrl: string | null;
+  /**
+   * Every proof the order carries, oldest first. The customer needs the whole
+   * list to tell whether last night's upload landed before deciding to add
+   * another. Optional so a cached response from before this shipped still
+   * types.
+   */
+  proofs?: PaymentProof[];
+};
 
 // A payment obligation as the customer and admin see it.
 export type PaymentState = 'paid' | 'under_review' | 'unpaid' | 'cancelled';
@@ -138,7 +191,7 @@ export type KahatiCommitments = {
     totalPhp: number;
     orderCount: number;
   };
-  downpaymentWaived: boolean;
+  paidThisCycle: boolean;
 };
 
 export type KahatiCommitment = {
@@ -188,6 +241,11 @@ export type AdminSettlement = {
   id: string; status: 'proof_review' | 'paid' | 'cancelled';
   packingFeePhp: string; balancePhp: string; totalPhp: string;
   paymentMethod: string | null; paymentProofKey: string | null;
+  /**
+   * Every proof this settlement carries, oldest first. paymentProofKey above is
+   * the first of them, kept for readers that have not moved to the list.
+   */
+  proofs?: PaymentProof[];
   createdAt: string; paidAt: string | null;
   customerName: string | null; customerEmail: string | null;
   orderCount: number;

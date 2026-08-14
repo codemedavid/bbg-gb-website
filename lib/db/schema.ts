@@ -14,7 +14,9 @@ export const buyTypeEnum = pgEnum('buy_type', ['solo', 'kahati', 'group_buy', 'm
 // Group Buy (MOQ) campaign lifecycle. 'reached' is derived (committed >= moq), not stored.
 // 'completed' = the batch filled to its 10-kit cap and closed itself; further
 // commitments go to the successor batch the fill opened (see lib/moq-batch-server.ts).
-export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['open', 'approved', 'completed', 'cancelled']);
+// 'scheduled' precedes 'open': the batch exists, holds its terms, and is off the
+// storefront until its `opens_at` passes (lib/schedule.ts).
+export const moqCampaignStatusEnum = pgEnum('moq_campaign_status', ['scheduled', 'open', 'approved', 'completed', 'cancelled']);
 export const orderStatusEnum = pgEnum('order_status', [
   'proof_review',      // 0 Proof under review
   'payment_confirmed', // 1 Payment confirmed
@@ -25,7 +27,7 @@ export const orderStatusEnum = pgEnum('order_status', [
 ]);
 // 'closed' = full (reached the 10-vial cap) or admin-closed; 'cancelled' = deadline
 // passed before the cap was reached. Both are terminal for accepting new commits.
-export const groupBuyStatusEnum = pgEnum('group_buy_status', ['open', 'closed', 'shipped', 'completed', 'cancelled']);
+export const groupBuyStatusEnum = pgEnum('group_buy_status', ['scheduled', 'open', 'closed', 'shipped', 'completed', 'cancelled']);
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
 export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign', 'moq_product']);
@@ -68,13 +70,32 @@ export const products = pgTable('products', {
   onHandKitPhp: numeric('on_hand_kit_php', { precision: 12, scale: 2 }),
   onHandPiecePhp: numeric('on_hand_piece_php', { precision: 12, scale: 2 }),
   stock: integer('stock').notNull().default(0),
+  // Vials per supplier kit, used by the weekly report to turn "270 vials" into
+  // "27 kits" — the unit the batch order is actually placed in. Peptides ship
+  // 10 to a kit; fillers and serums (Lemon Bottle, Profhilo, Restylane) are
+  // sold per piece and carry 1. Distinct from gbVialsPerKit below: this is how
+  // the SUPPLIER ships the product, that is how a group buy splits it.
+  kitSize: integer('kit_size').notNull().default(10),
   // Admin-editable group buy terms. These belong to the PRODUCT: a hatian or a
   // campaign that carries it seeds its own fields from them instead of the admin
   // retyping the terms into every batch (see lib/pricing.ts kahatiDefaultsFor /
   // campaignDefaultsFor). Every column is nullable and counted in VIALS —
   // absent means "not configured", which falls back to the global defaults
   // rather than to zero. A ₱0 group buy price would read as free.
+  // Sales channels. Three independent switches — isOnHand above, plus these two
+  // — deciding which of the shop's three ways to sell may carry this product.
+  // Mind the naming: isGroupBuy governs the CAMPAIGN board (`moq_campaigns`),
+  // isKahati governs the vial counters (the table named `group_buys`).
+  //
+  // They were one flag until sales channels landed, which meant a product could
+  // not be offered on one board without the other. That is what the "Korean
+  // products" exclusion needed: a Rejuran i is a single prefilled syringe, so a
+  // hatian splitting one kit into ten vials has nothing to split, while the
+  // campaign board pooling whole kits is exactly right for it. Expressed as
+  // switches rather than a category rule, an admin can say so for any product
+  // on the form instead of waiting on a migration (see lib/product-channels.ts).
   isGroupBuy: boolean('is_group_buy').notNull().default(false),
+  isKahati: boolean('is_kahati').notNull().default(false),
   gbPricePerKitPhp: numeric('gb_price_per_kit_php', { precision: 12, scale: 2 }),
   gbPricePerPiecePhp: numeric('gb_price_per_piece_php', { precision: 12, scale: 2 }),
   gbVialsPerKit: integer('gb_vials_per_kit'),
@@ -110,6 +131,10 @@ export const groupBuys = pgTable('group_buys', {
   minVials: integer('min_vials').notNull().default(1),          // min vials one person may commit
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('150'),
   status: groupBuyStatusEnum('status').notNull().default('open'),
+  // When this counter goes on the board. Null means "already there" — which is
+  // every counter written before scheduling existed. A future date parks the row
+  // at 'scheduled' until a sweep opens it (lib/kahati-server.ts openDueKahatis).
+  opensAt: timestamp('opens_at', { withTimezone: true }),
   closesAt: timestamp('closes_at', { withTimezone: true }),
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
@@ -159,6 +184,10 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   // Pasabay packing fee (local shipping included); admin-editable per campaign.
   shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('300'),
   status: moqCampaignStatusEnum('status').notNull().default('open'),
+  // When this batch goes on the board — see the note on group_buys.opens_at.
+  // Successor batches never inherit it: a successor opens because its parent
+  // filled, which is a moment that has already arrived.
+  opensAt: timestamp('opens_at', { withTimezone: true }),
   deadline: timestamp('deadline', { withTimezone: true }),
   // Included products with per-product out-of-stock flags: [{ productId, name, outOfStock }]
   includedProducts: jsonb('included_products').notNull().default(sql`'[]'::jsonb`),
@@ -265,6 +294,30 @@ export const settlements = pgTable('settlements', {
   statusIdx: index('settlements_status_idx').on(t.status),
 }));
 
+// ---- Settlement payment proofs -----------------------------------------
+// The same one-to-many as order_payment_proofs, for the hatian final checkout.
+//
+// A settlement is usually the LARGEST payment a customer makes — it clears the
+// balance on every hatian they joined this cycle plus the packing fee — so it
+// is the one a bank's per-transfer cap is most likely to split. Its own table
+// rather than a shared one because a settlement covers several orders at once:
+// hanging its proofs off order_payment_proofs would mean either duplicating
+// every row per order or inventing a nullable order_id that means "not this".
+//
+// settlements.payment_proof_key stays and still holds the first proof, for the
+// same reason the orders column does: existing readers.
+export const settlementPaymentProofs = pgTable('settlement_payment_proofs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  settlementId: uuid('settlement_id').notNull().references(() => settlements.id, { onDelete: 'cascade' }),
+  storageKey: text('storage_key').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  amountPhp: numeric('amount_php', { precision: 12, scale: 2 }),
+  reference: varchar('reference', { length: 80 }),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  settlementIdx: index('settlement_payment_proofs_settlement_idx').on(t.settlementId),
+}));
+
 // ---- Orders ------------------------------------------------------------
 export const orders = pgTable('orders', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -279,8 +332,10 @@ export const orders = pgTable('orders', {
   shippingPhp: numeric('shipping_php', { precision: 12, scale: 2 }).notNull().default('0'),
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('0'),
   totalPhp: numeric('total_php', { precision: 12, scale: 2 }).notNull(),
-  // Kahati reservation downpayment paid at checkout, deducted from total_php;
-  // the balance (total - downpayment) is collected after the kahati ends. 0 for solo.
+  // Kahati amount paid at checkout. It is included in total_php through the
+  // packing_fee_php line (subtotal + packing fee); later balance screens subtract
+  // it only from what remains to collect, never from the order total itself.
+  // 0 for non-kahati orders.
   downpaymentPhp: numeric('downpayment_php', { precision: 12, scale: 2 }).notNull().default('0'),
   // Delivery snapshot (captured at checkout — immutable record)
   shipName: varchar('ship_name', { length: 120 }).notNull(),
@@ -298,6 +353,14 @@ export const orders = pgTable('orders', {
   // at most one settlement, which is what makes a duplicate packing fee
   // impossible rather than merely unlikely.
   settlementId: uuid('settlement_id').references(() => settlements.id),
+  // The Group Buy/Hatian trading cycle this order was placed in, as the cycle's
+  // opening instant (lib/schedule-recurrence.ts). NULL for on-hand and MOQ
+  // orders, which are not gated by the schedule, and for every order placed
+  // before the cycle existed. Stamped once at checkout and never recomputed:
+  // deriving it from created_at would re-resolve it against whatever recurrence
+  // is configured today, so an admin moving the schedule would silently re-bill
+  // customers for cycles that have already happened.
+  cycleKey: varchar('cycle_key', { length: 40 }),
   trackingNo: varchar('tracking_no', { length: 80 }),
   // Weekly-report fulfilment fields (admin-editable). courier = Shipping column,
   // packedBy = the "Admin" handler column, totalUsd = the report's USD order total
@@ -312,6 +375,43 @@ export const orders = pgTable('orders', {
   userIdx: index('orders_user_idx').on(t.userId),
   createdIdx: index('orders_created_idx').on(t.createdAt),
   statusIdx: index('orders_status_idx').on(t.status),
+  // "What has this customer already paid for in this cycle" is asked on every
+  // gated checkout, and it is exactly this pair.
+  userCycleIdx: index('orders_user_cycle_idx').on(t.userId, t.cycleKey),
+}));
+
+// ---- Order payment proofs ----------------------------------------------
+// One row per uploaded proof, up to five per order (lib/proof.ts MAX_PROOFS).
+//
+// A real one-to-many rather than more columns or a JSON array on `orders`,
+// because the reason for it is arithmetic: banks cap a single transfer, so a
+// ₱4,500 order is often paid as ₱2,000 + ₱1,500 + ₱1,000. Each of those is a
+// distinct payment with its own screenshot, its own amount and its own bank
+// reference, and the admin verifies them one at a time. Three payments do NOT
+// make three orders — the whole point is that they hang off one.
+//
+// `orders.payment_proof_key` is deliberately still there and still filled with
+// the first proof. Five readers use it (the admin drawer, the customer's order
+// page, the commitments export, the reports, the settlement view); keeping it
+// current makes this table additive rather than a simultaneous rewrite of all
+// five, and a row written before this table existed still resolves.
+export const orderPaymentProofs = pgTable('order_payment_proofs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  storageKey: text('storage_key').notNull(),
+  // Submission order, which is what "Proof #1" counts. Stored rather than
+  // derived from uploaded_at: several proofs of one checkout are written in the
+  // same transaction and can share a timestamp to the millisecond.
+  sortOrder: integer('sort_order').notNull().default(0),
+  // What this particular transfer was for, and its bank reference. Both
+  // nullable and both admin-entered: the customer uploads a picture, and only
+  // someone reading the bank statement can say it was ₱1,500. Present so the
+  // three transfers behind one total can be reconciled against it (§13).
+  amountPhp: numeric('amount_php', { precision: 12, scale: 2 }),
+  reference: varchar('reference', { length: 80 }),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  orderIdx: index('order_payment_proofs_order_idx').on(t.orderId),
 }));
 
 export const orderItems = pgTable('order_items', {

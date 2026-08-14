@@ -1,51 +1,46 @@
 'use client';
 import { php } from '@/lib/format';
 import { useCart, packingFeeFor } from '@/lib/store/cart';
-import { useCampaignPackingFeeWaivers, useKahatiDownpayment, usePackingFees } from '@/lib/queries';
-import { KAHATI_DOWNPAYMENT_PHP, PACKING_FEE_PHP, splitKahatiDownpayment } from '@/lib/pricing';
+import { useCyclePackingFeePaid, usePackingFees } from '@/lib/queries';
+import { PACKING_FEE_PHP } from '@/lib/pricing';
 
-// `downpaymentWaived` says this customer already holds a live kahati
-// commitment, so their reservation deposit is paid and this one owes none. It
-// is passed in rather than fetched here because the server decides it — see
-// lib/kahati-commitment.ts and GET /api/kahati/commitments.
-export function useOrderTotals(downpaymentWaived = false) {
+// `paidThisCycle` says this customer has already paid to have this cycle's
+// parcel packed, so this checkout owes no further packing fee. It is passed in
+// rather than fetched here because the server decides it — see
+// lib/packing-cycle.ts and GET /api/kahati/commitments.
+export function useOrderTotals(paidThisCycle = false) {
   const items = useCart((s) => s.items);
   const subtotal = useCart((s) => s.subtotal());
   const hasOnHand = useCart((s) => s.hasOnHand());
   const hasKahati = useCart((s) => s.hasKahati());
   const hasGroupBuy = useCart((s) => s.hasGroupBuy());
   const { data: fees } = usePackingFees();
-  const { data: downpaymentSetting } = useKahatiDownpayment();
-  // Only asked for when the cart actually holds a group buy — there is nothing
-  // to waive otherwise, and an anonymous browse should not poll for it.
-  const { data: paidSeriesIds } = useCampaignPackingFeeWaivers(hasGroupBuy);
+  // Only asked for when the cart actually holds a line the cycle covers — there
+  // is nothing to waive otherwise, and an anonymous browse should not poll.
+  const { data: fetchedPaid } = useCyclePackingFeePaid(hasKahati || hasGroupBuy);
+  const alreadyPaid = paidThisCycle || !!fetchedPaid;
   // Every mode's fee comes from the admin settings; PACKING_FEE_PHP is only the
   // pre-fetch fallback so the summary never flashes a wrong number.
-  const packingFee = packingFeeFor(items, fees ?? PACKING_FEE_PHP, paidSeriesIds);
+  const packingFee = packingFeeFor(items, fees ?? PACKING_FEE_PHP, alreadyPaid);
   const total = subtotal + packingFee;
-  // Kahati carts reserve slots with a downpayment; the balance is settled after
-  // the kahati ends. Mirrors the server split at checkout.
-  const { downpayment, balance } = hasKahati && !downpaymentWaived
-    ? splitKahatiDownpayment(total, downpaymentSetting ?? KAHATI_DOWNPAYMENT_PHP)
-    : { downpayment: 0, balance: total };
+  // A hatian collects only the packing fee now — the goods are settled once the
+  // hatian ends. The fee is ADDED to the products, never taken out of them, so
+  // the balance left to settle is the subtotal in full.
+  const dueNow = hasKahati ? packingFee : total;
+  const balance = hasKahati ? subtotal : 0;
   return {
     subtotal, packingFee, total, hasOnHand, hasKahati, hasGroupBuy,
-    downpayment, balance, downpaymentWaived,
-    // EVERY group buy in the cart is already paid for, so the fee line reads ₱0
-    // and needs saying out loud — a missing fee otherwise reads as one the
-    // customer dodged and will be surprised by later. `every`, not `some`: one
-    // unwaived group buy alongside still adds its fee to the total, and a note
-    // promising "no new charge" over a total that carries one is exactly the
-    // client/server disagreement these rules exist to avoid.
-    groupBuyFeeWaived: hasGroupBuy && items.every(
-      (i) => i.kind !== 'moq_campaign' || (!!i.seriesId && !!paidSeriesIds?.has(i.seriesId)),
-    ),
+    dueNow, balance, paidThisCycle: alreadyPaid,
+    // The cycle's fee is already paid, so the fee line reads ₱0 and needs saying
+    // out loud — a missing fee otherwise reads as one the customer dodged and
+    // will be surprised by later.
+    cycleFeeWaived: alreadyPaid && (hasKahati || hasGroupBuy),
   };
 }
 
-export function OrderSummary({ downpaymentWaived = false }: { downpaymentWaived?: boolean } = {}) {
-  const { subtotal, packingFee, total, hasKahati, downpayment, balance, groupBuyFeeWaived } =
-    useOrderTotals(downpaymentWaived);
+export function OrderSummary({ paidThisCycle = false }: { paidThisCycle?: boolean } = {}) {
+  const { subtotal, packingFee, total, hasKahati, dueNow, balance, cycleFeeWaived } =
+    useOrderTotals(paidThisCycle);
   const Row = ({ label, value }: { label: string; value: number }) => (
     <div className="mb-1.5 flex justify-between text-[13px] text-ink-body"><span>{label}</span><span>{php(value)}</span></div>
   );
@@ -56,42 +51,33 @@ export function OrderSummary({ downpaymentWaived = false }: { downpaymentWaived?
       <div className="mt-1 flex justify-between border-t border-line-soft pt-2.5 text-[16px] font-bold text-ink">
         <span>Total</span><span className="font-display">{php(total)}</span>
       </div>
-      {hasKahati && downpaymentWaived && (
-        // Their deposit is already held against an ongoing hatian, so this
-        // commitment collects nothing. Say so plainly — a total with no
-        // "due now" line beneath it otherwise reads as the amount to send.
+      {hasKahati && (
+        // What leaves their pocket today versus what is left to settle. Stated
+        // explicitly because a hatian total with no "due now" beneath it reads
+        // as the amount to send.
         <div className="mt-2.5 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5">
           <div className="flex justify-between text-[13px] font-bold text-brand-greendark">
-            <span>Due now</span><span className="font-display">{php(0)}</span>
-          </div>
-          <div className="mt-1 text-[12px] leading-relaxed text-ink-body">
-            May ongoing kahati ka na — walang bagong downpayment. Babayaran ang buo sa huling checkout.
-          </div>
-        </div>
-      )}
-      {hasKahati && !downpaymentWaived && downpayment > 0 && (
-        <div className="mt-2.5 rounded-[10px] bg-[#f2f8ec] px-3 py-2.5">
-          <div className="flex justify-between text-[13px] font-bold text-brand-greendark">
-            <span>Downpayment due now</span><span className="font-display">{php(downpayment)}</span>
+            <span>{dueNow > 0 ? 'Packing fee due now' : 'Due now'}</span>
+            <span className="font-display">{php(dueNow)}</span>
           </div>
           <div className="mt-1 flex justify-between text-[12px] text-ink-body">
             <span>Balance (pay after the kahati ends)</span><span>{php(balance)}</span>
           </div>
         </div>
       )}
-      {groupBuyFeeWaived && (
+      {cycleFeeWaived && (
         <p className="mt-2 text-[11.5px] leading-relaxed text-ink-muted">
-          📦 May order ka nang naka-antay sa group buy na ito, kaya bayad na ang
-          packing fee — walang bagong singil sa checkout na ito.
+          📦 Bayad na ang packing fee mo ngayong Group Buy/Hatian — walang bagong
+          singil sa checkout na ito.
         </p>
       )}
-      {hasKahati && (
-        // The hatian packing fee is deferred, so the summary above shows none for
-        // it. Say why, or the customer reads a missing fee as a fee they dodged
-        // and is surprised by it at the final checkout.
+      {hasKahati && !cycleFeeWaived && (
+        // One fee covers everything they join this cycle. Say so, or the
+        // customer reads the fee on this order as one they will pay again on
+        // the next hatian they join this week.
         <p className="mt-2 text-[11.5px] leading-relaxed text-ink-muted">
-          📦 Walang packing fee sa pag-join ng hatian. Isang packing fee lang ang
-          singil sa huling checkout, kahit ilang hatian pa ang sinalihan mo.
+          📦 Isang packing fee lang bawat Group Buy/Hatian — kahit ilang hatian pa
+          ang salihan mo ngayong linggo, hindi na ito uulitin.
         </p>
       )}
     </div>

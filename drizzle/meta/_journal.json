@@ -99,6 +99,69 @@
       "when": 1785423257654,
       "tag": "0013_one_open_hatian_per_product",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785423258654,
+      "tag": "0014_scheduled_open",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785423259654,
+      "tag": "0015_product_kit_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785423260654,
+      "tag": "0016_product_kit_size_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785423261654,
+      "tag": "0017_order_cycle_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785423262654,
+      "tag": "0018_product_is_korean",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785423263654,
+      "tag": "0019_product_sales_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785423264654,
+      "tag": "0020_order_payment_proofs",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785423265654,
+      "tag": "0021_settlement_payment_proofs",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785423266654,
+      "tag": "0022_backfill_kahati_packing_fee_totals",
+      "breakpoints": true
     }
   ]
 }

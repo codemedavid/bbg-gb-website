@@ -32,19 +32,20 @@ vi.mock('@/lib/session', () => {
 const { GET: HATIAN_BOARD } = await import('./groupbuys/route');
 const { GET: CAMPAIGN_BOARD } = await import('./campaigns/route');
 const { POST: CHECKOUT } = await import('./orders/route');
-const { setGroupBuySchedule } = await import('@/lib/settings');
 const { getDb, orders, orderItems } = await import('@/lib/db');
 const {
   resetDb, makeUser, makeGroupBuy, makeMoqCampaign, makePaymentMethod, commitRequest, checkoutRequest,
+  openBoards, closeBoards,
 } = await import('@/lib/test/harness');
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const at = (ms: number) => new Date(Date.now() + ms).toISOString();
 
-const openWindow = () => setGroupBuySchedule({ opensAt: at(-HOUR), closesAt: at(HOUR) });
-const elapsedWindow = () => setGroupBuySchedule({ opensAt: at(-2 * HOUR), closesAt: at(-HOUR) });
-const futureWindow = () => setGroupBuySchedule({ opensAt: at(HOUR), closesAt: at(2 * HOUR) });
+const openWindow = () => openBoards();
+// Elapsed and not-yet-opened are the same state to every caller: the boards are shut.
+const elapsedWindow = () => closeBoards();
+const futureWindow = () => closeBoards();
 
 const boardNames = async (): Promise<string[]> =>
   (await (await HATIAN_BOARD()).json()).data.map((g: { name: string }) => g.name);
@@ -82,19 +83,27 @@ describe('Phase 1 — the two modules follow one schedule with no manual step', 
     expect((await CAMPAIGN_BOARD()).status).toBe(404);
   });
 
-  it('is a Philippine-time window, not a server-local one', async () => {
-    // 09:00-23:59 PHT on Aug 4 2026, expressed as the instants it really is.
-    await setGroupBuySchedule({ opensAt: '2026-08-04T01:00:00.000Z', closesAt: '2026-08-04T15:59:00.000Z' });
-    const { isGroupBuyOpenNow } = await import('@/lib/settings');
+  it('is a Philippine-time schedule, not a server-local one', async () => {
+    // Opens Wednesday 9:00 AM PHT and closes the following Wednesday 8:00 AM —
+    // a full week of trading with a one-hour changeover before the next cycle.
+    // Aug 5 and Aug 12 2026 are Wednesdays; Manila is UTC+08:00, so 09:00 PHT
+    // is 01:00 UTC and 08:00 PHT is 00:00 UTC.
+    const { setScheduleRecurrence, isGroupBuyOpenNow } = await import('@/lib/settings');
+    await setScheduleRecurrence({ openDay: 3, openTime: '09:00', closeDay: 3, closeTime: '08:00' });
 
-    // 08:59 PHT — one minute early.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-04T00:59:00.000Z'))).toBe(false);
-    // 09:00 PHT exactly.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-04T01:00:00.000Z'))).toBe(true);
-    // 23:58 PHT.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-04T15:58:00.000Z'))).toBe(true);
-    // 23:59 PHT — shut.
-    expect(await isGroupBuyOpenNow(new Date('2026-08-04T15:59:00.000Z'))).toBe(false);
+    // Wed 09:00 PHT exactly — the cycle opens.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-05T01:00:00.000Z'))).toBe(true);
+    // Mid-week.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-08T04:00:00.000Z'))).toBe(true);
+    // The following Wednesday 07:59 PHT — the last minute of the cycle.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-11T23:59:00.000Z'))).toBe(true);
+    // 08:00 PHT — shut, and the changeover hour begins.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-12T00:00:00.000Z'))).toBe(false);
+    // 08:59 PHT — one minute early. A server reading its own clock, or adding
+    // eight hours by hand, is what opens the boards eight hours out.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-12T00:59:00.000Z'))).toBe(false);
+    // 09:00 PHT — open again the next week with no admin action at all.
+    expect(await isGroupBuyOpenNow(new Date('2026-08-12T01:00:00.000Z'))).toBe(true);
   });
 });
 

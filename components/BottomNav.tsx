@@ -4,11 +4,11 @@ import { usePathname } from 'next/navigation';
 import { useCart } from '@/lib/store/cart';
 import { useMoqPageEnabled } from '@/lib/queries';
 
-// Group Buy earns a tab as its own feature. A seventh would leave ~45px per tab
-// at 320px, so Calc gives up its slot — it is still reachable from the Home card
-// that already links to it, whereas a group buy has no other entry point.
+// Group Buy and Search earn tabs as their own features. Calc gives up its slot
+// because it is still reachable from the Home card that already links to it.
 const TABS = [
   { href: '/', icon: '🏠', label: 'Home' },
+  { href: '/search', icon: '🔎', label: 'Search' },
   { href: '/kahati', icon: '🤝', label: 'Kahati' },
   { href: '/groupbuy', icon: '🧺', label: 'Group Buy' },
   { href: '/shop', icon: '📦', label: 'On-hand' },
@@ -27,19 +27,17 @@ export function BottomNav() {
   // then disappears — and never points at a route that 404s.
   const { data: moqEnabled } = useMoqPageEnabled();
   const tabs = moqEnabled ? [...TABS, MOQ_TAB] : TABS;
-  // At 320px six tabs get 53px each and the widest label ("Group Buy", 47px)
-  // fits on one line. A seventh drops that to 46px and the label wraps below
-  // the bar, so the seven-tab state tightens the type scale. The six-tab bar
-  // keeps its original size.
-  const labelSize = moqEnabled ? 'text-[9.5px]' : 'text-[10.5px]';
+  // The search tab makes the bar wider than a 320px viewport can fairly divide
+  // into fixed columns, especially when MOQ is also enabled. Each tab keeps a
+  // stable tap target and the bar scrolls sideways only when it has to.
+  const labelSize = tabs.length > 7 ? 'text-[9px]' : 'text-[9.5px]';
   return (
-    <nav className={`fixed bottom-0 left-1/2 z-20 grid w-full max-w-app -translate-x-1/2 border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl ${
-      moqEnabled ? 'grid-cols-7' : 'grid-cols-6'}`}>
+    <nav className="fixed bottom-0 left-1/2 z-20 flex w-full max-w-app -translate-x-1/2 overflow-x-auto border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl">
       {tabs.map((t) => {
         const active = t.href === '/' ? pathname === '/' : pathname.startsWith(t.href);
         return (
           <Link key={t.href} href={t.href}
-            className={`text-center font-semibold ${labelSize} ${active ? 'text-brand-greendark' : 'text-ink-faint'}`}>
+            className={`min-w-[54px] flex-1 whitespace-nowrap text-center font-semibold ${labelSize} ${active ? 'text-brand-greendark' : 'text-ink-faint'}`}>
             <div className="mb-0.5 text-[19px] leading-none">{t.icon}</div>
             {t.label}
           </Link>

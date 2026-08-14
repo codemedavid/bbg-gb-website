@@ -76,6 +76,21 @@ function manilaFieldsAt(at: Date): ManilaFields {
   };
 }
 
+/**
+ * The Manila calendar date at an instant, with its weekday (0 = Sunday).
+ *
+ * The weekday is derived from the Manila date rather than read off the Date,
+ * because 2026-08-05T17:00Z is Wednesday in UTC and already Thursday here — a
+ * weekly schedule keyed off the UTC weekday opens on the wrong day twice a week.
+ */
+export function phtCalendarDate(at: Date): { year: number; month: number; day: number; weekday: number } {
+  const f = manilaFieldsAt(at);
+  return {
+    year: f.year, month: f.month, day: f.day,
+    weekday: new Date(Date.UTC(f.year, f.month - 1, f.day)).getUTCDay(),
+  };
+}
+
 /** Manila's offset from UTC at a given instant, in milliseconds. */
 function manilaOffsetMs(at: Date): number {
   const f = manilaFieldsAt(at);

@@ -37,18 +37,18 @@ const { GET: LIST_CAMPAIGNS } = await import('./campaigns/route');
 const { GET: ONE_HATIAN } = await import('./groupbuys/[id]/route');
 const { GET: ONE_CAMPAIGN } = await import('./campaigns/[id]/route');
 const { POST: CHECKOUT } = await import('./orders/route');
-const { setGroupBuySchedule } = await import('@/lib/settings');
 const {
   resetDb, makeUser, makeGroupBuy, makeMoqCampaign, makePaymentMethod, commitRequest, checkoutRequest,
+  openBoards, closeBoards,
 } = await import('@/lib/test/harness');
 
 const HOUR = 60 * 60 * 1000;
 const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
 
-/** A window that contains this instant. */
-const openNow = () => setGroupBuySchedule({ opensAt: iso(-HOUR), closesAt: iso(HOUR) });
-/** A window that has already elapsed. */
-const closedNow = () => setGroupBuySchedule({ opensAt: iso(-2 * HOUR), closesAt: iso(-HOUR) });
+/** A cycle that contains this instant. */
+const openNow = () => openBoards();
+/** No configured schedule, so both boards are shut. */
+const closedNow = () => closeBoards();
 
 beforeEach(async () => {
   await resetDb();

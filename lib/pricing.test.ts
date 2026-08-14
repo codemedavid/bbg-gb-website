@@ -3,7 +3,7 @@ import {
   computeTotals, subtotal, packingFeeFor, perVialPrice,
   validateKahatiCommit, hasOnHand, hasKahati, hasGroupBuy,
   validateGroupBuyCommit, groupBuyMoqStatus, hasMoq, validateMoqQty,
-  splitKahatiDownpayment, onHandUnitPrice, vialsFor, validateOnHandQty,
+  onHandUnitPrice, vialsFor, validateOnHandQty,
   settlementPackingFee,
   groupBuyUnitPrice, groupBuyVialsPerKit, kahatiDefaultsFor, campaignDefaultsFor,
   PACKING_FEE_PHP, KAHATI_MIN_VIALS, VIALS_PER_KIT, KAHATI_MAX_VIALS, MOQ_BATCH_MAX_KITS,
@@ -27,8 +27,8 @@ describe('packing fee defaults (incl. local shipping, no admin fee)', () => {
   it('charges the on-hand fee for an on-hand-only cart', () => {
     expect(packingFeeFor([product(3200)])).toBe(PACKING_FEE_PHP.solo); // 200
   });
-  it('charges nothing for a kahati-only cart — the hatian fee is deferred to settlement', () => {
-    expect(packingFeeFor([kahati(900)])).toBe(0);
+  it('charges the hatian fee for a kahati-only cart, at checkout', () => {
+    expect(packingFeeFor([kahati(900)])).toBe(PACKING_FEE_PHP.kahati); // 150
   });
   it('charges the pasabay fee for a group-buy-only cart', () => {
     expect(packingFeeFor([moq(10400)])).toBe(PACKING_FEE_PHP.group_buy); // 300
@@ -36,33 +36,42 @@ describe('packing fee defaults (incl. local shipping, no admin fee)', () => {
   it('is zero for an empty cart', () => {
     expect(packingFeeFor([])).toBe(0);
   });
-  it('sums one packing fee per charged-at-checkout mode present (mixed cart)', () => {
-    // Each mode checks out as its own order, so each carries its own packing
-    // fee — except kahati, which pays nothing now and one fee at settlement.
-    expect(packingFeeFor([product(3200), kahati(900, 7)])).toBe(PACKING_FEE_PHP.solo); // 200
+  it('sums one packing fee per mode present (mixed cart)', () => {
+    // Each mode checks out as its own order and ships as its own parcel, so
+    // each carries its own packing fee. Collapsing the two scheduled boards
+    // into ONE cycle fee happens a layer up, in chargeCycleFeeOnce — this
+    // function prices the lines it is given.
+    expect(packingFeeFor([product(3200), kahati(900, 7)])).toBe(
+      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati, // 350
+    );
     expect(packingFeeFor([product(3200), kahati(900), moq(10400)])).toBe(
-      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.group_buy, // 500
+      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati + PACKING_FEE_PHP.group_buy, // 650
     );
   });
 });
 
 // ---------------------------------------------------------------------------
-// Deferred hatian packing fee.
+// The hatian packing fee, charged at checkout and ADDED to the goods.
 //
-// Committing to a hatian charges the downpayment only. The packing fee is
-// collected once, later, when the customer settles every completed hatian order
-// in one final checkout — so joining five hatians costs one packing fee, not five.
+// Committing to a hatian collects the packing fee and nothing else: the goods
+// are settled once the hatian ends. So a ₱6,300 commitment with a ₱150 fee is a
+// ₱6,450 order, of which ₱150 is paid today — the fee is never taken out of the
+// product total. One fee covers the whole trading cycle (lib/packing-cycle.ts),
+// so joining five hatians in a week still costs one fee.
 // ---------------------------------------------------------------------------
-describe('deferred kahati packing fee', () => {
-  it('charges no packing fee on a kahati commitment, whatever the listing fee', () => {
-    expect(packingFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }])).toBe(0);
+describe('the kahati packing fee at checkout', () => {
+  it('charges the listing fee on a kahati commitment', () => {
+    expect(packingFeeFor([{ kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }])).toBe(250);
   });
-  it('leaves a kahati commitment total equal to its subtotal', () => {
+  it('adds the fee to the commitment total rather than taking it out', () => {
     const t = computeTotals([kahati(900, 7)]);
-    expect(t).toMatchObject({ subtotal: 6300, packingFee: 0, total: 6300, buyType: 'kahati' });
+    expect(t).toMatchObject({
+      subtotal: 6300, packingFee: PACKING_FEE_PHP.kahati, total: 6450, buyType: 'kahati',
+    });
   });
   it('still charges the other modes their fee in a cart that also holds a hatian', () => {
-    expect(packingFeeFor([product(3200), kahati(900, 7)])).toBe(PACKING_FEE_PHP.solo);
+    expect(packingFeeFor([product(3200), kahati(900, 7)]))
+      .toBe(PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati);
   });
 });
 
@@ -100,25 +109,25 @@ describe('admin-editable packing-fee overrides', () => {
     ];
     expect(packingFeeFor(items)).toBe(420);
   });
-  it('charges nothing for two distinct kahati placements — both settle later', () => {
-    expect(packingFeeFor([kahati(900), kahati(800)])).toBe(0);
+  it('charges one fee for two distinct kahati placements — one parcel', () => {
+    expect(packingFeeFor([kahati(900), kahati(800)])).toBe(PACKING_FEE_PHP.kahati);
   });
-  it('charges nothing for kahati overflow fragments — they settle as one parcel later', () => {
-    // A commitment that rolls across two counters emits two kahati lines. Neither
-    // is billed now; the settlement charges one fee for the whole parcel.
+  it('charges one fee for kahati overflow fragments — they are one parcel', () => {
+    // A commitment that rolls across two counters emits two kahati lines. They
+    // ship together, so they are billed once.
     const items: PriceableItem[] = [
       { kind: 'group_buy', unitPricePhp: 900, qty: 3, packingFeePhp: 150 },
       { kind: 'group_buy', unitPricePhp: 900, qty: 2, packingFeePhp: 150 },
     ];
-    expect(packingFeeFor(items)).toBe(0);
+    expect(packingFeeFor(items)).toBe(150);
   });
   it('falls back to the mode default when an item sets no override', () => {
     expect(packingFeeFor([moq(10400)])).toBe(PACKING_FEE_PHP.group_buy);
   });
-  it('bills only the charged-at-checkout modes in a mixed cart', () => {
+  it('bills each mode in a mixed cart', () => {
     const t = computeTotals([product(3200), { kind: 'group_buy', unitPricePhp: 900, qty: 7, packingFeePhp: 250 }]);
-    expect(t.packingFee).toBe(PACKING_FEE_PHP.solo);
-    expect(t.total).toBe(3200 + 900 * 7 + PACKING_FEE_PHP.solo);
+    expect(t.packingFee).toBe(PACKING_FEE_PHP.solo + 250);
+    expect(t.total).toBe(3200 + 900 * 7 + PACKING_FEE_PHP.solo + 250);
   });
 });
 
@@ -133,9 +142,11 @@ describe('computeTotals', () => {
     const t = computeTotals([product(3200, 2)]);
     expect(t).toMatchObject({ subtotal: 6400, packingFee: 200, total: 6600, buyType: 'solo' });
   });
-  it('computes a kahati total with no packing fee — it is charged at settlement', () => {
+  it('computes a kahati total with the packing fee added on top', () => {
     const t = computeTotals([kahati(900, 7)]);
-    expect(t).toMatchObject({ subtotal: 6300, packingFee: 0, total: 6300, buyType: 'kahati' });
+    expect(t).toMatchObject({
+      subtotal: 6300, packingFee: PACKING_FEE_PHP.kahati, total: 6450, buyType: 'kahati',
+    });
   });
   it('computes a group-buy total with the pasabay packing fee', () => {
     const t = computeTotals([moq(10400, 2)]);
@@ -275,31 +286,6 @@ describe('validateOnHandQty', () => {
   });
 });
 
-describe('kahati downpayment split', () => {
-  it('splits total into the default ₱150 downpayment and the balance', () => {
-    expect(splitKahatiDownpayment(6450)).toEqual({ downpayment: 150, balance: 6300 });
-  });
-  it('honours an admin-set downpayment amount', () => {
-    expect(splitKahatiDownpayment(6450, 500)).toEqual({ downpayment: 500, balance: 5950 });
-  });
-  it('caps the downpayment at the order total so balance never goes negative', () => {
-    expect(splitKahatiDownpayment(100, 150)).toEqual({ downpayment: 100, balance: 0 });
-  });
-  it('floors a negative downpayment at zero', () => {
-    expect(splitKahatiDownpayment(1000, -50)).toEqual({ downpayment: 0, balance: 1000 });
-  });
-  it('rounds to centavos', () => {
-    expect(splitKahatiDownpayment(1000.505, 150.004)).toEqual({ downpayment: 150, balance: 850.51 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// MOQ (Minimum Order Quantity) — the fourth purchasing mode.
-//
-// MOQ products are a curated, admin-managed shelf sold on their own page with a
-// per-product minimum order quantity. They never share an order with on-hand,
-// kahati or group-buy items, so they carry their own packing fee.
-// ---------------------------------------------------------------------------
 describe('MOQ mode pricing', () => {
   const moqItem = (price: number, qty = 1): PriceableItem => ({ kind: 'moq_product', unitPricePhp: price, qty });
 
@@ -317,9 +303,9 @@ describe('MOQ mode pricing', () => {
     expect(hasGroupBuy([moqItem(4500)])).toBe(false);
   });
 
-  it('adds an MOQ packing fee leg to an all-modes cart, while the hatian leg stays deferred', () => {
+  it('adds one packing fee leg per mode in an all-modes cart', () => {
     expect(packingFeeFor([product(3200), kahati(900, 7), moq(10400), moqItem(4500)])).toBe(
-      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.group_buy + PACKING_FEE_PHP.moq,
+      PACKING_FEE_PHP.solo + PACKING_FEE_PHP.kahati + PACKING_FEE_PHP.group_buy + PACKING_FEE_PHP.moq,
     );
   });
 

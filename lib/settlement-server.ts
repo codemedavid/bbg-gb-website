@@ -30,6 +30,7 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
     status: orders.status,
     totalPhp: orders.totalPhp,
     downpaymentPhp: orders.downpaymentPhp,
+    cycleKey: orders.cycleKey,
     packingFeePhp: orders.packingFeePhp,
     settlementId: orders.settlementId,
     createdAt: orders.createdAt,
@@ -73,14 +74,18 @@ export async function readySettlementOrders(db: Db, userId: string): Promise<Rea
       settlementId: row.settlementId,
       settlementStatus: row.settlementStatus as SettlementStatus | null,
       groupBuyStatuses: statuses,
-      // Excludes pre-deferral orders, whose balances were collected off-platform.
+      // Together these exclude pre-deferral orders, whose balances were
+      // collected off-platform. A fee WITH a cycle is an order that paid at
+      // checkout under the per-cycle rule and is settled here as normal.
       packingFeePhp: Number(row.packingFeePhp),
+      cycleKey: row.cycleKey,
     })) continue;
     const order: SettleableOrder = {
       id: row.id,
       status: row.status,
       totalPhp: Number(row.totalPhp),
       downpaymentPhp: Number(row.downpaymentPhp),
+      cycleKey: row.cycleKey,
       packingFeePhp: Number(row.packingFeePhp),
       // Spanning counters with different fees costs what the priciest one costs.
       hatianPackingFeePhp: Math.max(...fees),

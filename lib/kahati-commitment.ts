@@ -10,7 +10,7 @@
 // The waiver lapses when every hatian they joined has sealed. At that point the
 // parcel is being assembled and settled (lib/settlement.ts), and the next
 // commitment starts a fresh cycle that pays its own downpayment.
-import { round2, splitKahatiDownpayment } from './pricing';
+import { round2 } from './pricing';
 import type { KahatiStatus } from './kahati';
 
 // One kahati line a customer holds, flattened from order -> order_item -> hatian.
@@ -26,27 +26,6 @@ export type KahatiCommitment = {
   lineTotalPhp: number;
   placedAt: string;
 };
-
-// Whether the customer's place in the next parcel is already paid for. Any one
-// open hatian is enough — the deposit is per customer, not per hatian, which is
-// why a commitment on a different product still counts.
-export function hasOpenKahatiCommitment(
-  commitments: readonly Pick<KahatiCommitment, 'kahatiStatus'>[],
-): boolean {
-  return commitments.some((c) => c.kahatiStatus === 'open');
-}
-
-// The downpayment a kahati order actually owes at checkout. Zero once a
-// commitment is live; otherwise the admin-set deposit, clamped to the order
-// total so a small commitment never owes more than it costs.
-export function kahatiDownpaymentDue(
-  total: number,
-  downpaymentPhp: number,
-  alreadyCommitted: boolean,
-): number {
-  if (alreadyCommitted) return 0;
-  return splitKahatiDownpayment(total, downpaymentPhp).downpayment;
-}
 
 // One hatian's worth of what a customer holds. Keyed by NAME rather than id:
 // a counter that fills seals and opens a fresh sibling carrying the same name,

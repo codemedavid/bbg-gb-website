@@ -57,7 +57,7 @@ describe('GET /api/admin/report/weekly packing fees', () => {
 
     expect(res.status).toBe(200);
     expect(body.data.report.rows[0].packingFeePhp).toBe(200);
-    expect(body.data.report.totals.packingFeePhp).toBe(200);
+    expect(body.data.report.totals.packingFee).toBe(200);
     expect(body.data.report.rows[0].productCodes).toEqual(['RT10']);
     expect(body.data.report.rows[0].buyType).toBe('solo');
   });

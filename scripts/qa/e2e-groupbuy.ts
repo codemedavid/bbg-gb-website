@@ -58,6 +58,10 @@ function checkoutForm(items: unknown, opts: { paymentMethod?: string; idempotenc
 
 const num = (v: unknown) => Number(v ?? 0);
 const stamp = Date.now();
+const manilaToday = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+const manilaWeekday = new Date(Date.now() + 8 * 3_600_000).getUTCDay();
 
 async function main() {
   const admin = makeClient();
@@ -66,6 +70,22 @@ async function main() {
   // ================= Phase 2 — Group Buy product selector ==================
   const login = await admin('/api/admin/login', json('POST', { email: 'admin@bbgpeptides.ph', password: 'password123' }));
   check('2', 'admin can sign in', '200', String(login.status), login.status === 200);
+
+  // Seed data intentionally has no trading schedule. Put this isolated QA DB
+  // inside a deterministic open window so the customer journey does not
+  // depend on what weekday/time the suite happens to run.
+  const schedule = await admin('/api/admin/settings', json('PATCH', {
+    scheduleRecurrence: {
+      openDay: (manilaWeekday + 6) % 7,
+      openTime: '00:00',
+      closeDay: (manilaWeekday + 1) % 7,
+      closeTime: '23:59',
+    },
+    schedulePausedUntil: null,
+  }));
+  check('2', 'QA opens the shared Group Buy schedule', '200 with an active cycle',
+    `${schedule.status} cycle=${JSON.stringify(schedule.body?.data?.scheduleCycle ?? null)}`,
+    schedule.status === 200 && schedule.body?.data?.scheduleCycle != null);
 
   const prods = await admin('/api/admin/products');
   const products: any[] = prods.body?.data ?? [];
@@ -92,7 +112,13 @@ async function main() {
     badPrice.length ? `${badPrice.length} unpriced: ${badPrice.slice(0, 5).map((p) => p.name).join(', ')}` : 'all priced',
     badPrice.length === 0);
 
-  // ================= Phase 3 — create a campaign with every product ========
+  // Product Management is the full catalog; a campaign may contain only rows
+  // whose independent Group Buy channel is enabled.
+  const groupBuyProducts = products.filter((p) => p.isGroupBuy);
+  check('2', 'campaign selector has Group Buy-enabled products', '>0 enabled products',
+    `${groupBuyProducts.length} enabled`, groupBuyProducts.length > 0);
+
+  // ========== Phase 3 — create a campaign with every enabled product ======
   const PRICE_PER_KIT = 10400;
   const PACKING_FEE = 300;
   const created = await admin('/api/campaigns', json('POST', {
@@ -102,16 +128,16 @@ async function main() {
     shippingPhp: PACKING_FEE,
     arrivalGroup: 'white_powder',
     description: 'E2E QA campaign',
-    includedProducts: products.map((p) => ({ productId: p.id, name: p.name, outOfStock: false })),
+    includedProducts: groupBuyProducts.map((p) => ({ productId: p.id, name: p.name, outOfStock: false })),
   }));
   const campaign = created.body?.data;
   check('3', 'campaign is created successfully', '201',
     `${created.status} ${created.status === 201 ? '' : JSON.stringify(created.body).slice(0, 300)}`, created.status === 201);
   if (!campaign) { report(); return; }
 
-  check('3', 'every Product Management product is linked to the campaign',
-    `${products.length} included`, `${campaign.includedProducts?.length ?? 0} included`,
-    campaign.includedProducts?.length === products.length);
+  check('3', 'every Group Buy-enabled product is linked to the campaign',
+    `${groupBuyProducts.length} Group Buy-enabled products included`, `${campaign.includedProducts?.length ?? 0} included`,
+    campaign.includedProducts?.length === groupBuyProducts.length);
 
   const linkedIds = new Set((campaign.includedProducts ?? []).map((p: any) => p.productId));
   check('3', 'no product is linked to the campaign twice',
@@ -177,17 +203,17 @@ async function main() {
   check('4', 'third order in the same group buy is still fee-free', '₱0',
     `₱${num(o3.body?.data?.totals?.packingFee)}`, num(o3.body?.data?.totals?.packingFee) === 0);
 
-  // ---- A DIFFERENT group buy must charge its own fee ----------------------
+  // ---- A different group buy in the same cycle shares the one cycle fee ---
   const other = await admin('/api/campaigns', json('POST', {
     name: `QA Other Group Buy ${stamp}`, pricePerKitPhp: 8000, moq: 10, shippingPhp: PACKING_FEE,
-    includedProducts: products.slice(0, 3).map((p) => ({ productId: p.id, name: p.name, outOfStock: false })),
+    includedProducts: groupBuyProducts.slice(0, 3).map((p) => ({ productId: p.id, name: p.name, outOfStock: false })),
   }));
   const o4 = await cust('/api/orders', checkoutForm(
     [{ kind: 'moq_campaign', refId: other.body?.data?.id, qty: 1 }],
     { paymentMethod: pm, idempotencyKey: `qa-other-${stamp}` },
   ));
-  check('4', 'a different group buy still charges its own packing fee', `₱${PACKING_FEE}`,
-    `₱${num(o4.body?.data?.totals?.packingFee)}`, num(o4.body?.data?.totals?.packingFee) === PACKING_FEE);
+  check('4', 'a different group buy in the same cycle charges no second fee', '₱0',
+    `₱${num(o4.body?.data?.totals?.packingFee)}`, num(o4.body?.data?.totals?.packingFee) === 0);
 
   // ---- Idempotency: a resubmitted checkout must not double-charge --------
   const replay = await cust('/api/orders', checkoutForm(
@@ -310,12 +336,71 @@ async function main() {
     String(moqOn.status), moqOn.status === 200);
   await admin('/api/admin/settings', json('PATCH', { moqPageEnabled: false }));
 
-  // Excel export builds the workbook in the browser from this payload, so what
-  // has to hold server-side is that the report data is there to export.
-  const weekly = await admin('/api/admin/report/weekly');
-  check('7', 'Excel export source (weekly report) returns rows', '200 with an orders array',
-    `${weekly.status} ${Array.isArray(weekly.body?.data?.orders) ? `${weekly.body.data.orders.length} orders` : typeof weekly.body?.data}`,
-    weekly.status === 200);
+  // Use today's explicit Manila range so this run's new orders are guaranteed
+  // to be in the payload, regardless of which completed week is the default.
+  const weekly = await admin(`/api/admin/report/weekly?from=${manilaToday}&to=${manilaToday}`);
+  const groupBuyReport = weekly.body?.data?.segments?.groupbuy;
+  check('7', 'Excel export source returns the Group Buy report', '200 with Group Buy order rows',
+    `${weekly.status} with ${groupBuyReport?.rows?.length ?? 0} Group Buy order(s)`,
+    weekly.status === 200 && Array.isArray(groupBuyReport?.rows) && groupBuyReport.rows.length > 0);
+
+  check('7', 'report payload includes its product summary', 'orders, products, units and USD totals',
+    groupBuyReport
+      ? `${groupBuyReport.orderCount} orders, ${groupBuyReport.productTotals?.rows?.length ?? 0} products, ${groupBuyReport.productTotals?.totals?.qty ?? 0} units, $${groupBuyReport.productTotals?.totals?.usd ?? 0}`
+      : 'missing Group Buy report',
+    num(groupBuyReport?.orderCount) > 0
+      && num(groupBuyReport?.productTotals?.rows?.length) > 0
+      && num(groupBuyReport?.productTotals?.totals?.qty) > 0);
+
+  const productRows: any[] = groupBuyReport?.productTotals?.rows ?? [];
+  const nonCanonicalRows = productRows.filter((row) =>
+    !String(row.code ?? '').trim()
+      || /(?:—\s*(?:kahati|group buy)|batch\s*#)/i.test(String(row.name ?? ''))
+      || /(?:kahati|group buy|batch\s*#|proceeds at moq)/i.test(String(row.spec ?? '')),
+  );
+  check('7', 'report product summary uses canonical catalog columns',
+    'clean Product, Variant / Code and Specs values with no channel or batch labels',
+    nonCanonicalRows.length === 0
+      ? `${productRows.length} clean catalog row(s)`
+      : JSON.stringify(nonCanonicalRows.slice(0, 3)),
+    productRows.length > 0 && nonCanonicalRows.length === 0);
+
+  if (groupBuyReport) {
+    const { buildWeeklyWorkbook, GROUP_BUY_PRODUCT_TOTALS_SHEET } = await import('../../lib/report/weekly-xlsx');
+    const { default: ExcelJS } = await import('exceljs');
+    const generated = await buildWeeklyWorkbook(groupBuyReport, manilaToday, 'groupbuy');
+    const buffer = await generated.xlsx.writeBuffer();
+    const reopened = new ExcelJS.Workbook();
+    await reopened.xlsx.load(buffer);
+    const exportSheet = reopened.worksheets[0];
+    const expectedSummary = `# Orders: ${groupBuyReport.orderCount}  Units: ${groupBuyReport.productTotals.totals.qty}`;
+
+    check('7', 'Group Buy XLSX reopens with the Batch 6 sheet contract',
+      `one ${GROUP_BUY_PRODUCT_TOTALS_SHEET} sheet`,
+      `${reopened.worksheets.length} sheet(s), first=${exportSheet?.name}`,
+      reopened.worksheets.length === 1 && exportSheet?.name === GROUP_BUY_PRODUCT_TOTALS_SHEET);
+
+    check('7', 'Group Buy XLSX includes the report summary', expectedSummary,
+      String(exportSheet?.getCell('A2').value ?? ''),
+      exportSheet?.getCell('A2').value === expectedSummary);
+
+    const exportedRows = Array.from({ length: productRows.length }, (_, index) => {
+      const row = exportSheet?.getRow(index + 4);
+      return [row?.getCell(2).value, row?.getCell(3).value, row?.getCell(4).value];
+    });
+    check('7', 'Group Buy XLSX writes the canonical product rows',
+      JSON.stringify(productRows.map((row) => [row.name, row.code, row.spec])),
+      JSON.stringify(exportedRows),
+      JSON.stringify(exportedRows)
+        === JSON.stringify(productRows.map((row) => [row.name, row.code, row.spec])));
+
+    const totalRow = exportSheet?.getRow(exportSheet.rowCount);
+    check('7', 'Group Buy XLSX summary totals match the live report payload',
+      `${groupBuyReport.productTotals.totals.qty} units and $${groupBuyReport.productTotals.totals.usd}`,
+      `${totalRow?.getCell(5).value} units and $${totalRow?.getCell(6).value}`,
+      totalRow?.getCell(5).value === groupBuyReport.productTotals.totals.qty
+        && totalRow?.getCell(6).value === groupBuyReport.productTotals.totals.usd);
+  }
 
   report();
 }

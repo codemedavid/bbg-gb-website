@@ -13,7 +13,8 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 
 // Cleared between tests, children before parents.
 const TABLES = [
-  'order_status_history', 'order_items', 'orders', 'settlements',
+  'order_status_history', 'order_items', 'order_payment_proofs', 'orders',
+  'settlement_payment_proofs', 'settlements',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories', 'users',
   'settings',
 ];
@@ -53,12 +54,28 @@ export async function resetDb(): Promise<void> {
  * schedule tests assert on, and seeding it here would make that unreachable.
  */
 export async function openBoards(): Promise<void> {
-  const DAY = 24 * 60 * 60 * 1000;
-  const { setGroupBuySchedule } = await import('@/lib/settings');
-  await setGroupBuySchedule({
-    opensAt: new Date(Date.now() - DAY).toISOString(),
-    closesAt: new Date(Date.now() + DAY).toISOString(),
+  const { setScheduleRecurrence } = await import('@/lib/settings');
+  const { phtCalendarDate } = await import('@/lib/schedule');
+  // A cycle that opened at midnight today, Manila time, and runs the full week.
+  // Anchored to today's weekday rather than a fixed one so the boards are open
+  // whenever the suite happens to run, which is the precondition these tests
+  // want — not a particular calendar day.
+  const today = phtCalendarDate(new Date()).weekday;
+  await setScheduleRecurrence({
+    openDay: today, openTime: '00:00', closeDay: today, closeTime: '00:00',
   });
+}
+
+/**
+ * Takes both boards dark by clearing the schedule.
+ *
+ * "Elapsed" and "not yet opened" are the same state to every caller — the
+ * boards are shut — so there is one helper rather than two that differ only in
+ * which side of the window they sit on.
+ */
+export async function closeBoards(): Promise<void> {
+  const { setScheduleRecurrence } = await import('@/lib/settings');
+  await setScheduleRecurrence({ openDay: null, openTime: null, closeDay: null, closeTime: null });
 }
 
 export async function makeUser(
@@ -77,9 +94,11 @@ export async function makeProduct(
   overrides: Partial<{
     pricePhp: number; stock: number; name: string; spec: string;
     isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
-    // The group buy permission and its terms. Off by default: most tests are
-    // about the shop, and a flagged product auto-lists on both boards.
-    isGroupBuy: boolean; isActive: boolean;
+    // The two board channels, independent of each other: isGroupBuy is the
+    // campaign board, isKahati the vial counters (lib/product-channels.ts).
+    // Both off by default: most tests are about the shop, and a flagged product
+    // auto-lists on its board.
+    isGroupBuy: boolean; isKahati: boolean; isActive: boolean;
     gbPricePerKitPhp: number | null; gbMinVials: number | null; gbMaxVialsPerBatch: number | null;
   }> = {},
 ): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
@@ -100,6 +119,9 @@ export async function makeProduct(
     onHandPiecePhp: onHandPiecePhp != null ? String(onHandPiecePhp) : null,
     onHandKitPhp: onHandKitPhp != null ? String(onHandKitPhp) : null,
     isGroupBuy: overrides.isGroupBuy ?? false,
+    // Defaults to the group buy flag, so the many tests written before channels
+    // split still get the counter they expect from `isGroupBuy: true` alone.
+    isKahati: overrides.isKahati ?? overrides.isGroupBuy ?? false,
     gbPricePerKitPhp: overrides.gbPricePerKitPhp != null ? String(overrides.gbPricePerKitPhp) : null,
     gbMinVials: overrides.gbMinVials ?? null,
     gbMaxVialsPerBatch: overrides.gbMaxVialsPerBatch ?? null,
@@ -111,6 +133,9 @@ export async function makeGroupBuy(
   overrides: Partial<{
     totalSlots: number; claimedSlots: number; minVials: number; repackFeePhp: number;
     pricePerKitPhp: number; name: string; closesAt: Date | null;
+    // The catalog product this counter is for. A counter without one is a
+    // free-text row an admin made by hand — which is why it is optional here.
+    productId: string | null;
     status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
   }> = {},
 ): Promise<{ id: string; totalSlots: number; minVials: number }> {
@@ -122,6 +147,7 @@ export async function makeGroupBuy(
     totalSlots, claimedSlots: overrides.claimedSlots ?? 0, minVials,
     repackFeePhp: String(overrides.repackFeePhp ?? 150), status: overrides.status ?? 'open',
     closesAt: overrides.closesAt ?? null,
+    productId: overrides.productId ?? null,
   }).returning();
   return { id: row.id, totalSlots, minVials };
 }
@@ -191,18 +217,28 @@ export async function makePaymentMethod(
 // Builds the multipart Request a checkout route handler expects.
 export function checkoutRequest(
   items: unknown,
-  opts: { withProof?: boolean; paymentMethod?: string; courier?: string; idempotencyKey?: string } = {},
+  opts: {
+    withProof?: boolean; paymentMethod?: string; courier?: string;
+    idempotencyKey?: string; note?: string;
+    /** How many proofs to attach — a customer who paid in several transfers. */
+    proofCount?: number;
+  } = {},
 ): Request {
   const form = new FormData();
   form.set('items', JSON.stringify(items));
   form.set('shipName', SHIPPING.shipName);
   form.set('shipPhone', SHIPPING.shipPhone);
   form.set('shipAddress', SHIPPING.shipAddress);
+  if (opts.note !== undefined) form.set('note', opts.note);
   if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.courier) form.set('courier', opts.courier);
   if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
   if (opts.withProof !== false) {
-    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
+    // Appended under one repeated field name, which is what a multi-file input
+    // posts and what the route reads with getAll().
+    for (let i = 0; i < (opts.proofCount ?? 1); i++) {
+      form.append('proof', new File([Buffer.from(`fake-proof-${i}`)], `proof-${i}.png`, { type: 'image/png' }));
+    }
   }
   return new Request('http://localhost/api/orders', { method: 'POST', body: form });
 }
@@ -211,13 +247,21 @@ export function checkoutRequest(
 // route picks the orders to settle itself, so the client sends payment details
 // only — never a list of orders it could under- or over-report.
 export function settlementRequest(
-  opts: { withProof?: boolean; paymentMethod?: string; idempotencyKey?: string } = {},
+  opts: {
+    withProof?: boolean; paymentMethod?: string; idempotencyKey?: string;
+    /** How many proofs to attach — a customer who paid in several transfers. */
+    proofCount?: number;
+  } = {},
 ): Request {
   const form = new FormData();
   if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
   if (opts.withProof !== false) {
-    form.set('proof', new File([Buffer.from('fake-proof-image')], 'proof.png', { type: 'image/png' }));
+    // Appended under one repeated field name, which is what a multi-file input
+    // posts and what the route reads with getAll().
+    for (let i = 0; i < (opts.proofCount ?? 1); i++) {
+      form.append('proof', new File([Buffer.from(`fake-proof-${i}`)], `proof-${i}.png`, { type: 'image/png' }));
+    }
   }
   return new Request('http://localhost/api/settlements', { method: 'POST', body: form });
 }

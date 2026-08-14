@@ -69,12 +69,13 @@ export default function AdminSettlementsPage() {
               <th className="px-4 py-3">Packing fee</th>
               <th className="px-4 py-3">Total paid</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Proof</th>
               <th className="px-4 py-3">Sent</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
-            {isLoading ? <tr><td className="px-4 py-6 text-ink-muted" colSpan={8}>Loading…</td></tr> :
+            {isLoading ? <tr><td className="px-4 py-6 text-ink-muted" colSpan={9}>Loading…</td></tr> :
               settlements.length ? settlements.map((s) => (
                 <tr key={s.id} className="border-b border-line-soft/60">
                   <td className="px-4 py-3">
@@ -91,6 +92,26 @@ export default function AdminSettlementsPage() {
                       {STATUS_LABEL[s.status]}
                     </span>
                     {s.paidAt && <div className="mt-0.5 text-[11px] text-ink-muted">{shortDate(s.paidAt)}</div>}
+                  </td>
+                  {/* Every transfer, not just the first. A settlement clears
+                      several hatians at once, so it is the payment a bank's
+                      per-transfer cap most often splits — and one screenshot of
+                      a three-part payment reads as underpaid. */}
+                  <td className="px-4 py-3">
+                    {s.proofs?.length
+                      ? (
+                        <div className="flex flex-col gap-0.5">
+                          {s.proofs.map((p, i) => (
+                            <a
+                              key={p.id} href={p.url} target="_blank" rel="noreferrer"
+                              className="text-[12px] font-semibold text-brand-blue hover:underline"
+                            >
+                              🧾 Proof #{i + 1}
+                            </a>
+                          ))}
+                        </div>
+                      )
+                      : <span className="text-[11.5px] text-ink-muted">No proof</span>}
                   </td>
                   <td className="px-4 py-3 text-ink-muted">{shortDate(s.createdAt)}</td>
                   <td className="px-4 py-3">
@@ -110,7 +131,7 @@ export default function AdminSettlementsPage() {
                     )}
                   </td>
                 </tr>
-              )) : <tr><td className="px-4 py-6 text-ink-muted" colSpan={8}>No final checkouts yet.</td></tr>}
+              )) : <tr><td className="px-4 py-6 text-ink-muted" colSpan={9}>No final checkouts yet.</td></tr>}
           </tbody>
         </table>
       </div>

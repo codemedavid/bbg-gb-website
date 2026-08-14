@@ -285,7 +285,9 @@ describe('repeat commitments to the same group buy', () => {
     expect(Number(body.data.order.packingFeePhp)).toBe(0);
   });
 
-  it('still charges the fee for a different group buy', async () => {
+  it('charges nothing for a different group buy in the same cycle', async () => {
+    // The fee follows the CYCLE, not the campaign series: everything joined
+    // between one opening and the next ships as one parcel.
     await signIn();
     const joined = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
     const other = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
@@ -293,10 +295,10 @@ describe('repeat commitments to the same group buy', () => {
 
     const { body } = await checkout([campaignLine(other.id)]);
 
-    expect(Number(body.data.order.packingFeePhp)).toBe(300);
+    expect(Number(body.data.order.packingFeePhp)).toBe(0);
   });
 
-  it('charges one fee for a cart mixing a paid-for group buy with a new one', async () => {
+  it('charges nothing for a cart of group buys once the cycle is paid for', async () => {
     await signIn();
     const joined = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
     const other = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
@@ -304,10 +306,13 @@ describe('repeat commitments to the same group buy', () => {
 
     const { body } = await checkout([campaignLine(joined.id), campaignLine(other.id)]);
 
-    expect(Number(body.data.order.packingFeePhp)).toBe(300);
+    expect(Number(body.data.order.packingFeePhp)).toBe(0);
   });
 
-  it('charges the fee again once the parcel has shipped', async () => {
+  it('charges nothing more even after the first order ships', async () => {
+    // A cycle is a fixed period, not a parcel that can leave early. The
+    // customer paid to have this cycle's goods packed; shipping one of the
+    // orders sooner is not a reason to charge them for it a second time.
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
     const { body: first } = await checkout([campaignLine(c.id)]);
@@ -316,18 +321,19 @@ describe('repeat commitments to the same group buy', () => {
 
     const { body } = await checkout([campaignLine(c.id)]);
 
-    expect(Number(body.data.order.packingFeePhp)).toBe(300);
+    expect(Number(body.data.order.packingFeePhp)).toBe(0);
   });
 
-  it('does not treat a fee-waived order as the one that paid', async () => {
-    // Order #1 paid the fee, #2 rode on it for free. Once #1 ships, #3 must pay
-    // its own — waiving it off #2 would let the fee be dodged forever.
+  it('does not let a fee-waived order alone carry the cycle', async () => {
+    // Order #1 paid the fee, #2 rode on it for free. Cancelling #1 leaves only
+    // a waived order behind, and a waived order is no source of a further
+    // waiver — otherwise the fee chains away forever and nobody ever pays.
     await signIn();
     const c = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
     const { body: first } = await checkout([campaignLine(c.id)]);
     await checkout([campaignLine(c.id)]);
     const db = await getDb();
-    await db.update(orders).set({ status: 'shipped' }).where(eq(orders.id, first.data.order.id));
+    await db.update(orders).set({ status: 'cancelled' }).where(eq(orders.id, first.data.order.id));
 
     const { body } = await checkout([campaignLine(c.id)]);
 
@@ -372,5 +378,22 @@ describe('repeat commitments to the same group buy', () => {
     const { body } = await checkout([campaignLine(c.id)]);
 
     expect(Number(body.data.order.packingFeePhp)).toBe(300);
+  });
+
+  it('charges one cycle fee when the same customer checks out concurrently', async () => {
+    const user = await signIn();
+    const c = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
+
+    const placed = await Promise.all([
+      checkout([campaignLine(c.id)], { idempotencyKey: 'cycle-race-11111111' }),
+      checkout([campaignLine(c.id)], { idempotencyKey: 'cycle-race-22222222' }),
+    ]);
+
+    expect(placed.map(({ res }) => res.status)).toEqual([201, 201]);
+
+    const rows = await (await getDb()).select({ packingFeePhp: orders.packingFeePhp })
+      .from(orders)
+      .where(eq(orders.userId, user.id));
+    expect(rows.map((row) => Number(row.packingFeePhp)).sort((a, b) => a - b)).toEqual([0, 300]);
   });
 });

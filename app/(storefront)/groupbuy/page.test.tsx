@@ -30,7 +30,7 @@ const GroupBuyPage = (await import('./page')).default;
 const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
   id: 'c1', name: 'Retatrutide 20mg', pricePerKitPhp: '9000.00', moq: 10, committed: 4,
   perCustomerMin: 1,
-  shippingPhp: '300.00', status: 'open', deadline: null,
+  shippingPhp: '300.00', status: 'open', opensAt: null, deadline: null,
   includedProducts: [], arrivalGroup: 'white_powder', description: null,
   createdAt: '2026-07-01T00:00:00Z',
   seriesId: 'c1', batchNo: 1,
@@ -124,5 +124,154 @@ describe('GroupBuyPage — board rendering', () => {
     render(<GroupBuyPage />);
 
     expect(screen.getByRole('button', { name: /go to kahati/i })).toBeInTheDocument();
+  });
+});
+
+// Card headings, read in DOM order — the list doubles as the board's ordering.
+const cardNames = (): string[] =>
+  screen.queryAllByRole('heading', { level: 3 }).map((h) => h.textContent ?? '');
+
+describe('GroupBuyPage — search', () => {
+  beforeEach(() => {
+    authState = signedIn;
+    campaignState = {
+      data: [
+        campaign({ id: 'reta', name: 'Retatrutide 20mg', committed: 8 }),
+        campaign({ id: 'sema', name: 'Semaglutide 5mg', committed: 2 }),
+        campaign({ id: 'aod', name: 'AOD9604 Pro Max', committed: 5 }),
+      ],
+      isLoading: false,
+    };
+  });
+
+  it('narrows the board to campaigns matching the name', async () => {
+    render(<GroupBuyPage />);
+
+    await userEvent.type(screen.getByRole('searchbox'), 'semaglutide');
+
+    expect(cardNames()).toEqual(['Semaglutide 5mg']);
+  });
+
+  it('matches a product carried inside the batch, not only the batch title', async () => {
+    // A campaign named "August Peptide Run" still holds Tirzepatide vials, and
+    // the customer searches for the vial.
+    campaignState = {
+      data: [campaign({
+        id: 'aug', name: 'August Peptide Run',
+        includedProducts: [{ productId: 'p1', name: 'Tirzepatide 30mg' }],
+      })],
+      isLoading: false,
+    };
+    render(<GroupBuyPage />);
+
+    await userEvent.type(screen.getByRole('searchbox'), 'tirzepatide');
+
+    expect(cardNames()).toEqual(['August Peptide Run']);
+  });
+
+  it('matches the variant/specification', async () => {
+    render(<GroupBuyPage />);
+
+    await userEvent.type(screen.getByRole('searchbox'), '20mg');
+
+    expect(cardNames()).toEqual(['Retatrutide 20mg']);
+  });
+
+  it('reports an empty search distinctly from an empty board', async () => {
+    render(<GroupBuyPage />);
+
+    await userEvent.type(screen.getByRole('searchbox'), 'insulin');
+
+    expect(screen.getByText(/no group buys match/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no group buys open right now/i)).not.toBeInTheDocument();
+  });
+
+  it('searches closed batches too, so a customer is not told we never carried it', async () => {
+    campaignState = {
+      data: [campaign({ id: 'done', name: 'Retatrutide 20mg', status: 'approved', outcome: 'processing' })],
+      isLoading: false,
+    };
+    render(<GroupBuyPage />);
+
+    await userEvent.type(screen.getByRole('searchbox'), 'retatrutide');
+
+    expect(cardNames()).toEqual(['Retatrutide 20mg']);
+    expect(screen.getByRole('heading', { name: /^closed$/i })).toBeInTheDocument();
+  });
+});
+
+describe('GroupBuyPage — sorting', () => {
+  beforeEach(() => {
+    authState = signedIn;
+    campaignState = {
+      data: [
+        campaign({ id: 'reta', name: 'Retatrutide 20mg', committed: 8 }),
+        campaign({ id: 'sema', name: 'Semaglutide 5mg', committed: 2 }),
+        campaign({ id: 'aod', name: 'AOD9604 Pro Max', committed: 5 }),
+      ],
+      isLoading: false,
+    };
+  });
+
+  it('leaves the admin-configured order alone by default', () => {
+    render(<GroupBuyPage />);
+
+    expect(cardNames()).toEqual(['Retatrutide 20mg', 'Semaglutide 5mg', 'AOD9604 Pro Max']);
+  });
+
+  it('sorts A–Z', async () => {
+    render(<GroupBuyPage />);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /sort/i }), 'az');
+
+    expect(cardNames()).toEqual(['AOD9604 Pro Max', 'Retatrutide 20mg', 'Semaglutide 5mg']);
+  });
+
+  it('sorts Z–A', async () => {
+    render(<GroupBuyPage />);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /sort/i }), 'za');
+
+    expect(cardNames()).toEqual(['Semaglutide 5mg', 'Retatrutide 20mg', 'AOD9604 Pro Max']);
+  });
+
+  it('leads with the most kits committed when asked', async () => {
+    render(<GroupBuyPage />);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /sort/i }), 'progress');
+
+    expect(cardNames()).toEqual(['Retatrutide 20mg', 'AOD9604 Pro Max', 'Semaglutide 5mg']);
+  });
+
+  it('sorts only what the search matched', async () => {
+    campaignState = {
+      data: [
+        campaign({ id: 'r10', name: 'Retatrutide 10mg', committed: 1 }),
+        campaign({ id: 'sema', name: 'Semaglutide 5mg', committed: 9 }),
+        campaign({ id: 'r20', name: 'Retatrutide 20mg', committed: 4 }),
+      ],
+      isLoading: false,
+    };
+    render(<GroupBuyPage />);
+
+    await userEvent.type(screen.getByRole('searchbox'), 'retatrutide');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /sort/i }), 'progress');
+
+    expect(cardNames()).toEqual(['Retatrutide 20mg', 'Retatrutide 10mg']);
+  });
+});
+
+describe('GroupBuyPage — cart shortcut', () => {
+  it('offers a cart shortcut on the board with the live item count', () => {
+    campaignState = { data: [], isLoading: false };
+    useCart.getState().add({
+      key: 'gbuy:c1', kind: 'moq_campaign', refId: 'c1', name: 'Retatrutide — group buy',
+      spec: 'Group buy', unitPricePhp: 9000, minQty: 1, qty: 3,
+    });
+    render(<GroupBuyPage />);
+
+    const cart = screen.getByRole('link', { name: /^cart,/i });
+    expect(cart).toHaveAttribute('href', '/cart');
+    expect(cart).toHaveTextContent('Cart (3)');
   });
 });

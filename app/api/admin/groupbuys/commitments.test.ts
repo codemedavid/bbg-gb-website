@@ -65,7 +65,11 @@ describe('GET /api/admin/groupbuys/[id]/commitments', () => {
     expect(byEmail['ana@example.com'].vials).toBe(3);
     expect(byEmail['ben@example.com'].vials).toBe(2);
     expect(byEmail['ana@example.com'].committedAt).toBeTruthy();
-    expect(byEmail['ana@example.com'].orderNo).toMatch(/^BBG-/);
+    // A hatian commitment is a Kahati order, so it carries the Kahati
+    // reference. This used to read BBG-, back when every system shared one
+    // series and an admin could not tell a hatian order from a group buy one
+    // without opening it (see lib/order-number.ts).
+    expect(byEmail['ana@example.com'].orderNo).toMatch(/^KH-/);
   });
 
   it('reports the downpayment as under review until the proof is confirmed', async () => {
@@ -83,7 +87,10 @@ describe('GET /api/admin/groupbuys/[id]/commitments', () => {
     expect(confirmed.downpayment).toBe('paid');
   });
 
-  it('flags an unpaid final payment and packing fee before the customer settles', async () => {
+  it('flags an unpaid final payment, with the packing fee already settled', async () => {
+    // The packing fee is collected at checkout with the cycle it belongs to, so
+    // it reads as paid from the moment the commitment is made. Only the goods
+    // are still outstanding.
     const gb = await makeGroupBuy({ minVials: 1 });
     await asCustomer('ana@example.com');
     await CHECKOUT(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
@@ -91,11 +98,13 @@ describe('GET /api/admin/groupbuys/[id]/commitments', () => {
 
     const [row] = (await (await GET(req(), ctx(gb.id))).json()).data;
     expect(row.finalPayment).toBe('unpaid');
-    expect(row.packingFee).toBe('unpaid');
-    expect(row.orderBalancePhp).toBe(2700 - 150);
+    expect(row.packingFee).toBe('paid');
+    // ₱2,700 of goods, whole: the ₱150 fee was added to the order and paid, so
+    // it was never taken out of what the vials cost.
+    expect(row.orderBalancePhp).toBe(2700);
   });
 
-  it('turns the packing fee to paid once the settlement is confirmed', async () => {
+  it('keeps the packing fee paid while the balance settles', async () => {
     const gb = await makeGroupBuy({ minVials: 1, repackFeePhp: 150 });
     await asCustomer('ana@example.com');
     await CHECKOUT(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
@@ -105,8 +114,10 @@ describe('GET /api/admin/groupbuys/[id]/commitments', () => {
     await SETTLE(settlementRequest());
 
     await asAdmin();
+    // The fee was paid at checkout; only the balance is under review.
     const [underReview] = (await (await GET(req(), ctx(gb.id))).json()).data;
-    expect(underReview.packingFee).toBe('under_review');
+    expect(underReview.packingFee).toBe('paid');
+    expect(underReview.finalPayment).toBe('under_review');
 
     await db.update(settlements).set({ status: 'paid', paidAt: new Date() });
     const [paid] = (await (await GET(req(), ctx(gb.id))).json()).data;

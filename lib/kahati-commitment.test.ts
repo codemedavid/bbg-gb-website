@@ -2,8 +2,6 @@
 // hatian joined. These are the rules with no database in sight.
 import { describe, it, expect } from 'vitest';
 import {
-  hasOpenKahatiCommitment,
-  kahatiDownpaymentDue,
   summarizeKahatiCommitments,
   type KahatiCommitment,
 } from './kahati-commitment';
@@ -18,46 +16,6 @@ const commitment = (o: Partial<KahatiCommitment> = {}): KahatiCommitment => ({
   lineTotalPhp: 1800,
   placedAt: '2026-07-01T00:00:00.000Z',
   ...o,
-});
-
-describe('hasOpenKahatiCommitment', () => {
-  it('is false for a customer who has never joined a hatian', () => {
-    expect(hasOpenKahatiCommitment([])).toBe(false);
-  });
-
-  it('is true while the hatian they already joined is still open', () => {
-    expect(hasOpenKahatiCommitment([commitment({ kahatiStatus: 'open' })])).toBe(true);
-  });
-
-  it('is false once every hatian they joined has sealed', () => {
-    // A sealed counter's parcel is on its way out; the next join starts a fresh
-    // commitment and pays its own downpayment.
-    expect(hasOpenKahatiCommitment([
-      commitment({ kahatiStatus: 'closed' }),
-      commitment({ kahatiId: 'g2', kahatiStatus: 'shipped' }),
-    ])).toBe(false);
-  });
-
-  it('holds across different hatians — any open one counts, not just the same product', () => {
-    expect(hasOpenKahatiCommitment([
-      commitment({ kahatiId: 'g1', kahatiName: 'Reta 20mg', kahatiStatus: 'closed' }),
-      commitment({ kahatiId: 'g2', kahatiName: 'Tirze 30mg', kahatiStatus: 'open' }),
-    ])).toBe(true);
-  });
-});
-
-describe('kahatiDownpaymentDue', () => {
-  it('charges the downpayment on a first commitment', () => {
-    expect(kahatiDownpaymentDue(1800, 150, false)).toBe(150);
-  });
-
-  it('charges nothing when a commitment is already live', () => {
-    expect(kahatiDownpaymentDue(1800, 150, true)).toBe(0);
-  });
-
-  it('never exceeds the order total on a first commitment', () => {
-    expect(kahatiDownpaymentDue(90, 150, false)).toBe(90);
-  });
 });
 
 describe('summarizeKahatiCommitments', () => {

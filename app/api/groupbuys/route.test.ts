@@ -33,6 +33,13 @@ describe('GET /api/groupbuys', () => {
     expect(body.data[0].id).toBe(open.id);
   });
 
+  it('allows the anonymous board response to be briefly shared at the edge', async () => {
+    const response = await GET();
+
+    expect(response.headers.get('cache-control'))
+      .toBe('public, s-maxage=15, stale-while-revalidate=45');
+  });
+
   it('cancels an expired counter that never reached the 10-vial cap', async () => {
     const stale = await makeGroupBuy({ totalSlots: 10, claimedSlots: 6, closesAt: past() });
 

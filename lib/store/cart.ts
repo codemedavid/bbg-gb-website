@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PACKING_FEE_PHP, isDeferredPackingMode, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
+import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
 import type { MoqCampaign, MoqProduct } from '@/lib/types';
 
 // `kind` is the wire contract with POST /api/orders: app/checkout/page.tsx
@@ -60,8 +60,14 @@ const clampQty = (item: CartItem): CartItem => ({
 
 type CartState = {
   items: CartItem[];
+  // Free-text instructions the customer adds before checkout. Lives on the cart
+  // rather than on the checkout form so it survives the walk back to a board to
+  // add one more thing — and so it is written to every order the cart splits
+  // into, not just the first.
+  note: string;
   add: (item: Omit<CartItem, 'qty'> & { qty?: number }) => void;
   setQty: (key: string, qty: number) => void;
+  setNote: (note: string) => void;
   inc: (key: string) => void;
   dec: (key: string) => void;
   remove: (key: string) => void;
@@ -78,6 +84,7 @@ export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      note: '',
       add: (item) => set((s) => {
         const existing = s.items.find((i) => i.key === item.key);
         const qty = item.qty ?? item.minQty ?? 1;
@@ -89,6 +96,7 @@ export const useCart = create<CartState>()(
       setQty: (key, qty) => set((s) => ({
         items: s.items.map((i) => i.key === key ? clampQty({ ...i, qty }) : i),
       })),
+      setNote: (note) => set({ note }),
       inc: (key) => set((s) => ({ items: s.items.map((i) => i.key === key ? clampQty({ ...i, qty: i.qty + 1 }) : i) })),
       dec: (key) => set((s) => {
         const item = s.items.find((i) => i.key === key);
@@ -96,7 +104,9 @@ export const useCart = create<CartState>()(
         return { items: s.items.map((i) => i.key === key ? { ...i, qty: i.qty - 1 } : i) };
       }),
       remove: (key) => set((s) => ({ items: s.items.filter((i) => i.key !== key) })),
-      clear: () => set({ items: [] }),
+      // The note goes with the items. Leaving it behind would attach this
+      // checkout's instructions to whatever the customer buys next.
+      clear: () => set({ items: [], note: '' }),
       count: () => get().items.reduce((a, i) => a + i.qty, 0),
       subtotal: () => get().items.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
       hasOnHand: () => get().items.some((i) => i.kind === 'product'),
@@ -123,32 +133,91 @@ export const useCart = create<CartState>()(
 // mode the largest listing fee applies, since the parcel costs at least its
 // priciest item to pack. A cart mixing modes adds one fee per mode.
 //
-// Kahati lines add nothing: the hatian fee is deferred and charged once at the
-// final checkout that settles the customer's completed hatian orders. This must
-// stay in step with isDeferredPackingMode in lib/pricing.ts — the two rules
-// diverging is what shows the customer a total the server then disagrees with.
+// The two scheduled boards share ONE fee: Group Buy and Hatian trade in the same
+// weekly cycle and ship one parcel, so a cart holding both pays to have it packed
+// once. This must stay in step with chargeCycleFeeOnce in lib/packing-cycle.ts —
+// the two rules diverging is what shows the customer a total the server then
+// disagrees with.
 //
 // `fees` is the admin-editable set fetched at display time; a per-listing fee on
 // a line still wins over its mode default.
 const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_campaign: 'group_buy', moq_product: 'moq' } as const;
+
+// How the cart presents each mode. The labels are the customer-facing names of
+// the systems — "Kahati" and "Group Buy" are what the tabs say, so the cart
+// must not invent third names for the same things.
+export const CART_MODE_LABEL: Record<PackingMode, string> = {
+  solo: 'On-hand',
+  kahati: 'Kahati',
+  group_buy: 'Group Buy',
+  moq: 'MOQ',
+};
+
+// Fixed emit order, so the cart does not reshuffle its sections between visits
+// depending on what the customer happened to add first. Mirrors PURCHASE_MODES
+// in lib/order-modes.ts, which is the order checkout creates the orders in — so
+// the cart's sections and the resulting order numbers run in the same sequence.
+const CART_MODE_ORDER: readonly PackingMode[] = ['solo', 'kahati', 'group_buy', 'moq'] as const;
+
+export type CartGroup = {
+  mode: PackingMode;
+  label: string;
+  items: CartItem[];
+  /** Units across the group's lines — what the customer is holding, not how many rows. */
+  count: number;
+  subtotal: number;
+};
+
+/**
+ * Split the cart into one labelled group per mode present.
+ *
+ * Group Buy and Kahati are separate systems: separate lifecycles, separate
+ * packing fees, and separate order references once checkout splits the cart
+ * (lib/order-modes.ts splitCartIntoOrders). Listing them as one undifferentiated
+ * pile invites the customer to read them as one order, which is precisely what
+ * the success screen then contradicts. Grouping here is the cart telling the
+ * truth about what checkout is going to do.
+ *
+ * Empty modes are omitted — a heading over nothing is noise.
+ */
+export const groupCartByMode = (items: readonly CartItem[]): CartGroup[] =>
+  CART_MODE_ORDER
+    .map((mode) => {
+      const inMode = items.filter((i) => CART_KIND_MODE[i.kind] === mode);
+      return {
+        mode,
+        label: CART_MODE_LABEL[mode],
+        items: inMode,
+        count: inMode.reduce((a, i) => a + i.qty, 0),
+        subtotal: inMode.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
+      };
+    })
+    .filter((g) => g.items.length > 0);
+/** Cart kinds that belong to the shared trading cycle. */
+const CYCLE_KINDS: readonly CartItem['kind'][] = ['group_buy', 'moq_campaign'];
+
 export const packingFeeFor = (
   items: CartItem[],
   fees: PackingFees = PACKING_FEE_PHP,
-  // Group buy series this customer already has a parcel going in. Lines in one
-  // owe no fee — the parcel was paid for by the order that opened it. Mirrors
-  // campaignPackingFeeDue in lib/campaign-commitment.ts, which is what the
-  // server actually charges.
-  paidSeriesIds: ReadonlySet<string> = new Set(),
+  // Whether this customer has already paid to have this cycle's parcel packed.
+  // Mirrors hasPaidPackingFeeThisCycle in lib/packing-cycle.ts, which is what
+  // the server actually charges against.
+  paidThisCycle = false,
 ): number => {
   const feeByMode = new Map<PackingMode, number>();
+  // The cycle's own fee, charged once across BOTH boards rather than once per
+  // mode: the parcel costs at least its priciest item to pack.
+  let cycleFee = 0;
   for (const i of items) {
     const mode = CART_KIND_MODE[i.kind];
-    if (isDeferredPackingMode(mode)) continue;
-    if (i.kind === 'moq_campaign' && i.seriesId && paidSeriesIds.has(i.seriesId)) continue;
     const fee = i.packingFeePhp ?? fees[mode];
+    if (CYCLE_KINDS.includes(i.kind)) {
+      cycleFee = Math.max(cycleFee, fee);
+      continue;
+    }
     feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
   }
-  let total = 0;
+  let total = paidThisCycle ? 0 : cycleFee;
   for (const fee of feeByMode.values()) total += fee;
   return total;
 };

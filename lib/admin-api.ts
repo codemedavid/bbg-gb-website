@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, Product } from './types';
+import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 
 const toastError = (fallback: string) => (err: unknown) =>
@@ -80,7 +80,10 @@ export const useAdminOrders = (status?: string) =>
 export const useAdminOrder = (id: string | null) =>
   useQuery({
     queryKey: ['admin', 'order', id],
-    queryFn: () => apiGet<{ order: Order; items: OrderItem[]; history: OrderHistory[]; customer: { name: string; email: string; phone: string }; proofUrl: string | null }>(`/admin/orders/${id}`),
+    queryFn: () => apiGet<{ order: Order; items: OrderItem[]; history: OrderHistory[]; customer: { name: string; email: string; phone: string }; proofUrl: string | null;
+      // Every proof the customer attached, oldest first. proofUrl above is the
+      // first of them, kept for readers that have not moved to the list.
+      proofs: PaymentProof[] }>(`/admin/orders/${id}`),
     enabled: !!id,
   });
 
@@ -92,7 +95,18 @@ export function useMutate() {
     archiveProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not archive product.') }),
     saveGroupBuy: useMutation({ mutationFn: (g: any) => g.id ? apiSend(`/admin/groupbuys/${g.id}`, 'PATCH', g) : apiSend('/admin/groupbuys', 'POST', g), onSuccess: invalidate, onError: toastError('Could not save group buy.') }),
     deleteGroupBuy: useMutation({ mutationFn: (id: string) => apiSend(`/admin/groupbuys/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete group buy.') }),
+    // What one transfer was worth. Separate from setOrderStatus because it is a
+    // different question — not "where is this order" but "has it been paid" —
+    // and an admin types several of these against one order without ever
+    // touching its status.
+    setProofAmount: useMutation({ mutationFn: (v: { orderId: string; proofId: string; amountPhp: number | null; reference?: string | null }) => apiSend(`/admin/orders/${v.orderId}/proofs/${v.proofId}`, 'PATCH', { amountPhp: v.amountPhp, reference: v.reference }), onSuccess: invalidate, onError: toastError('Could not record the payment amount.') }),
     setOrderStatus: useMutation({ mutationFn: (v: { id: string; status: string; trackingNo?: string; note?: string; courier?: string; packedBy?: string; paymentMethod?: string }) => apiSend(`/admin/orders/${v.id}/status`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the order.') }),
+    editOrderItems: useMutation({
+      mutationFn: (v: { id: string; items: { id?: string; nameSnapshot: string; specSnapshot?: string | null; qty: number; unitPricePhp: number }[] }) =>
+        apiSend(`/admin/orders/${v.id}`, 'PATCH', { items: v.items }),
+      onSuccess: invalidate,
+      onError: toastError('Could not edit the order items.'),
+    }),
     // Confirming a hatian final checkout is what flips the customer's packing fee
     // and balance to Paid; cancelling releases its orders to be settled again.
     setSettlementStatus: useMutation({ mutationFn: (v: { id: string; status: 'proof_review' | 'paid' | 'cancelled'; notes?: string }) => apiSend(`/admin/settlements/${v.id}`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the settlement.') }),

@@ -13,7 +13,7 @@ import {
 
 const order = (o: Partial<SettleableOrder> = {}): SettleableOrder => ({
   id: 'o1', status: 'payment_confirmed', totalPhp: 6300, downpaymentPhp: 150,
-  packingFeePhp: 0, hatianPackingFeePhp: 150, settlementId: null, ...o,
+  packingFeePhp: 0, hatianPackingFeePhp: 150, cycleKey: null, settlementId: null, ...o,
 });
 
 describe('isReadyToSettle', () => {
@@ -67,7 +67,7 @@ describe('isReadyToSettle', () => {
 });
 
 describe('orderBalance', () => {
-  it('is the total less what was already paid as downpayment', () => {
+  it('is only the remaining amount to collect, not a reduced order total', () => {
     expect(orderBalance(order({ totalPhp: 6300, downpaymentPhp: 150 }))).toBe(6150);
   });
 
@@ -142,5 +142,74 @@ describe('payment states shown to the admin', () => {
 
   it('reports a legacy order’s packing fee as already paid at commit', () => {
     expect(packingFeeState(order({ packingFeePhp: 150 }), null)).toBe('paid');
+  });
+});
+
+describe('orders placed under the per-cycle packing fee', () => {
+  // Three generations of order meet in this flow and each needs different
+  // treatment. The middle one is why the legacy guard cannot simply be
+  // inverted, and the last is why it cannot be left alone.
+  //
+  //   1. legacy      — fee charged at commit, no cycle. Never settled here.
+  //   2. deferred    — no fee, no cycle. Settled, and the fee is collected now.
+  //   3. per-cycle   — cycle stamped; the fee was paid at checkout. Settled,
+  //                    and NO fee is collected again.
+
+  it('settles an order that paid its packing fee at checkout', () => {
+    // The regression this test exists for: the legacy guard excluded every
+    // order carrying a fee, which under the per-cycle rule is every new order —
+    // silently making all of them unsettleable.
+    expect(isReadyToSettle({
+      status: 'payment_confirmed', settlementId: null, groupBuyStatuses: ['closed'],
+      packingFeePhp: 150, cycleKey: '2026-08-05T12:00:00.000Z',
+    })).toBe(true);
+  });
+
+  it('settles an order whose cycle fee was waived', () => {
+    expect(isReadyToSettle({
+      status: 'payment_confirmed', settlementId: null, groupBuyStatuses: ['closed'],
+      packingFeePhp: 0, cycleKey: '2026-08-05T12:00:00.000Z',
+    })).toBe(true);
+  });
+
+  it('still keeps a legacy order out of the flow', () => {
+    // A fee with no cycle is an order placed before cycles existed, whose
+    // balance was settled off-platform. Quoting it here would ask the customer
+    // to pay again.
+    expect(isReadyToSettle({
+      status: 'payment_confirmed', settlementId: null, groupBuyStatuses: ['closed'],
+      packingFeePhp: 150, cycleKey: null,
+    })).toBe(false);
+  });
+
+  it('charges no second packing fee at settlement', () => {
+    // The fee was paid at checkout with the cycle it belongs to.
+    const t = settlementTotals([
+      order({ packingFeePhp: 150, hatianPackingFeePhp: 150, cycleKey: '2026-08-05T12:00:00.000Z' }),
+    ]);
+
+    expect(t.packingFeePhp).toBe(0);
+    expect(t.totalPhp).toBe(t.balancePhp);
+  });
+
+  it('charges no fee for a waived cycle order either', () => {
+    const t = settlementTotals([
+      order({ packingFeePhp: 0, hatianPackingFeePhp: 150, cycleKey: '2026-08-05T12:00:00.000Z' }),
+    ]);
+
+    expect(t.packingFeePhp).toBe(0);
+  });
+
+  it('still collects the deferred fee for an order placed before cycles existed', () => {
+    // Generation 2 keeps working exactly as it did: no fee on the order, no
+    // cycle, so the settlement collects the one fee it always did.
+    const t = settlementTotals([order({ packingFeePhp: 0, hatianPackingFeePhp: 150, cycleKey: null })]);
+
+    expect(t.packingFeePhp).toBe(150);
+  });
+
+  it('reads the packing fee as paid on a per-cycle order', () => {
+    expect(packingFeeState({ settlementId: null, packingFeePhp: 0, cycleKey: '2026-08-05T12:00:00.000Z' }, null))
+      .toBe('paid');
   });
 });

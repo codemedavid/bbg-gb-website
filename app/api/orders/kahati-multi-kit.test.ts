@@ -70,7 +70,8 @@ describe('kahati commitment larger than one full kit', () => {
     // One commitment is one order however many counters it spans, and the hatian
     // parcel is still billed a single packing fee at settlement — not one per kit.
     expect(kahatiOrders).toHaveLength(1);
-    expect(Number(kahatiOrders[0].packingFeePhp)).toBe(0);
+    // One fee for the whole commitment, however many counters it spanned.
+    expect(Number(kahatiOrders[0].packingFeePhp)).toBe(150);
     expect(Number(kahatiOrders[0].subtotalPhp)).toBe(25 * 900);
 
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, kahatiOrders[0].id));

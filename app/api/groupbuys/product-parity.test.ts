@@ -114,12 +114,9 @@ describe('the hatian board mirrors the group buy product list', () => {
   it('writes nothing while the boards are shut', async () => {
     // The gate comes first: a request to a closed board must not reconcile,
     // or an anonymous read would seed the catalog outside trading hours.
-    const { setGroupBuySchedule } = await import('@/lib/settings');
+    const { closeBoards } = await import('@/lib/test/harness');
     await flagged('Retatrutide');
-    await setGroupBuySchedule({
-      opensAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      closesAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    });
+    await closeBoards();
 
     expect((await GET()).status).toBe(404);
     expect(await (await getDb()).select().from(groupBuys)).toHaveLength(0);

@@ -27,9 +27,8 @@ vi.mock('@/lib/queries', () => ({
     data: [{ id: 'pm1', label: 'GCash', accountName: 'BBG', accountNumber: '0917', qrUrl: null }],
   }),
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300 } }),
-  useKahatiDownpayment: () => ({ data: 150 }),
   useKahatiCommitments: () => ({ data: kahatiCommitments.current }),
-  useCampaignPackingFeeWaivers: () => ({ data: undefined }),
+  useCyclePackingFeePaid: () => ({ data: false }),
 }));
 
 const CheckoutPage = (await import('./page')).default;
@@ -49,11 +48,13 @@ const seedCart = () => {
   });
 };
 
-// The page guards on `proof`, so a successful placement needs a file attached.
-const attachProof = async () => {
+// The page guards on having at least one proof, so a successful placement needs
+// a file attached. `count` covers the customer who paid in several transfers.
+const attachProof = async (count = 1) => {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-  const file = new File([Buffer.from('proof')], 'proof.png', { type: 'image/png' });
-  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  const files = Array.from({ length: count }, (_, i) =>
+    new File([Buffer.from(`proof-${i}`)], `proof-${i}.png`, { type: 'image/png' }));
+  Object.defineProperty(input, 'files', { value: files, configurable: true });
   input.dispatchEvent(new Event('change', { bubbles: true }));
 };
 
@@ -145,6 +146,39 @@ describe('CheckoutPage', () => {
     expect(body.get('courier')).toBe('Lalamove');
   });
 
+  it('sends every attached proof, so three transfers arrive as three files', async () => {
+    // The customer whose bank capped each transfer at ₱2,000. All three
+    // screenshots have to reach the server on the one submission — the route
+    // reads them with getAll('proof').
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof(3);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+    const body = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].body as FormData;
+    expect(body.getAll('proof')).toHaveLength(3);
+  });
+
+  it('leaves a removed proof out of the submission', async () => {
+    // §16's removal case. The file the customer took back out must not be
+    // filed against the order they actually placed.
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof(3);
+
+    screen.getByRole('button', { name: /remove proof 2/i }).click();
+    await waitFor(() => expect(screen.queryByText('Proof #3')).not.toBeInTheDocument());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+    const body = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].body as FormData;
+    const sent = body.getAll('proof') as File[];
+    expect(sent.map((f) => f.name)).toEqual(['proof-0.png', 'proof-2.png']);
+  });
+
   it('shields the customer from deploy jargon when uploads are unconfigured', async () => {
     // The order API answers a missing ImageKit config with a 503 whose message
     // names STORAGE_DRIVER / IMAGEKIT_*. The customer must never see that.
@@ -232,7 +266,7 @@ describe('CheckoutPage with a kahati commitment already live', () => {
     });
   };
   const alreadyCommitted = {
-    downpaymentWaived: true,
+    paidThisCycle: true,
     commitments: [],
     summary: {
       groups: [{ kahatiName: 'Reta 20mg', vials: 5, totalPhp: 4500, orderNos: ['BBG-2418', 'BBG-2419'] }],

@@ -61,7 +61,9 @@ describe('GET /api/admin/settlements', () => {
 
     expect(body.data).toHaveLength(1);
     expect(body.data[0]).toMatchObject({ status: 'proof_review', orderCount: 1 });
-    expect(Number(body.data[0].packingFeePhp)).toBe(150);
+    // Nothing for packing: the fee was collected at checkout with the cycle
+    // the commitment was made in, so the settlement covers the goods only.
+    expect(Number(body.data[0].packingFeePhp)).toBe(0);
     expect(body.data[0].customerEmail).toBeTruthy();
   });
 
@@ -106,7 +108,10 @@ describe('PATCH /api/admin/settlements/[id]', () => {
     session.current = customerSession;
     const quote = await (await PREVIEW()).json();
     expect(quote.data.orders.length).toBeGreaterThan(0);
-    expect(quote.data.totals.packingFeePhp).toBeGreaterThan(0);
+    // Still no packing fee to quote — cancelling a settlement releases the
+    // orders, it does not un-pay a fee that was collected at checkout.
+    expect(quote.data.totals.packingFeePhp).toBe(0);
+    expect(quote.data.totals.balancePhp).toBeGreaterThan(0);
   });
 
   it('re-attaches the released orders when a cancelled settlement is confirmed after all', async () => {
@@ -191,5 +196,42 @@ describe('PATCH /api/admin/settlements/[id]', () => {
     await asAdmin();
     const res = await PATCH(patch('paid'), ctx('00000000-0000-0000-0000-000000000000'));
     expect(res.status).toBe(404);
+  });
+});
+
+// §12's guarantee, for the other payment flow: the admin verifying a settlement
+// paid in three transfers must see all three.
+describe('GET /api/admin/settlements — payment proofs', () => {
+  // Like settledCustomer above, but choosing how many transfers paid it.
+  async function settledWith(proofCount: number): Promise<void> {
+    const user = await makeUser({ role: 'customer' });
+    session.current = { sub: user.id, role: 'customer', email: user.email };
+    const gb = await makeGroupBuy({ minVials: 1, pricePerKitPhp: 9000, repackFeePhp: 150 });
+    await CHECKOUT(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }]));
+    const db = await getDb();
+    await db.update(groupBuys).set({ status: 'closed' }).where(eq(groupBuys.id, gb.id));
+    await SETTLE(settlementRequest({ proofCount }));
+  }
+
+  it('returns every proof of a settlement, each with its own URL', async () => {
+    await settledWith(3);
+    await asAdmin();
+
+    const body = await (await GET(new Request('http://localhost/api/admin/settlements'))).json();
+    const row = body.data[0] as { proofs: { url: string; sortOrder: number }[] };
+
+    expect(row.proofs).toHaveLength(3);
+    expect(row.proofs.map((p) => p.sortOrder)).toEqual([0, 1, 2]);
+    expect(new Set(row.proofs.map((p) => p.url)).size).toBe(3);
+  });
+
+  it('sends fetchable URLs, never raw storage keys', async () => {
+    await settledWith(1);
+    await asAdmin();
+
+    const body = await (await GET(new Request('http://localhost/api/admin/settlements'))).json();
+    const row = body.data[0] as { proofs: { url: string }[] };
+
+    expect(row.proofs[0].url).toBeTruthy();
   });
 });

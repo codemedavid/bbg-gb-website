@@ -5,11 +5,17 @@
 // parcel), so a mixed-cart total sums one packing fee per mode present — never one
 // per product. Buying several different vials/products in one parcel is one fee.
 //
-// Kahati (Hatian) is the exception: its fee is DEFERRED. Committing to a hatian
-// charges the downpayment only, because a customer may join many hatians over
-// weeks and they all ship as one parcel in the end. The fee is collected once,
-// at the final checkout where the customer settles every completed hatian order
-// (see settlementPackingFee and lib/settlement.ts).
+// One fee per TRADING CYCLE on the two scheduled boards. Group Buy and Hatian
+// share one weekly cycle (lib/schedule-recurrence.ts) and one parcel, so a
+// customer who joins a hatian and a group buy in the same week pays to have that
+// parcel packed once. The rule lives in lib/packing-cycle.ts and reaches this
+// module as a per-item fee of 0 on the orders it waives.
+//
+// The hatian fee is charged AT CHECKOUT, on top of the goods: ₱4,000 of product
+// plus ₱150 to pack it is a ₱4,150 order, of which the ₱150 is paid now and the
+// ₱4,000 is settled after the hatian ends. It is never taken out of the product
+// total. Legacy orders placed while the fee was deferred to the final checkout
+// are still settled that way — see settlementPackingFee and lib/settlement.ts.
 
 // Per-mode packing-fee defaults (PHP, local shipping included). Admin-editable:
 // these are the fallback defaults; a per-listing override on the item wins.
@@ -20,11 +26,6 @@
 export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300, moq: 300 } as const;
 export type PackingMode = keyof typeof PACKING_FEE_PHP;
 export type PackingFees = Record<PackingMode, number>;
-
-// Default downpayment (PHP) a customer pays at checkout to reserve kahati slots.
-// Deducted from the order total — the balance is collected after the kahati ends.
-// Admin-editable via the `kahati_downpayment` settings key; this is the fallback.
-export const KAHATI_DOWNPAYMENT_PHP = 150;
 
 export const KAHATI_MIN_VIALS = 1;    // min vials one person may commit to a hatian
 export const VIALS_PER_KIT = 10;      // 1 kit = 10 vials
@@ -74,27 +75,18 @@ const KIND_MODE: Record<PriceableItem['kind'], PackingMode> = {
   moq_product: 'moq',
 };
 
-// Modes whose packing fee is deferred to a later settlement rather than charged
-// at checkout. Only kahati defers: its parcel is not assembled until every
-// hatian the customer joined has completed.
-export const DEFERRED_PACKING_MODES: readonly PackingMode[] = ['kahati'] as const;
-
-export const isDeferredPackingMode = (mode: PackingMode): boolean =>
-  DEFERRED_PACKING_MODES.includes(mode);
-
-// Total packing fee due AT CHECKOUT: one fee per charged-at-checkout mode present
-// (each mode ships as its own parcel). Client rule — "packing fee per checkout,
-// hindi per product": buying several different vials/products that ship together
-// is one fee, not one each. When listings within a mode carry different
-// per-listing fees, the parcel is charged the largest — it costs at least its
-// priciest item to pack. Kahati lines contribute nothing here; their fee is
-// collected once at settlement. Local shipping is already included in every
-// packing fee; no separate shipping or admin fee is ever added.
+// Total packing fee due AT CHECKOUT: one fee per mode present (each mode ships
+// as its own parcel). Client rule — "packing fee per checkout, hindi per
+// product": buying several different vials/products that ship together is one
+// fee, not one each. When listings within a mode carry different per-listing
+// fees, the parcel is charged the largest — it costs at least its priciest item
+// to pack. A line the cycle rule has waived arrives here carrying a fee of 0 and
+// so adds nothing. Local shipping is already included in every packing fee; no
+// separate shipping or admin fee is ever added.
 export function packingFeeFor(items: PriceableItem[]): number {
   const feeByMode = new Map<PackingMode, number>();
   for (const item of items) {
     const mode = KIND_MODE[item.kind];
-    if (isDeferredPackingMode(mode)) continue;
     const fee = item.packingFeePhp ?? PACKING_FEE_PHP[mode];
     feeByMode.set(mode, Math.max(feeByMode.get(mode) ?? 0, fee));
   }
@@ -139,19 +131,6 @@ export function computeTotals(items: PriceableItem[]): OrderTotals {
 // Per-vial price for a kahati kit.
 export function perVialPrice(pricePerKitPhp: number): number {
   return round2(pricePerKitPhp / VIALS_PER_KIT);
-}
-
-export type KahatiDownpaymentSplit = { downpayment: number; balance: number };
-
-// Split a kahati order total into the downpayment due at checkout and the
-// balance payable after the kahati ends. The downpayment is clamped to
-// [0, total] so a small order never yields a negative balance.
-export function splitKahatiDownpayment(
-  total: number,
-  downpaymentPhp: number = KAHATI_DOWNPAYMENT_PHP,
-): KahatiDownpaymentSplit {
-  const downpayment = round2(Math.min(Math.max(downpaymentPhp, 0), total));
-  return { downpayment, balance: round2(total - downpayment) };
 }
 
 // Validate a kahati commitment against min vials and remaining slots.

@@ -50,12 +50,16 @@ export function kahatiClaimedDisplay(claimedSlots: number, totalSlots: number): 
   return Math.min(totalSlots, Math.max(0, claimedSlots));
 }
 
-export type KahatiStatus = 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+export type KahatiStatus = 'scheduled' | 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
 
 // Board badge for a hatian. It counts toward the 7-vial minimum rather than the
 // cap, because that is the number that decides whether the batch gets ordered at
 // all — "2 MORE TO GO" tells a customer their join actually matters.
 export function kahatiBadge(status: KahatiStatus, claimedSlots: number, totalSlots: number): string {
+  // A counter waiting on its open date has not closed — it has not started.
+  // Distinguished because "CLOSED" on a counter that opens on Monday reads as a
+  // dead listing to the one person who can see it.
+  if (status === 'scheduled') return 'SCHEDULED';
   if (status !== 'open') return 'CLOSED';
   if (claimedSlots >= totalSlots) return 'FULL';
   if (isKahatiViable(claimedSlots)) return 'GOOD TO GO';

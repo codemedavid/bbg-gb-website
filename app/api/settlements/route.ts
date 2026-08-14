@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
-import { getDb, orders, paymentMethods, settlements, users } from '@/lib/db';
+import { getDb, orders, paymentMethods, settlements, settlementPaymentProofs, users } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { settlementTotals } from '@/lib/settlement';
 import { readySettlementOrders, findReplayedSettlement } from '@/lib/settlement-server';
-import { validateAndStoreProof } from '@/lib/proof';
+import { validateAndStoreProofs } from '@/lib/proof';
 import { sendEmail, settlementPlacedEmail } from '@/lib/email';
 import { captureEvent } from '@/lib/posthog';
 
@@ -40,9 +40,12 @@ export const POST = handler(async (req: Request) => {
     if (replayed) return ok({ settlement: replayed }, 201);
   }
 
-  // Store the proof before opening the transaction — external side effect. A
-  // rolled-back settlement leaves an orphaned object, which is harmless.
-  const proofKey = await validateAndStoreProof(form.get('proof'));
+  // Every proof the customer attached. A settlement is usually the largest
+  // payment they make — every hatian's balance plus the packing fee — so it is
+  // the one a bank's per-transfer cap is most likely to split in two or three.
+  // Stored before the transaction opens (external side effect); a rolled-back
+  // settlement leaves harmless orphaned objects.
+  const proofKeys = await validateAndStoreProofs(form.getAll('proof'));
 
   const settle = () => db.transaction(async (tx) => {
     // Reject a payment method the customer could not actually have chosen.
@@ -66,9 +69,18 @@ export const POST = handler(async (req: Request) => {
       balancePhp: String(totals.balancePhp),
       totalPhp: String(totals.totalPhp),
       paymentMethod: body.paymentMethod ?? null,
-      paymentProofKey: proofKey,
+      // The first proof, kept in the original column so the admin list and any
+      // other reader of it keep working. The full set goes to
+      // settlement_payment_proofs below.
+      paymentProofKey: proofKeys[0] ?? null,
       idempotencyKey: body.idempotencyKey ?? null,
     }).returning();
+
+    // Every proof rides on the one settlement — three transfers are three
+    // pieces of evidence for a single payment, never three settlements.
+    await tx.insert(settlementPaymentProofs).values(proofKeys.map((storageKey, i) => ({
+      settlementId: settlement.id, storageKey, sortOrder: i,
+    })));
 
     // Claim the orders. The guard lives in the WHERE clause and RETURNING decides
     // what this settlement actually took, so two concurrent final checkouts
@@ -128,6 +140,9 @@ export const POST = handler(async (req: Request) => {
     event: 'settlement_placed',
     distinctId: session.sub,
     email: session.email,
+    // Same name the email above greets with — PostHog sends the real mail, so
+    // omitting it here is what actually reaches the customer as a blast.
+    name: customer?.name ?? undefined,
     properties: {
       settlementId: created.settlement.id,
       orderCount: created.orderCount,

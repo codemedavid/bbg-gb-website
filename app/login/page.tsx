@@ -33,9 +33,6 @@ export default function LoginPage() {
       <div className="mt-4 text-center text-[13px] text-ink-muted">
         Wala pang account? <Link href="/register" className="font-bold text-brand-blue">Mag-register</Link>
       </div>
-      <div className="mt-5 rounded-[10px] border border-line bg-white px-3.5 py-3 text-[12px] text-ink-muted">
-        Demo: <strong>ana@example.com</strong> / <strong>password123</strong> · Admin: <strong>admin@bbgpeptides.ph</strong>
-      </div>
     </AuthShell>
   );
 }
