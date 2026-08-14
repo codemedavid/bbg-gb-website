@@ -112,6 +112,7 @@ export default function CheckoutPage() {
       clear();
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
       // This checkout is itself a commitment, so the next one must not read a
       // cached "no commitments yet" and ask for a downpayment already covered —
       // nor quote a group buy packing fee this order has just paid.

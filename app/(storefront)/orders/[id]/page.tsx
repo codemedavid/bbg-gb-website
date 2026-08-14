@@ -134,7 +134,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <Money label="Product subtotal" value={order.subtotalPhp} />
           {shipping > 0 && <Money label="Shipping fee" value={shipping} />}
           {Number(order.packingFeePhp) > 0 && <Money label="Packing fee" value={order.packingFeePhp} />}
-          {downpayment > 0 && <Money label="Downpayment paid" value={downpayment} />}
+          {downpayment > 0 && <Money label="Packing fee paid" value={downpayment} />}
           <Money label="Grand total" value={order.totalPhp} strong />
         </Section>
 

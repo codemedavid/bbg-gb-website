@@ -1,22 +1,28 @@
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { requireAdmin } from '@/lib/session';
+import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, orders, orderItems, products, groupBuys, users } from '@/lib/db';
 import {
-  buildSegmentedWeeklyReport, buildWeeklyReport,
+  buildDateRangeReport, buildSegmentedDateRangeReport,
   type ReportItem, type ReportOrderInput,
 } from '@/lib/report/build';
-import { isValidYmd, mondayOf, mostRecentFullWeekMonday, weekBounds } from '@/lib/report/week';
+import { addDays, dateRangeBounds, isValidYmd, mondayOf, mostRecentFullWeekMonday } from '@/lib/report/week';
 
-// GET /api/admin/report/weekly?week=YYYY-MM-DD
-// Returns the built weekly report for the Mon–Sun week containing `week`
-// (defaults to the most recent fully completed week).
+// GET /api/admin/report/weekly?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Returns an inclusive Manila-calendar date range. `week` remains supported for
+// older callers and resolves to that seven-day period.
 export const GET = handler(async (req: Request) => {
   await requireAdmin();
-  const raw = new URL(req.url).searchParams.get('week');
-  const monday = raw && isValidYmd(raw) ? mondayOf(raw) : mostRecentFullWeekMonday(new Date());
-  const { start, end } = weekBounds(monday);
+  const params = new URL(req.url).searchParams;
+  const week = params.get('week');
+  const fallbackFrom = week && isValidYmd(week) ? mondayOf(week) : mostRecentFullWeekMonday(new Date());
+  const rawFrom = params.get('from');
+  const rawTo = params.get('to');
+  const from = rawFrom && isValidYmd(rawFrom) ? rawFrom : fallbackFrom;
+  const to = rawTo && isValidYmd(rawTo) ? rawTo : addDays(from, 6);
+  if (to < from) throw new ApiError(400, 'Report end date must be on or after the start date.');
+  const { start, end } = dateRangeBounds(from, to);
 
   const db = await getDb();
   const orderRows = await db
@@ -25,6 +31,7 @@ export const GET = handler(async (req: Request) => {
       createdAt: orders.createdAt, shipName: orders.shipName, shipPhone: orders.shipPhone,
       shipAddress: orders.shipAddress, courier: orders.courier, packedBy: orders.packedBy,
       paymentMethod: orders.paymentMethod, totalUsd: orders.totalUsd, totalPhp: orders.totalPhp,
+      packingFeePhp: orders.packingFeePhp, shippingPhp: orders.shippingPhp, repackFeePhp: orders.repackFeePhp,
       customerEmail: users.email,
     })
     .from(orders)
@@ -91,6 +98,9 @@ export const GET = handler(async (req: Request) => {
     paymentMethod: o.paymentMethod,
     totalUsd: o.totalUsd,
     totalPhp: o.totalPhp,
+    // New orders use packing_fee_php. Older orders stored the same charge in
+    // shipping/repack, so fold those columns in only when the new one is zero.
+    packingFeePhp: String(Number(o.packingFeePhp) || (Number(o.shippingPhp) + Number(o.repackFeePhp))),
     items: itemsByOrder.get(o.id) ?? [],
   }));
 
@@ -98,8 +108,10 @@ export const GET = handler(async (req: Request) => {
   // group buy are separate reports because they answer separate questions.
   // `report` stays for the whole-week view; both are built from the one query.
   return ok({
-    monday,
-    report: buildWeeklyReport(monday, inputs),
-    segments: buildSegmentedWeeklyReport(monday, inputs),
+    monday: from,
+    from,
+    to,
+    report: buildDateRangeReport(from, to, inputs),
+    segments: buildSegmentedDateRangeReport(from, to, inputs),
   });
 });

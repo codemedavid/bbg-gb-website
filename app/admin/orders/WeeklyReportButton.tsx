@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { apiGet, qs } from '@/lib/api-client';
 import { useToast } from '@/lib/store/toast';
 import { btnPrimary, field } from '@/components/admin-ui';
-import { recentWeekMondays, weekOptionLabel } from '@/lib/report/week';
+import { addDays, mostRecentFullWeekMonday } from '@/lib/report/week';
 import { downloadWeeklyReportXlsx } from '@/lib/report/weekly-xlsx';
 import { REPORT_SEGMENTS, SEGMENT_LABEL, SEGMENT_SHORT_LABEL, type ReportSegment } from '@/lib/report/segment';
 import type { SegmentedWeeklyReport } from '@/lib/report/build';
@@ -16,17 +16,21 @@ import type { SegmentedWeeklyReport } from '@/lib/report/build';
 // second programmatic download raises Chrome's "Download multiple files"
 // prompt, and a blocked second file fails silently.
 export function WeeklyReportButton() {
-  // Compute the recent-week options once so the list is stable across renders.
-  const [weeks] = useState(() => recentWeekMondays(new Date()));
-  const [monday, setMonday] = useState(weeks[0]);
+  const [initial] = useState(() => mostRecentFullWeekMonday(new Date()));
+  const [from, setFrom] = useState(initial);
+  const [to, setTo] = useState(() => addDays(initial, 6));
   const [busySegment, setBusySegment] = useState<ReportSegment | null>(null);
   const showToast = useToast((s) => s.show);
 
   const download = async (segment: ReportSegment) => {
     setBusySegment(segment);
     try {
-      const { segments } = await apiGet<{ monday: string; segments: SegmentedWeeklyReport }>(
-        `/admin/report/weekly${qs({ week: monday })}`,
+      if (!from || !to || to < from) {
+        showToast('Choose a valid report date range.');
+        return;
+      }
+      const { segments } = await apiGet<{ from: string; to: string; segments: SegmentedWeeklyReport }>(
+        `/admin/report/weekly${qs({ from, to })}`,
       );
       const report = segments[segment];
       // An empty half exports a workbook holding nothing but headers, which
@@ -35,7 +39,7 @@ export function WeeklyReportButton() {
         showToast(`No ${SEGMENT_LABEL[segment]} orders in that week.`);
         return;
       }
-      await downloadWeeklyReportXlsx(report, monday, segment);
+      await downloadWeeklyReportXlsx(report, from, segment);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not generate the report.');
     } finally {
@@ -44,15 +48,15 @@ export function WeeklyReportButton() {
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <select
-        className={`${field} w-auto`}
-        value={monday}
-        onChange={(e) => setMonday(e.target.value)}
-        disabled={busySegment !== null}
-      >
-        {weeks.map((w) => <option key={w} value={w}>{weekOptionLabel(w)}</option>)}
-      </select>
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="text-[11px] font-semibold text-ink-muted">From
+        <input aria-label="Report start date" type="date" className={`${field} mt-1 w-auto`} value={from}
+          onChange={(e) => setFrom(e.target.value)} disabled={busySegment !== null} />
+      </label>
+      <label className="text-[11px] font-semibold text-ink-muted">To
+        <input aria-label="Report end date" type="date" className={`${field} mt-1 w-auto`} value={to}
+          min={from} onChange={(e) => setTo(e.target.value)} disabled={busySegment !== null} />
+      </label>
       {REPORT_SEGMENTS.map((segment) => (
         <button
           key={segment}

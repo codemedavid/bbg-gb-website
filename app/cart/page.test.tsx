@@ -126,6 +126,17 @@ describe('CartPage — Group Buy and Kahati separation', () => {
 
     expect(useCart.getState().items).toEqual([]);
   });
+
+  it('lets the customer type a new quantity before checkout', async () => {
+    useCart.setState({ items: [kahatiLine] });
+    render(<CartPage />, { wrapper });
+
+    const quantity = screen.getByRole('spinbutton', { name: /quantity for retatrutide/i });
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, '7');
+
+    expect(useCart.getState().items[0].qty).toBe(7);
+  });
 });
 
 describe('CartPage — order note', () => {

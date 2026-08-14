@@ -95,7 +95,7 @@ export async function buildWeeklyWorkbook(
   const totalRow = sheet.addRow([]);
   totalRow.getCell(1).value = 'TOTAL';
   totalRow.getCell(XLSX_HEADERS.indexOf('Order Status') + 1).value =
-    `${report.orderCount} orders · ${report.counts.paid} paid · ${report.counts.pending} pending · ${report.counts.cancelled} cancelled`;
+    `${report.orderCount} orders · ${report.counts.paid} paid · ${report.counts.pending} pending · ${report.counts.cancelled} cancelled · Packing fees: ₱${(report.totals.packingFee ?? 0).toFixed(2)}`;
   totalRow.getCell(usdCol).value = report.totals.usd;
   totalRow.getCell(phpCol).value = report.totals.php;
   totalRow.font = { bold: true };
@@ -165,6 +165,7 @@ export async function downloadWeeklyReportXlsx(
   report: WeeklyReport,
   mondayYmd: string,
   segment?: ReportSegment,
+  toYmd?: string,
 ): Promise<void> {
   const workbook = await buildWeeklyWorkbook(report, mondayYmd, segment);
   const buffer = await workbook.xlsx.writeBuffer();
@@ -179,7 +180,9 @@ export async function downloadWeeklyReportXlsx(
   // before it is read and the file silently never arrives.
   const link = document.createElement('a');
   link.href = url;
-  link.download = weeklyXlsxFilename(mondayYmd, segment);
+  link.download = toYmd && toYmd !== mondayYmd
+    ? `BBG-${mondayYmd}-to-${toYmd}${segment ? `-${segment}` : ''}.xlsx`
+    : weeklyXlsxFilename(mondayYmd, segment);
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();

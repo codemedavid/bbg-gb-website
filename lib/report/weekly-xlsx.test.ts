@@ -130,6 +130,16 @@ describe('buildWeeklyWorkbook', () => {
     expect(report.totals.php).toBe(560);
   });
 
+  it('includes the packing-fee total in the exported summary', async () => {
+    const { sheet } = await roundTrip([
+      order({ packingFeePhp: '150.00' }),
+      order({ packingFeePhp: '200.00' }),
+    ]);
+
+    const totalRow = sheet.getRow(sheet.rowCount);
+    expect(String(totalRow.getCell(columnOf('Order Status')).value)).toContain('Packing fees: ₱350.00');
+  });
+
   it('names the sheet after the reporting week', async () => {
     const { sheet } = await roundTrip([order({})]);
     expect(sheet.name).toContain('22'); // ISO week of 2026-05-25

@@ -128,7 +128,9 @@ export type Order = {
   id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy' | 'moq';
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
-  // Kahati reservation downpayment paid at checkout; balance = total - downpayment. 0 for solo.
+  // Kahati amount paid at checkout. The order total already includes it as the
+  // added packing-fee line; balance views subtract it only from the amount still
+  // to collect. 0 for non-kahati orders.
   downpaymentPhp?: string;
   shipName: string; shipPhone: string; shipAddress: string; trackingNo: string | null;
   // Weekly-report fulfilment fields (admin-editable). paymentMethod drives the Payment column.

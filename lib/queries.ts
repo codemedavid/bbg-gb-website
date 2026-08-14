@@ -63,21 +63,23 @@ export const useProducts = (p: { category?: string; q?: string; onHand?: boolean
 export const useProduct = (id?: string) =>
   useQuery({ queryKey: ['product', id], queryFn: () => apiGet<Product>(`/products/${id}`), enabled: !!id });
 
-// The hatian board is shared state: other customers claim vials while this page
-// sits open. The global defaults (30s stale, no refocus refetch) left the counter
-// and progress bar frozen until a hard reload, so this query opts into polling.
-export const KAHATI_POLL_MS = 15_000;
+// The live boards are shared state, but polling them too aggressively sends the
+// same small reads across the Supabase/Vercel boundary all day. One minute keeps
+// unattended boards current without making every open storefront tab query the
+// database four times a minute. Mutations still invalidate these queries
+// immediately, and returning to a backgrounded tab refreshes stale data.
+export const KAHATI_POLL_MS = 60_000;
 
 export const useGroupBuys = () =>
   useQuery({
     queryKey: ['groupbuys'],
     queryFn: () => apiGet<GroupBuy[]>('/groupbuys'),
-    staleTime: 0,
+    staleTime: KAHATI_POLL_MS,
     refetchInterval: KAHATI_POLL_MS,
     // Pause polling on a backgrounded tab; the refocus refetch covers the return.
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: true,
   });
 
 // Group Buy (MOQ) campaigns are shared state in the same way the hatian board is
@@ -87,11 +89,11 @@ export const useCampaigns = () =>
   useQuery({
     queryKey: ['campaigns'],
     queryFn: () => apiGet<MoqCampaign[]>('/campaigns'),
-    staleTime: 0,
+    staleTime: KAHATI_POLL_MS,
     refetchInterval: KAHATI_POLL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: true,
   });
 
 export const usePaymentMethods = () =>

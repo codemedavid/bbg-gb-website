@@ -57,6 +57,13 @@ beforeEach(() => {
 });
 
 describe('WeeklyReportButton', () => {
+  it('lets the admin choose an inclusive calendar date range', () => {
+    render(<WeeklyReportButton />);
+
+    expect(screen.getByLabelText(/report start date/i)).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText(/report end date/i)).toHaveAttribute('type', 'date');
+  });
+
   it('offers a download per half of the week', () => {
     render(<WeeklyReportButton />);
 

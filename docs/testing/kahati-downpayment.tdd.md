@@ -5,19 +5,20 @@
 
 ## Feature
 
-Kahati orders reserve slots with an admin-editable downpayment (default ₱150,
-settings key `kahati_downpayment`) paid at checkout and **deducted from the
-order total**; the balance is collected after the kahati ends. Packing fees are
-unchanged (₱300 pasabay / ₱200 on-hand / ₱150 hatian, local SF included, no
-admin fee). Rationale: filter out joy-buyers who commit slots and never pay.
+This was the original downpayment model. It has since been superseded by the
+packing-fee-at-checkout rule in `docs/testing/packing-fee-and-weekly-schedule.tdd.md`:
+the ₱150 is the packing fee, it is added on top of the product subtotal, and the
+order total remains `subtotal + packing fee`. Later balance screens subtract the
+amount already paid only from what is still collectible, not from the stored
+order total.
 
 ## User journeys
 
 1. As a customer with kahati items, I check out by paying only the downpayment
    now (proof uploaded for that amount) and see the balance I owe later.
-2. As a customer, I see downpayment paid + remaining balance in My Orders.
+2. As a customer, I see packing fee paid + remaining balance in My Orders.
 3. As the admin, I change the downpayment in Admin → Settings and new orders use it.
-4. As the admin, I see downpayment paid + balance to collect on each kahati order.
+4. As the admin, I see packing fee paid + balance to collect on each kahati order.
 
 ## RED → GREEN
 

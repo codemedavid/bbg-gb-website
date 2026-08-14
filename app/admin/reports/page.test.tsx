@@ -57,6 +57,13 @@ beforeEach(() => {
 });
 
 describe('AdminReportsPage', () => {
+  it('offers calendar controls for a custom date range', () => {
+    render(<Page />, { wrapper });
+
+    expect(screen.getByLabelText(/report start date/i)).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText(/report end date/i)).toHaveAttribute('type', 'date');
+  });
+
   it('renders the Reports heading', async () => {
     render(<Page />, { wrapper });
 

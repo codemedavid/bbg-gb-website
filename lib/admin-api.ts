@@ -100,6 +100,12 @@ export function useMutate() {
     // touching its status.
     setProofAmount: useMutation({ mutationFn: (v: { orderId: string; proofId: string; amountPhp: number | null; reference?: string | null }) => apiSend(`/admin/orders/${v.orderId}/proofs/${v.proofId}`, 'PATCH', { amountPhp: v.amountPhp, reference: v.reference }), onSuccess: invalidate, onError: toastError('Could not record the payment amount.') }),
     setOrderStatus: useMutation({ mutationFn: (v: { id: string; status: string; trackingNo?: string; note?: string; courier?: string; packedBy?: string; paymentMethod?: string }) => apiSend(`/admin/orders/${v.id}/status`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the order.') }),
+    editOrderItems: useMutation({
+      mutationFn: (v: { id: string; items: { id?: string; nameSnapshot: string; specSnapshot?: string | null; qty: number; unitPricePhp: number }[] }) =>
+        apiSend(`/admin/orders/${v.id}`, 'PATCH', { items: v.items }),
+      onSuccess: invalidate,
+      onError: toastError('Could not edit the order items.'),
+    }),
     // Confirming a hatian final checkout is what flips the customer's packing fee
     // and balance to Paid; cancelling releases its orders to be settled again.
     setSettlementStatus: useMutation({ mutationFn: (v: { id: string; status: 'proof_review' | 'paid' | 'cancelled'; notes?: string }) => apiSend(`/admin/settlements/${v.id}`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the settlement.') }),

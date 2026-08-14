@@ -39,7 +39,7 @@ After: **25 test files, 237 tests passing.** `tsc --noEmit` clean, `next build` 
 - **`lib/storage.ts`** — `putFile` throws `ApiError(503, …)` naming `STORAGE_DRIVER` instead of letting `EROFS` surface as "Something went wrong."
 - **`lib/env.ts`** — storage driver now resolved through the above.
 - **`lib/kahati.ts`** — added `kahatiProgressPercent` (clamped, zero-cap safe) and `kahatiBadge`.
-- **`lib/queries.ts`** — `useGroupBuys` polls every 15s (`KAHATI_POLL_MS`), refetches on focus and on mount.
+- **`lib/queries.ts`** — `useGroupBuys` polls every 60s (`KAHATI_POLL_MS`), refetches stale data on focus and on mount.
 - **`lib/store/cart.ts` / `components/OrderSummary.tsx`** — `packingFeeFor(items, fees: PackingFees)` reads admin settings for every mode.
 - **`lib/admin-schemas.ts`** — `totalSlots` / `minVials` capped at `KAHATI_MAX_VIALS`; `totalSlots` optional (defaults to 10).
 - **`app/api/admin/groupbuys/[id]/route.ts`** — an edit that fills the kit closes the hatian, unless the admin set `status` in the same request.

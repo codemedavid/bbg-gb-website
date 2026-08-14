@@ -37,8 +37,18 @@ describe('buildWeeklyReport', () => {
       order({ status: 'cancelled', totalUsd: '99.00', totalPhp: '9999.00' }),
     ]);
     expect(r.counts).toEqual({ paid: 1, pending: 1, cancelled: 1 });
-    expect(r.totals).toEqual({ usd: 15, php: 840 });
+    expect(r.totals).toEqual({ usd: 15, php: 840, packingFee: 0 });
     expect(r.orderCount).toBe(3);
+  });
+
+  it('totals packing fees and excludes cancelled orders from that summary', () => {
+    const r = buildWeeklyReport('2026-05-25', [
+      order({ status: 'payment_confirmed', packingFeePhp: '150' }),
+      order({ status: 'proof_review', packingFeePhp: '200' }),
+      order({ status: 'cancelled', packingFeePhp: '999' }),
+    ]);
+
+    expect(r.totals.packingFee).toBe(350);
   });
 
   it('carries the week metadata', () => {
@@ -105,11 +115,11 @@ describe('buildSegmentedWeeklyReport', () => {
 
     expect(onhand.orderCount).toBe(1);
     expect(onhand.counts).toEqual({ paid: 1, pending: 0, cancelled: 0 });
-    expect(onhand.totals).toEqual({ usd: 10, php: 560 });
+    expect(onhand.totals).toEqual({ usd: 10, php: 560, packingFee: 0 });
 
     expect(groupbuy.orderCount).toBe(1);
     expect(groupbuy.counts).toEqual({ paid: 0, pending: 1, cancelled: 0 });
-    expect(groupbuy.totals).toEqual({ usd: 0, php: 1500 });
+    expect(groupbuy.totals).toEqual({ usd: 0, php: 1500, packingFee: 0 });
   });
 
   it('numbers each half from 1 rather than carrying the week-wide index', () => {
@@ -135,6 +145,6 @@ describe('buildSegmentedWeeklyReport', () => {
     ]);
 
     expect(groupbuy.counts).toEqual({ paid: 1, pending: 0, cancelled: 1 });
-    expect(groupbuy.totals).toEqual({ usd: 10, php: 560 });
+    expect(groupbuy.totals).toEqual({ usd: 10, php: 560, packingFee: 0 });
   });
 });

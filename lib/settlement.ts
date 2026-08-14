@@ -81,8 +81,10 @@ export function isReadyToSettle(o: {
   );
 }
 
-// What is still owed on one order. Floors at zero so a downpayment larger than
-// the order total (a tiny commitment) never credits the settlement.
+// What is still owed on one order. The order total itself already includes the
+// checkout payment as an added fee line; subtracting here answers only "what is
+// left to collect?" and prevents charging the already-paid amount again. Floors
+// at zero so a downpayment larger than the order total never credits settlement.
 export function orderBalance(o: Pick<SettleableOrder, 'totalPhp' | 'downpaymentPhp'>): number {
   return round2(Math.max(0, o.totalPhp - o.downpaymentPhp));
 }

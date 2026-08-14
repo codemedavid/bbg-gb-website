@@ -7,8 +7,79 @@ import { reconcileProofs } from '@/lib/proof-reconciliation';
 import { STATUS_FLOW, STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
 import { PACKERS, COURIERS } from '@/lib/report/constants';
 import { WeeklyReportButton } from './WeeklyReportButton';
+import type { OrderItem } from '@/lib/types';
 
 const FILTERS = [['', 'All'], ['proof_review', 'Proof review'], ['payment_confirmed', 'Confirmed'], ['batch_filling', 'Filling'], ['shipped', 'Shipped'], ['delivered', 'Delivered']] as const;
+
+type EditableLine = Pick<OrderItem, 'nameSnapshot' | 'specSnapshot' | 'qty'> & { id?: string; unitPricePhp: number };
+
+function OrderItemsEditor({ orderId, status, items, onSaved }: {
+  orderId: string; status: string; items: OrderItem[]; onSaved: () => void;
+}) {
+  const { editOrderItems } = useMutate();
+  const [editing, setEditing] = useState(false);
+  const [rows, setRows] = useState<EditableLine[]>(() => items.map((item) => ({
+    id: item.id, nameSnapshot: item.nameSnapshot, specSnapshot: item.specSnapshot,
+    qty: item.qty, unitPricePhp: Number(item.unitPricePhp),
+  })));
+  const [error, setError] = useState<string | null>(null);
+  const locked = ['shipped', 'delivered', 'cancelled'].includes(status);
+  const update = (index: number, patch: Partial<EditableLine>) =>
+    setRows((current) => current.map((row, i) => i === index ? { ...row, ...patch } : row));
+
+  const save = async () => {
+    setError(null);
+    if (!rows.length) {
+      setError('An order must keep at least one item. Cancel the order instead.');
+      return;
+    }
+    try {
+      await editOrderItems.mutateAsync({ id: orderId, items: rows });
+      setEditing(false);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not edit the items.');
+    }
+  };
+
+  if (!editing) return (
+    <button type="button" disabled={locked} onClick={() => setEditing(true)}
+      className={`${btnGhost} mt-3 w-full disabled:cursor-not-allowed disabled:opacity-50`}>
+      {locked ? 'Items locked after fulfilment' : 'Edit, add, or delete items'}
+    </button>
+  );
+
+  return (
+    <div className="mt-3 rounded-[10px] border border-line-soft bg-surface-mist p-3">
+      <div className="mb-2 text-[12px] font-bold text-ink">Edit order items</div>
+      <div className="flex flex-col gap-2">
+        {rows.map((row, index) => (
+          <div key={row.id ?? `new-${index}`} className="grid grid-cols-[1fr_70px_92px_30px] gap-1.5">
+            <input aria-label={`Item ${index + 1} name`} className={field} value={row.nameSnapshot}
+              onChange={(e) => update(index, { nameSnapshot: e.target.value })} placeholder="Item name" />
+            <input aria-label={`Item ${index + 1} quantity`} className={field} type="number" min={1} value={row.qty}
+              onChange={(e) => update(index, { qty: Number(e.target.value) })} />
+            <input aria-label={`Item ${index + 1} unit price`} className={field} type="number" min={0} step="0.01" value={row.unitPricePhp}
+              onChange={(e) => update(index, { unitPricePhp: Number(e.target.value) })} />
+            <button type="button" aria-label={`Delete item ${index + 1}`} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}
+              className="rounded-md text-lg text-[#a33] hover:bg-[#fdeaea]">×</button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="mt-2 text-[12px] font-semibold text-brand-blue" onClick={() => setRows((current) => [...current, {
+        nameSnapshot: '', specSnapshot: null, qty: 1, unitPricePhp: 0,
+      }])}>+ Add item</button>
+      <p className="mt-2 text-[11px] text-ink-muted">Totals recalculate automatically. New free-text lines are recorded as manual admin adjustments.</p>
+      {error && <p role="alert" className="mt-2 text-[12px] text-[#a33]">{error}</p>}
+      <div className="mt-2 flex justify-end gap-2">
+        <button type="button" className={btnGhost} onClick={() => setEditing(false)}>Cancel</button>
+        <button type="button" className={btnPrimary} disabled={editOrderItems.isPending} onClick={save}>
+          {editOrderItems.isPending ? 'Saving…' : 'Save items'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const { data, isLoading } = useAdminOrder(id);
@@ -92,11 +163,12 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
             const balance = Number(order.totalPhp) - downpayment;
             return (
               <div className="mt-1 rounded-[10px] bg-[#f2f8ec] px-3 py-2 text-[13px]">
-                <div className="flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
+                <div className="flex justify-between font-bold text-brand-greendark"><span>Packing fee paid</span><span>{php(downpayment)}</span></div>
                 {balance > 0 && <div className="flex justify-between text-ink-body"><span>Balance to collect</span><span>{php(balance)}</span></div>}
               </div>
             );
           })()}
+          <OrderItemsEditor orderId={order.id} status={order.status} items={items} onSaved={onClose} />
         </div>
 
         <div className="mt-3">

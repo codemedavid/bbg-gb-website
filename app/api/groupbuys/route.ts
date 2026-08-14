@@ -58,5 +58,11 @@ export const GET = handler(async () => {
   // Sorted after the mapping, so the ranking uses the vials the board DISPLAYS.
   // An over-cap legacy row shows 10 and holds 13; ranking it on the stored 13
   // would put it above a genuine 10/10 on strength of vials nobody can see.
-  return ok(sortHatiansByDemand(board));
+  const response = ok(sortHatiansByDemand(board));
+  // This response is anonymous and identical for every visitor. Briefly share
+  // it at the edge so a burst of storefront traffic results in one Supabase
+  // read/reconciliation cycle instead of one per browser. The stale window lets
+  // the previous board render while the edge refreshes it in the background.
+  response.headers.set('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
+  return response;
 });

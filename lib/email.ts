@@ -35,6 +35,9 @@ export async function sendEmail(opts: { to: string; subject: string; html: strin
 }
 
 const php = (n: number) => '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: n % 1 ? 2 : 0 });
+const escapeHtml = (value: string) => value
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const wrap = (title: string, body: string) => `
   <div style="font-family:Barlow,Arial,sans-serif;max-width:520px;margin:0 auto;color:#1c2b26">
     <div style="background:#0a1f44;padding:18px 20px;border-radius:12px 12px 0 0">
@@ -51,15 +54,27 @@ const wrap = (title: string, body: string) => `
 // your payment proof" there would be a review of a payment nobody made.
 export function orderPlacedEmail(o: {
   name: string; orderNo: string; total: number; downpayment?: number; confirmed?: boolean;
+  subtotal?: number; packingFee?: number;
+  items?: { name: string; qty: number; unitPrice: number; lineTotal: number }[];
 }) {
   const downpaymentLine = o.downpayment && o.downpayment > 0
-    ? `<p>Downpayment received: <strong>${php(o.downpayment)}</strong> · Balance after the kahati ends: <strong>${php(o.total - o.downpayment)}</strong></p>`
+    ? `<p>Packing fee received: <strong>${php(o.downpayment)}</strong> · Balance after the kahati ends: <strong>${php(o.total - o.downpayment)}</strong></p>`
     : '';
+  const receipt = o.items?.length ? `
+    <div style="margin:16px 0;padding:12px;background:#fff;border-radius:8px">
+      <div style="font-weight:700;margin-bottom:8px">Receipt</div>
+      ${o.items.map((item) => `<div style="display:flex;justify-content:space-between;gap:12px;margin:5px 0">
+        <span>${escapeHtml(item.name)} × ${item.qty}</span><strong>${php(item.lineTotal)}</strong>
+      </div>`).join('')}
+      ${o.subtotal != null ? `<div style="display:flex;justify-content:space-between;border-top:1px solid #dfe6dc;padding-top:7px;margin-top:7px"><span>Subtotal</span><span>${php(o.subtotal)}</span></div>` : ''}
+      ${o.packingFee ? `<div style="display:flex;justify-content:space-between"><span>Packing fee</span><span>${php(o.packingFee)}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:5px"><span>Total</span><span>${php(o.total)}</span></div>
+    </div>` : '';
   if (o.confirmed) {
     return {
       subject: `Order ${o.orderNo} confirmed - no payment needed now`,
       html: wrap(`Salamat, ${o.name}!`, `
-        <p>Order <strong>${o.orderNo}</strong> for <strong>${php(o.total)}</strong> is confirmed.</p>
+        <p>Order <strong>${escapeHtml(o.orderNo)}</strong> for <strong>${php(o.total)}</strong> is confirmed.</p>${receipt}
         <p>Walang bayad muna: may kahati ka nang ongoing, kaya hindi na kailangan ng panibagong downpayment.
         Isang bayad na lang sa huling checkout kapag tapos na ang lahat ng hatian mo.</p>`),
     };
@@ -67,8 +82,33 @@ export function orderPlacedEmail(o: {
   return {
     subject: `Order ${o.orderNo} received - payment under review`,
     html: wrap(`Salamat, ${o.name}!`, `
-      <p>We received order <strong>${o.orderNo}</strong> for <strong>${php(o.total)}</strong>.</p>${downpaymentLine}
+      <p>We received order <strong>${escapeHtml(o.orderNo)}</strong> for <strong>${php(o.total)}</strong>.</p>${receipt}${downpaymentLine}
       <p>Our team will verify your payment proof within 24 hours. You'll get another email once it's confirmed.</p>`),
+  };
+}
+
+export function orderUpdatedEmail(o: {
+  name: string; orderNo: string; subtotal: number; packingFee: number; total: number;
+  items: { name: string; qty: number; unitPrice: number; lineTotal: number }[];
+}) {
+  const rows = o.items.map((item) => `<div style="display:flex;justify-content:space-between;gap:12px;margin:5px 0">
+    <span>${escapeHtml(item.name)} × ${item.qty}</span><strong>${php(item.lineTotal)}</strong>
+  </div>`).join('');
+  const fee = o.packingFee > 0
+    ? `<div style="display:flex;justify-content:space-between"><span>Packing fee</span><span>${php(o.packingFee)}</span></div>`
+    : '';
+  return {
+    subject: `Updated receipt for order ${o.orderNo}`,
+    html: wrap('Your order was updated', `
+      <p>Hi ${escapeHtml(o.name)},</p>
+      <p>Our team updated order <strong>${escapeHtml(o.orderNo)}</strong>. Here is the revised receipt:</p>
+      <div style="margin:16px 0;padding:12px;background:#fff;border-radius:8px">
+        ${rows}
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #dfe6dc;padding-top:7px;margin-top:7px"><span>Subtotal</span><span>${php(o.subtotal)}</span></div>
+        ${fee}
+        <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:5px"><span>Total</span><span>${php(o.total)}</span></div>
+      </div>
+      <p>If you have already transferred payment, please check the revised total and contact us if an adjustment is needed.</p>`),
   };
 }
 

@@ -4,7 +4,7 @@ import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LA
 import { num } from './money';
 import { buildProductTotals, type ProductTotals } from './product-totals';
 import { partitionBySegment, type ReportSegment } from './segment';
-import { formatRange, isoWeekNumber } from './week';
+import { formatDateRange, formatRange, isoWeekNumber, mondayOf } from './week';
 
 export type ReportItem = {
   nameSnapshot: string;
@@ -47,6 +47,8 @@ export type ReportOrderInput = {
   paymentMethod: string | null;
   totalUsd: string | null;
   totalPhp: string;
+  /** Packing/local-shipping fee charged on this order; legacy fees are folded in by the API. */
+  packingFeePhp?: string | null;
   items: ReportItem[];
 };
 
@@ -79,7 +81,7 @@ export type WeeklyReport = {
   rangeLabel: string; // "Mon May 25 – Sun May 31"
   orderCount: number;
   counts: { paid: number; pending: number; cancelled: number };
-  totals: { usd: number; php: number };
+  totals: { usd: number; php: number; packingFee?: number };
   rows: ReportRow[];
   /** The same week's orders rolled up per product, for the batch order. */
   productTotals: ProductTotals;
@@ -134,10 +136,11 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
       if (o.status !== 'cancelled') {
         acc.usd += num(o.totalUsd);
         acc.php += num(o.totalPhp);
+        acc.packingFee += num(o.packingFeePhp);
       }
       return acc;
     },
-    { usd: 0, php: 0 },
+    { usd: 0, php: 0, packingFee: 0 },
   );
 
   return {
@@ -171,5 +174,29 @@ export function buildSegmentedWeeklyReport(
   return {
     onhand: buildWeeklyReport(mondayYmd, halves.onhand),
     groupbuy: buildWeeklyReport(mondayYmd, halves.groupbuy),
+  };
+}
+
+/** Build the same report shape for any inclusive calendar range. */
+export function buildDateRangeReport(
+  fromYmd: string,
+  toYmd: string,
+  orders: ReportOrderInput[],
+): WeeklyReport {
+  return {
+    ...buildWeeklyReport(mondayOf(fromYmd), orders),
+    rangeLabel: formatDateRange(fromYmd, toYmd),
+  };
+}
+
+export function buildSegmentedDateRangeReport(
+  fromYmd: string,
+  toYmd: string,
+  orders: ReportOrderInput[],
+): SegmentedWeeklyReport {
+  const halves = partitionBySegment(orders);
+  return {
+    onhand: buildDateRangeReport(fromYmd, toYmd, halves.onhand),
+    groupbuy: buildDateRangeReport(fromYmd, toYmd, halves.groupbuy),
   };
 }

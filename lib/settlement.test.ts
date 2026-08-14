@@ -67,7 +67,7 @@ describe('isReadyToSettle', () => {
 });
 
 describe('orderBalance', () => {
-  it('is the total less what was already paid as downpayment', () => {
+  it('is only the remaining amount to collect, not a reduced order total', () => {
     expect(orderBalance(order({ totalPhp: 6300, downpaymentPhp: 150 }))).toBe(6150);
   });
 

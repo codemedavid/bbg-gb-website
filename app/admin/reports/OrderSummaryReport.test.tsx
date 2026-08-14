@@ -8,7 +8,7 @@ const report: WeeklyReport = {
   rangeLabel: 'Mon May 25 – Sun May 31',
   orderCount: 2,
   counts: { paid: 1, pending: 1, cancelled: 0 },
-  totals: { usd: 100, php: 5000 },
+  totals: { usd: 100, php: 5000, packingFee: 350 },
   rows: [
     {
       index: 1, invoice: 'BBG-2500', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
@@ -34,6 +34,8 @@ describe('OrderSummaryReport', () => {
     // Rollup tiles present (unique labels).
     expect(screen.getByText('Orders')).toBeInTheDocument();
     expect(screen.getByText('Revenue (PHP)')).toBeInTheDocument();
+    expect(screen.getByText('Total packing fees')).toBeInTheDocument();
+    expect(screen.getByText('₱350')).toBeInTheDocument();
     expect(screen.getAllByText('Paid').length).toBeGreaterThanOrEqual(1);
   });
 

@@ -472,7 +472,7 @@ export const POST = handler(async (req: Request) => {
           : 'Order placed',
       });
 
-      created.push({ order, orderNo, totals, lineCount: lines.length });
+      created.push({ order, orderNo, totals, lineCount: lines.length, lines });
     }
 
     // Inventory was already drawn down as each line was priced — on-hand stock in
@@ -499,8 +499,19 @@ export const POST = handler(async (req: Request) => {
   // One email and one event per order: a split cart produces orders with different
   // totals, downpayments and delivery timelines, so a single combined notice would
   // misstate what the customer owes on each.
-  for (const { order, orderNo, totals, lineCount } of created) {
-    await sendEmail({ to: session.email, ...orderPlacedEmail({ name: body.shipName, orderNo, total: totals.total, downpayment: Number(order.downpaymentPhp), confirmed: confirmOnly }), kind: 'order_placed' });
+  for (const { order, orderNo, totals, lineCount, lines } of created) {
+    await sendEmail({
+      to: session.email,
+      ...orderPlacedEmail({
+        name: body.shipName, orderNo, total: totals.total, subtotal: totals.subtotal,
+        packingFee: totals.packingFee, downpayment: Number(order.downpaymentPhp), confirmed: confirmOnly,
+        items: lines.map((line) => ({
+          name: line.nameSnapshot, qty: line.qty, unitPrice: line.unitPricePhp,
+          lineTotal: round2(line.unitPricePhp * line.qty),
+        })),
+      }),
+      kind: 'order_receipt',
+    });
     await captureEvent({
       event: 'order_placed',
       distinctId: session.sub,

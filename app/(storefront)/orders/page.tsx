@@ -74,7 +74,7 @@ function OrderCard({ order }: { order: Order }) {
             )}
             {downpayment > 0 && (
               <>
-                <div className="mt-0.5 flex justify-between font-bold text-brand-greendark"><span>Downpayment paid</span><span>{php(downpayment)}</span></div>
+                <div className="mt-0.5 flex justify-between font-bold text-brand-greendark"><span>Packing fee paid</span><span>{php(downpayment)}</span></div>
                 {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
               </>
             )}

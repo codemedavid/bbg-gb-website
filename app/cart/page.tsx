@@ -1,4 +1,5 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { OverlayShell } from '@/components/OverlayShell';
 import { BackHeader } from '@/components/headers';
@@ -31,7 +32,10 @@ const NOTE_MAX = 500;
 function CartLine({ item }: { item: CartItem }) {
   const inc = useCart((s) => s.inc);
   const dec = useCart((s) => s.dec);
+  const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
+  const [quantityText, setQuantityText] = useState(String(item.qty));
+  useEffect(() => setQuantityText(String(item.qty)), [item.qty]);
 
   return (
     <div className="flex items-center gap-3 py-2.5">
@@ -44,7 +48,20 @@ function CartLine({ item }: { item: CartItem }) {
       <div className="flex items-center overflow-hidden rounded-[9px] border border-line">
         <button onClick={() => dec(item.key)} aria-label={`Remove one ${item.name}`}
           className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body">−</button>
-        <span className="w-6 text-center text-[13px] font-bold">{item.qty}</span>
+        <input
+          aria-label={`Quantity for ${item.name}`}
+          type="number"
+          min={item.minQty}
+          max={Number.isFinite(maxQtyFor(item)) ? maxQtyFor(item) : undefined}
+          value={quantityText}
+          onChange={(e) => {
+            setQuantityText(e.target.value);
+            const qty = Number(e.target.value);
+            if (Number.isInteger(qty) && qty > 0) setQty(item.key, qty);
+          }}
+          onBlur={() => setQuantityText(String(useCart.getState().items.find((line) => line.key === item.key)?.qty ?? item.qty))}
+          className="h-[30px] w-10 border-x border-line bg-white text-center text-[13px] font-bold outline-none focus:bg-surface-field"
+        />
         <button onClick={() => inc(item.key)} disabled={item.qty >= maxQtyFor(item)} aria-label={`Add one ${item.name}`}
           className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body disabled:text-ink-faint">+</button>
       </div>
