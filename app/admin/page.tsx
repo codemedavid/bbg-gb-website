@@ -26,10 +26,16 @@ export default function DashboardPage() {
         <p className="mt-1 text-[13px] text-ink-muted">Weekly &amp; monthly performance at a glance.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Orders this week" value={String(data.totals.week.count)} sub={php(data.totals.week.revenue)} accent="#0b46b8" />
         <StatCard label="Orders this month" value={String(data.totals.month.count)} sub={php(data.totals.month.revenue)} accent="#57a814" />
         <StatCard label="Total revenue" value={php(data.totals.all.revenue)} sub={`${data.totals.all.count} orders all-time`} />
+        <StatCard
+          label="Total packing fees"
+          value={php(data.packingFees.all)}
+          sub={`${php(data.packingFees.week)} this week · ${php(data.packingFees.month)} this month`}
+          accent="#0b46b8"
+        />
         <StatCard label="Pending proofs" value={String(data.pendingProofs)} sub="Awaiting verification" accent={data.pendingProofs ? '#9a6b00' : '#57a814'} />
       </div>
 

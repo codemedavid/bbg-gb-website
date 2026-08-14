@@ -1,6 +1,6 @@
 // Admin dashboard analytics: weekly/monthly order totals, weekly summary, fast-moving items.
-import { and, desc, gte, sql, ne } from 'drizzle-orm';
-import { getDb, orders, orderItems, products } from './db';
+import { and, desc, eq, gte, isNull, ne, or, sql } from 'drizzle-orm';
+import { getDb, orders, orderItems, products, settlements } from './db';
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400_000);
 
@@ -23,6 +23,41 @@ export async function orderTotals() {
   }).from(orders).where(notCancelled);
 
   return { week, month, all };
+}
+
+type FeeTotals = { week: number; month: number; all: number };
+
+// Packing fees have two legitimate homes. Immediate-checkout modes keep the
+// charge on orders; deferred Hatian checkouts keep one charge on settlements.
+// An order linked to an active settlement must not contribute its legacy fee as
+// well, otherwise the dashboard would count the same parcel twice.
+export async function packingFeeTotals(): Promise<FeeTotals> {
+  const db = await getDb();
+  const weekStart = daysAgo(7);
+  const monthStart = daysAgo(30);
+  const feeColumns = <TCreated, TFee>(createdAt: TCreated, fee: TFee) => ({
+    week: sql<number>`coalesce(sum(case when ${createdAt} >= ${weekStart} then ${fee} else 0 end), 0)::float`,
+    month: sql<number>`coalesce(sum(case when ${createdAt} >= ${monthStart} then ${fee} else 0 end), 0)::float`,
+    all: sql<number>`coalesce(sum(${fee}), 0)::float`,
+  });
+
+  const [orderFees] = await db.select(feeColumns(orders.createdAt, orders.packingFeePhp))
+    .from(orders)
+    .leftJoin(settlements, eq(orders.settlementId, settlements.id))
+    .where(and(
+      ne(orders.status, 'cancelled'),
+      or(isNull(orders.settlementId), eq(settlements.status, 'cancelled')),
+    ));
+
+  const [settlementFees] = await db.select(feeColumns(settlements.createdAt, settlements.packingFeePhp))
+    .from(settlements)
+    .where(ne(settlements.status, 'cancelled'));
+
+  return {
+    week: orderFees.week + settlementFees.week,
+    month: orderFees.month + settlementFees.month,
+    all: orderFees.all + settlementFees.all,
+  };
 }
 
 // Per-day order count + revenue for the last 7 days (for the weekly summary chart).
@@ -65,7 +100,9 @@ export async function fastMovingItems(limit = 8) {
 
 export async function dashboardStats() {
   const db = await getDb();
-  const [totals, summary, fastMoving] = await Promise.all([orderTotals(), weeklySummary(), fastMovingItems()]);
+  const [totals, packingFees, summary, fastMoving] = await Promise.all([
+    orderTotals(), packingFeeTotals(), weeklySummary(), fastMovingItems(),
+  ]);
   const [pending] = await db.select({ count: sql<number>`count(*)::int` }).from(orders).where(sql`${orders.status} = 'proof_review'`);
-  return { totals, weeklySummary: summary, fastMoving, pendingProofs: pending.count };
+  return { totals, packingFees, weeklySummary: summary, fastMoving, pendingProofs: pending.count };
 }

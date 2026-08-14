@@ -23,6 +23,7 @@ export type DashboardStats = {
     month: { count: number; revenue: number };
     all: { count: number; revenue: number };
   };
+  packingFees: { week: number; month: number; all: number };
   weeklySummary: { day: string; count: number; revenue: number }[];
   fastMoving: { productId: string | null; name: string; unitsSold: number; revenue: number }[];
   pendingProofs: number;
