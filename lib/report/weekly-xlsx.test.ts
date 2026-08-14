@@ -20,6 +20,7 @@ const order = (o: Partial<ReportOrderInput>): ReportOrderInput => ({
   shipName: 'Gelly Ramos', shipPhone: '09171234567', customerEmail: 'gelly@example.com',
   shipAddress: '12 Mabini St, Quezon City', courier: 'J&T', packedBy: 'Nova',
   paymentMethod: 'GCash', totalUsd: '10.00', totalPhp: '560.00',
+  packingFeePhp: '60.00',
   items: [{ nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
   ...o,
 });
@@ -74,6 +75,21 @@ describe('buildWeeklyWorkbook', () => {
     expect(typeof phpCell.value).toBe('number');
     expect(phpCell.numFmt).toContain('0.00');
     expect(usdCell.value).toBe(10);
+  });
+
+  it('exports each packing fee as a number and totals the column', async () => {
+    const { sheet, report } = await roundTrip([
+      order({ packingFeePhp: '60.00' }),
+      order({ orderNo: 'BBG-0002', packingFeePhp: '40.00' }),
+    ]);
+    const headers = (sheet.getRow(1).values as unknown[]).map(String);
+    const packingFeeCol = headers.indexOf('Packing Fee (PHP)');
+
+    expect(packingFeeCol).toBeGreaterThan(0);
+    expect(sheet.getRow(2).getCell(packingFeeCol).value).toBe(60);
+    expect(sheet.getRow(sheet.rowCount).getCell(packingFeeCol).value).toBe(report.totals.packingFeePhp);
+    expect(report.totals.packingFeePhp).toBe(100);
+    expect(sheet.getColumn(packingFeeCol).numFmt).toContain('0.00');
   });
 
   it('puts each line item on its own line within the order-details cell', async () => {
