@@ -175,10 +175,10 @@ function addGroupBuyProductTotalsSheet(workbook: Workbook, report: WeeklyReport)
     color: { argb: 'FFFFFFFF' },
   };
   const thinBorder = {
-    left: { style: 'thin' as const, color: { indexed: 64 } },
-    right: { style: 'thin' as const, color: { indexed: 64 } },
-    top: { style: 'thin' as const, color: { indexed: 64 } },
-    bottom: { style: 'thin' as const, color: { indexed: 64 } },
+    left: { style: 'thin' as const, color: { argb: 'FF000000' } },
+    right: { style: 'thin' as const, color: { argb: 'FF000000' } },
+    top: { style: 'thin' as const, color: { argb: 'FF000000' } },
+    bottom: { style: 'thin' as const, color: { argb: 'FF000000' } },
   };
 
   for (let rowNumber = 1; rowNumber <= totalRow.number; rowNumber++) {
