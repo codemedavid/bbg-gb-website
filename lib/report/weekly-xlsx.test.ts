@@ -21,7 +21,7 @@ const order = (o: Partial<ReportOrderInput>): ReportOrderInput => ({
   shipAddress: '12 Mabini St, Quezon City', courier: 'J&T', packedBy: 'Nova',
   paymentMethod: 'GCash', totalUsd: '10.00', totalPhp: '560.00',
   packingFeePhp: '60.00',
-  items: [{ nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
+  items: [{ code: 'TR15', nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
   ...o,
 });
 
@@ -65,7 +65,7 @@ describe('buildWeeklyWorkbook', () => {
     const model = (table as unknown as {
       model: { tableRef: string; columns: { name: string }[] };
     }).model;
-    expect(model.tableRef).toBe('A1:P3');
+    expect(model.tableRef).toBe('A1:Q3');
     expect(model.columns.map((column) => column.name)).toEqual([...XLSX_HEADERS]);
   });
 
@@ -77,6 +77,7 @@ describe('buildWeeklyWorkbook', () => {
     expect(cell('Contact Number')).toBe('09171234567');
     expect(cell('Email')).toBe('gelly@example.com');
     expect(cell('Shipping Address')).toBe('12 Mabini St, Quezon City');
+    expect(cell('Product Codes')).toBe('TR15');
     expect(cell('Order Details')).toBe('Tirzepatide TR15 x5 @ $6.80');
     expect(cell('Payment Method')).toBe('GCash');
     expect(cell('Payment Status')).toBe('Paid');
@@ -112,12 +113,14 @@ describe('buildWeeklyWorkbook', () => {
   it('puts each line item on its own line within the order-details cell', async () => {
     const { sheet } = await roundTrip([order({
       items: [
-        { nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' },
-        { nameSnapshot: 'BAC Water 3ml', qty: 2, unitPriceUsd: null, unitPricePhp: '55.00' },
+        { code: 'TR15', nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' },
+        { code: 'BA03', nameSnapshot: 'BAC Water 3ml', qty: 2, unitPriceUsd: null, unitPricePhp: '55.00' },
       ],
     })]);
 
     const details = sheet.getRow(2).getCell(columnOf('Order Details'));
+    const codes = sheet.getRow(2).getCell(columnOf('Product Codes'));
+    expect(codes.value).toBe('TR15\nBA03');
     expect(details.value).toBe('Tirzepatide TR15 x5 @ $6.80\nBAC Water 3ml x2');
     expect(details.alignment?.wrapText).toBe(true);
   });

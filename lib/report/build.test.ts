@@ -6,7 +6,7 @@ const order = (o: Partial<ReportOrderInput>): ReportOrderInput => ({
   shipName: 'Gelly', shipPhone: '0912', customerEmail: 'g@x.com', shipAddress: 'Manila',
   courier: 'J&T', packedBy: 'Nova', paymentMethod: 'BDO', totalUsd: '10.00', totalPhp: '560.00',
   packingFeePhp: '60.00',
-  items: [{ nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
+  items: [{ code: 'TR15', nameSnapshot: 'Tirzepatide TR15', qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
   ...o,
 });
 
@@ -19,6 +19,7 @@ describe('buildWeeklyReport', () => {
 
   it('formats the USD product line and Manila date', () => {
     const r = buildWeeklyReport('2026-05-25', [order({})]);
+    expect(r.rows[0].productCodes).toEqual(['TR15']);
     expect(r.rows[0].products).toEqual(['Tirzepatide TR15 x5 @ $6.80']);
     expect(r.rows[0].date).toBe('5/27/2026');
     expect(r.rows[0].contact).toBe('0912\ng@x.com');
@@ -26,7 +27,7 @@ describe('buildWeeklyReport', () => {
 
   it('omits the "@ $" suffix when a line has no USD price', () => {
     const r = buildWeeklyReport('2026-05-25', [order({
-      items: [{ nameSnapshot: 'Kahati vial', qty: 3, unitPriceUsd: null, unitPricePhp: '500.00' }],
+      items: [{ code: null, nameSnapshot: 'Kahati vial', qty: 3, unitPriceUsd: null, unitPricePhp: '500.00' }],
     })]);
     expect(r.rows[0].products).toEqual(['Kahati vial x3']);
   });
