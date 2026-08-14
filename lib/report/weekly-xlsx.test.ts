@@ -52,6 +52,19 @@ describe('buildWeeklyWorkbook', () => {
     expect(headers).toEqual([...XLSX_HEADERS]);
   });
 
+  it('stores the order range as a named Excel table ready for PivotTable use', async () => {
+    const { sheet } = await roundTrip([
+      order({ orderNo: 'BBG-0001' }),
+      order({ orderNo: 'BBG-0002' }),
+    ]);
+
+    const table = sheet.getTable('WeeklyOrders');
+    expect(table).toBeDefined();
+    expect(table.ref).toBe('A1');
+    expect(table.columns.map((column) => column.name)).toEqual([...XLSX_HEADERS]);
+    expect(table.rows).toHaveLength(2);
+  });
+
   it('exports the buyer fields the client asked for', async () => {
     const { sheet } = await roundTrip([order({})]);
     const cell = (name: Header) => sheet.getRow(2).getCell(columnOf(name)).value;
