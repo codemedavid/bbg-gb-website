@@ -118,7 +118,7 @@ describe('GET /api/admin/report/weekly returns the week in two halves', () => {
 
     const { segments } = await fetchReport();
 
-    expect(segments.groupbuy.productTotals.rows.map((r) => r.name)).toEqual(['Retatrutide — kahati']);
+    expect(segments.groupbuy.productTotals.rows.map((r) => r.name)).toEqual(['Retatrutide']);
     expect(segments.groupbuy.productTotals.totals.qty).toBe(30);
   });
 

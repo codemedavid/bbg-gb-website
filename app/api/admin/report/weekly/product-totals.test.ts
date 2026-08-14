@@ -21,9 +21,10 @@ vi.mock('@/lib/session', () => {
 });
 
 const { GET } = await import('./route');
-const { getDb, categories, products, orders, orderItems } = await import('@/lib/db');
+const { getDb, categories, products, groupBuys, moqCampaigns, orders, orderItems } = await import('@/lib/db');
 const { resetDb, makeUser } = await import('@/lib/test/harness');
 const { buildProductTotals } = await import('@/lib/report/product-totals');
+const { buildWeeklyWorkbook, GROUP_BUY_PRODUCT_TOTALS_SHEET } = await import('@/lib/report/weekly-xlsx');
 
 const MONDAY = '2026-03-16';
 const IN_WEEK = new Date('2026-03-17T02:00:00Z');
@@ -132,5 +133,70 @@ describe('weekly report product totals', () => {
     expect(report.productTotals.rows).toEqual([]);
     expect(report.productTotals.totals).toEqual({ usd: 0, qty: 0 });
     expect(buildProductTotals([])).toEqual(report.productTotals);
+  });
+
+  it('exports one canonical product row across Kahati and campaign batches', async () => {
+    const db = await getDb();
+    const user = await makeUser();
+    const [product] = await db.insert(products).values({
+      name: 'Tirzepatide', spec: '30mg', code: 'TR30',
+      pricePhp: '6375', priceUsd: '102', kitSize: 10,
+      isGroupBuy: true, isKahati: true,
+    }).returning();
+    const [kahati] = await db.insert(groupBuys).values({
+      name: 'Tirzepatide 30mg vial', productId: product.id,
+      pricePerKitPhp: '6375', totalSlots: 10, claimedSlots: 0,
+    }).returning();
+    const seriesId = crypto.randomUUID();
+    const campaigns = await db.insert(moqCampaigns).values([
+      {
+        id: seriesId, seriesId, batchNo: 1, name: 'Tirzepatide 30mg vial',
+        pricePerKitPhp: '6375', moq: 10, committed: 2, status: 'completed',
+        includedProducts: [{ productId: product.id, name: product.name, outOfStock: false }],
+      },
+      {
+        seriesId, batchNo: 2, name: 'Tirzepatide 30mg vial',
+        pricePerKitPhp: '6375', moq: 10, committed: 3, status: 'open',
+        includedProducts: [{ productId: product.id, name: product.name, outOfStock: false }],
+      },
+    ]).returning();
+    const [order] = await db.insert(orders).values({
+      orderNo: 'BBG-88001', userId: user.id, status: 'payment_confirmed', buyType: 'group_buy',
+      subtotalPhp: '38250', totalPhp: '38250', totalUsd: '0',
+      shipName: 'Gelly', shipPhone: '0917', shipAddress: 'Manila', createdAt: IN_WEEK,
+    }).returning();
+
+    await db.insert(orderItems).values([
+      {
+        orderId: order.id, kind: 'group_buy', groupBuyId: kahati.id,
+        nameSnapshot: 'Tirzepatide 30mg vial — kahati', specSnapshot: 'Kahati · min 1 vials',
+        unitPricePhp: '637.50', qty: 10, lineTotalPhp: '6375',
+      },
+      ...campaigns.map((campaign, index) => ({
+        orderId: order.id, kind: 'moq_campaign' as const, moqCampaignId: campaign.id,
+        nameSnapshot: `Tirzepatide 30mg vial — group buy (Batch #${index + 1})`,
+        specSnapshot: `Group Buy · Batch #${index + 1} · proceeds at MOQ`,
+        unitPricePhp: '6375', qty: index + 2, lineTotalPhp: String(6375 * (index + 2)),
+      })),
+    ]);
+
+    const res = await GET(new Request(`http://localhost/api/admin/report/weekly?week=${MONDAY}`));
+    const body = await res.json();
+    const groupBuyReport = body.data.segments.groupbuy;
+
+    expect(groupBuyReport.productTotals.rows).toEqual([{
+      index: 1, name: 'Tirzepatide', code: 'TR30', spec: '30mg',
+      usd: 612, qty: 60, kits: 6,
+    }]);
+
+    const workbook = await buildWeeklyWorkbook(groupBuyReport, MONDAY, 'groupbuy');
+    const sheet = workbook.getWorksheet(GROUP_BUY_PRODUCT_TOTALS_SHEET)!;
+    expect(sheet.getRow(4).values).toEqual([
+      undefined, 1, 'Tirzepatide', 'TR30', '30mg', 6, 612, 60,
+    ]);
+    expect(sheet.getCell('A2').value).toBe('# Orders: 1  Units: 60');
+    expect(sheet.getRow(sheet.rowCount).values).toEqual([
+      undefined, 'TOTAL', null, null, null, 60, 612, 60,
+    ]);
   });
 });
