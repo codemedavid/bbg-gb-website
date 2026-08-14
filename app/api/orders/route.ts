@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderPaymentProofs, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements } from '@/lib/db';
+import { getDb, orders, orderItems, orderPaymentProofs, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements, users } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
@@ -97,7 +97,8 @@ export const POST = handler(async (req: Request) => {
   // part-filled: the customer uploaded proof for one total, and quietly dropping
   // the closed lines would charge them for a different order than the one they
   // reviewed. They remove the closed items and check out again.
-  if (body.items.some((i) => i.kind === 'group_buy' || i.kind === 'moq_campaign')) {
+  const containsCycleItems = body.items.some((i) => i.kind === 'group_buy' || i.kind === 'moq_campaign');
+  if (containsCycleItems) {
     await requireCommitmentsOpen();
   }
 
@@ -111,20 +112,20 @@ export const POST = handler(async (req: Request) => {
   // Has this customer already paid to have this cycle's parcel packed? Read
   // before the transaction opens: it must reflect the orders that existed
   // BEFORE this checkout, never the one being placed.
-  const paidThisCycle = hasPaidPackingFeeThisCycle(
+  const knownPaidThisCycle = hasPaidPackingFeeThisCycle(
     await listCyclePayments(db, session.sub, cycleKey),
   );
   // A cart that is nothing but hatian lines with the cycle fee already paid owes
   // nothing at all now, so there is no payment to prove. Any other cart — an
   // on-hand item alongside it, or the cycle's first commitment — is paid for at
   // checkout and must carry its proof.
-  const confirmOnly = paidThisCycle && body.items.every((i) => i.kind === 'group_buy');
+  const knownConfirmOnly = knownPaidThisCycle && body.items.every((i) => i.kind === 'group_buy');
 
   // Every proof the customer attached — up to five, because a bank transfer cap
   // means one order is often paid across several transfers. Stored before the
   // transaction opens (external side effect); a rolled-back order leaves
   // harmless orphaned objects rather than a claimed slot.
-  const proofKeys = confirmOnly ? [] : await validateAndStoreProofs(form.getAll('proof'));
+  const proofKeys = knownConfirmOnly ? [] : await validateAndStoreProofs(form.getAll('proof'));
   // Global packing-fee defaults; the on-hand fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
   const packingFees = await getPackingFees();
@@ -132,6 +133,21 @@ export const POST = handler(async (req: Request) => {
   // Everything touching inventory runs in one transaction, so a failure part-way
   // through cannot leave claimed kahati slots or decremented stock behind.
   const placeOrders = () => db.transaction(async (tx) => {
+    // Serialize cycle-fee decisions per customer. The optimistic read above is
+    // only for deciding whether the incoming request needs a proof; two first
+    // checkouts can both observe no earlier order. Locking the customer row and
+    // re-reading inside this transaction makes exactly one of those checkouts
+    // the fee payer, while unrelated customers continue independently.
+    if (containsCycleItems && cycleKey) {
+      await tx.select({ id: users.id }).from(users)
+        .where(eq(users.id, session.sub))
+        .for('update');
+    }
+    const paidThisCycle = containsCycleItems && hasPaidPackingFeeThisCycle(
+      await listCyclePayments(tx, session.sub, cycleKey),
+    );
+    const confirmOnly = paidThisCycle && body.items.every((i) => i.kind === 'group_buy');
+
     // Reject a payment method the customer could not actually have chosen.
     if (body.paymentMethod) {
       const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
@@ -472,7 +488,7 @@ export const POST = handler(async (req: Request) => {
           : 'Order placed',
       });
 
-      created.push({ order, orderNo, totals, lineCount: lines.length, lines });
+      created.push({ order, orderNo, totals, lineCount: lines.length, lines, confirmOnly });
     }
 
     // Inventory was already drawn down as each line was priced — on-hand stock in
@@ -499,7 +515,7 @@ export const POST = handler(async (req: Request) => {
   // One email and one event per order: a split cart produces orders with different
   // totals, downpayments and delivery timelines, so a single combined notice would
   // misstate what the customer owes on each.
-  for (const { order, orderNo, totals, lineCount, lines } of created) {
+  for (const { order, orderNo, totals, lineCount, lines, confirmOnly } of created) {
     await sendEmail({
       to: session.email,
       ...orderPlacedEmail({
