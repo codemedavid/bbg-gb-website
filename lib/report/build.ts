@@ -23,6 +23,7 @@ export type ReportOrderInput = {
   paymentMethod: string | null;
   totalUsd: string | null;
   totalPhp: string;
+  packingFeePhp?: string | null;
   items: ReportItem[];
 };
 
@@ -48,6 +49,7 @@ export type ReportRow = {
   status: string;
   usd: number;
   php: number;
+  packingFeePhp: number;
 };
 
 export type WeeklyReport = {
@@ -55,7 +57,7 @@ export type WeeklyReport = {
   rangeLabel: string; // "Mon May 25 – Sun May 31"
   orderCount: number;
   counts: { paid: number; pending: number; cancelled: number };
-  totals: { usd: number; php: number };
+  totals: { usd: number; php: number; packingFeePhp: number };
   rows: ReportRow[];
 };
 
@@ -95,6 +97,7 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     status: REPORT_STATUS_LABEL[o.status] ?? o.status,
     usd: num(o.totalUsd),
     php: num(o.totalPhp),
+    packingFeePhp: num(o.packingFeePhp),
   }));
 
   const counts = orders.reduce(
@@ -113,10 +116,11 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
       if (o.status !== 'cancelled') {
         acc.usd += num(o.totalUsd);
         acc.php += num(o.totalPhp);
+        acc.packingFeePhp += num(o.packingFeePhp);
       }
       return acc;
     },
-    { usd: 0, php: 0 },
+    { usd: 0, php: 0, packingFeePhp: 0 },
   );
 
   return {

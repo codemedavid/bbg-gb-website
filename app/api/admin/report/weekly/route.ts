@@ -21,6 +21,7 @@ export const GET = handler(async (req: Request) => {
       createdAt: orders.createdAt, shipName: orders.shipName, shipPhone: orders.shipPhone,
       shipAddress: orders.shipAddress, courier: orders.courier, packedBy: orders.packedBy,
       paymentMethod: orders.paymentMethod, totalUsd: orders.totalUsd, totalPhp: orders.totalPhp,
+      packingFeePhp: orders.packingFeePhp,
       customerEmail: users.email,
     })
     .from(orders)
@@ -59,6 +60,7 @@ export const GET = handler(async (req: Request) => {
     paymentMethod: o.paymentMethod,
     totalUsd: o.totalUsd,
     totalPhp: o.totalPhp,
+    packingFeePhp: o.packingFeePhp,
     items: itemsByOrder.get(o.id) ?? [],
   }));
 

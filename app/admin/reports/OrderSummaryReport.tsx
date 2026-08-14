@@ -28,6 +28,7 @@ export function OrderSummaryReport({ report }: { report: WeeklyReport }) {
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="Revenue (PHP)" value={php(report.totals.php)} accent="#0b46b8" />
+        <Tile label="Packing Fees (PHP)" value={php(report.totals.packingFeePhp)} accent="#57a814" />
         <Tile label="Revenue (USD)" value={`$${report.totals.usd.toFixed(2)}`} />
       </div>
 
