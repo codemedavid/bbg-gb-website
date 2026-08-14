@@ -8,7 +8,14 @@
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
 import { buildWeeklyReport, type ReportOrderInput } from './build';
-import { buildWeeklyWorkbook, PRODUCT_TOTALS_HEADERS, PRODUCT_TOTALS_SHEET, XLSX_HEADERS } from './weekly-xlsx';
+import {
+  buildWeeklyWorkbook,
+  GROUP_BUY_PRODUCT_TOTALS_HEADERS,
+  GROUP_BUY_PRODUCT_TOTALS_SHEET,
+  PRODUCT_TOTALS_HEADERS,
+  PRODUCT_TOTALS_SHEET,
+  XLSX_HEADERS,
+} from './weekly-xlsx';
 
 type Header = (typeof XLSX_HEADERS)[number];
 // 1-based column index of a header, so assertions name the column instead of
@@ -28,6 +35,16 @@ const order = (o: Partial<ReportOrderInput>): ReportOrderInput => ({
 async function roundTrip(orders: ReportOrderInput[], monday = '2026-05-25') {
   const report = buildWeeklyReport(monday, orders);
   const workbook = await buildWeeklyWorkbook(report, monday);
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  const reopened = new ExcelJS.Workbook();
+  await reopened.xlsx.load(buffer);
+  return { sheet: reopened.worksheets[0], workbook: reopened, report };
+}
+
+async function groupBuyRoundTrip(orders: ReportOrderInput[], monday = '2026-05-25') {
+  const report = buildWeeklyReport(monday, orders);
+  const workbook = await buildWeeklyWorkbook(report, monday, 'groupbuy');
   const buffer = await workbook.xlsx.writeBuffer();
 
   const reopened = new ExcelJS.Workbook();
@@ -228,6 +245,79 @@ describe('buildWeeklyWorkbook — Product Totals sheet', () => {
   });
 });
 
+describe('buildWeeklyWorkbook — Batch 6 Group Buy format', () => {
+  const twoProducts = () => order({
+    items: [
+      { productId: 'p-ba5', nameSnapshot: 'Liquid Bacteriostatic Water', specSnapshot: '5ml', code: 'BA5', kitSize: 10, qty: 270, unitPriceUsd: '1.00', unitPricePhp: '56.00' },
+      { productId: 'p-lb50', nameSnapshot: 'Lemon Bottle', specSnapshot: '50ml', code: 'LB50', kitSize: 1, qty: 33, unitPriceUsd: '18.00', unitPricePhp: '1000.00' },
+    ],
+  });
+
+  it('exports one BBG-ProductTotals worksheet instead of the order-detail workbook', async () => {
+    const { workbook, sheet } = await groupBuyRoundTrip([twoProducts()]);
+
+    expect(workbook.worksheets).toHaveLength(1);
+    expect(sheet.name).toBe(GROUP_BUY_PRODUCT_TOTALS_SHEET);
+  });
+
+  it('places the title, summary and visible headers on the Batch 6 rows', async () => {
+    const { sheet } = await groupBuyRoundTrip([twoProducts()]);
+
+    expect(sheet.getCell('A1').value).toBe('# BBG Product Totals - Week 22 · Mon May 25 – Sun May 31');
+    expect(sheet.getCell('A2').value).toBe('# Orders: 1  Units: 303');
+    expect(GROUP_BUY_PRODUCT_TOTALS_HEADERS.map((_, i) => sheet.getRow(3).getCell(i + 1).value))
+      .toEqual([...GROUP_BUY_PRODUCT_TOTALS_HEADERS]);
+    expect(sheet.getCell('G3').value).toBeNull();
+  });
+
+  it('matches the Batch 6 column widths and hidden helper columns', async () => {
+    const { sheet } = await groupBuyRoundTrip([twoProducts()]);
+
+    expect([1, 2, 3, 4, 5].map((i) => sheet.getColumn(i).width))
+      .toEqual([11.75, 26.75, 10.875, 10.375, 9]);
+    expect(sheet.getColumn(6).hidden).toBe(true);
+    expect(sheet.getColumn(7).hidden).toBe(true);
+  });
+
+  it('writes product rows as kits, USD and hidden raw units', async () => {
+    const { sheet } = await groupBuyRoundTrip([twoProducts()]);
+
+    expect([1, 2, 3, 4, 5, 6, 7].map((c) => sheet.getRow(4).getCell(c).value))
+      .toEqual([1, 'Liquid Bacteriostatic Water', 'BA5', '5ml', 27, 270, 270]);
+    expect([1, 2, 3, 4, 5, 6, 7].map((c) => sheet.getRow(5).getCell(c).value))
+      .toEqual([2, 'Lemon Bottle', 'LB50', '50ml', 33, 594, 33]);
+  });
+
+  it('uses the reference black, white-bold table styling and borders', async () => {
+    const { sheet } = await groupBuyRoundTrip([twoProducts()]);
+
+    for (const address of ['A1', 'A2', 'A3', 'B4', 'F4', 'G4', 'A6']) {
+      const cell = sheet.getCell(address);
+      expect(cell.fill).toMatchObject({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } });
+      expect(cell.font).toMatchObject({ name: 'Aptos Narrow', size: 11, bold: true, color: { argb: 'FFFFFFFF' } });
+    }
+    expect(sheet.getCell('A3').border).toMatchObject({
+      left: { style: 'thin' }, right: { style: 'thin' }, top: { style: 'thin' }, bottom: { style: 'thin' },
+    });
+    expect(sheet.getCell('B4').border).toMatchObject({
+      left: { style: 'thin' }, right: { style: 'thin' }, top: { style: 'thin' }, bottom: { style: 'thin' },
+    });
+    expect(sheet.getCell('A6').border).toEqual({});
+  });
+
+  it('closes with the Batch 6 TOTAL row and remains valid when empty', async () => {
+    const populated = await groupBuyRoundTrip([twoProducts()]);
+    const total = populated.sheet.getRow(populated.sheet.rowCount);
+    expect([1, 2, 3, 4, 5, 6, 7].map((c) => total.getCell(c).value))
+      .toEqual(['TOTAL', null, null, null, 303, 864, 303]);
+
+    const empty = await groupBuyRoundTrip([]);
+    expect(empty.sheet.getCell('A1').value).toContain('BBG Product Totals');
+    expect(empty.sheet.getCell('A2').value).toBe('# Orders: 0  Units: 0');
+    expect(empty.sheet.getRow(empty.sheet.rowCount).getCell(1).value).toBe('TOTAL');
+  });
+});
+
 // On-hand and group buy download as two files rather than two tabs of one, so
 // the batch-order workbook can be handed to whoever places the order without
 // the on-hand sales in it at all.
@@ -236,11 +326,11 @@ describe('buildWeeklyWorkbook — per-segment workbooks', () => {
     items: [{ productId: 'p-tr15', nameSnapshot: 'Tirzepatide', specSnapshot: '15mg', code: 'TR15', kitSize: 10, qty: 5, unitPriceUsd: '6.80', unitPricePhp: '380.00' }],
   });
 
-  it('names the order sheet after the segment and the week', async () => {
+  it('uses the Batch 6 sheet name for the group-buy segment', async () => {
     const report = buildWeeklyReport('2026-05-25', [anOrder()]);
     const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'groupbuy');
 
-    expect(workbook.worksheets[0].name).toBe('Group Buy · Week 22');
+    expect(workbook.worksheets[0].name).toBe(GROUP_BUY_PRODUCT_TOTALS_SHEET);
   });
 
   it('names the on-hand order sheet for its own segment', async () => {
@@ -265,12 +355,23 @@ describe('buildWeeklyWorkbook — per-segment workbooks', () => {
     }
   });
 
-  it('still carries its own Product Totals sheet', async () => {
+  it('exports only the Batch 6 Product Totals sheet for group buy', async () => {
     const report = buildWeeklyReport('2026-05-25', [anOrder()]);
     const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'groupbuy');
 
+    expect(workbook.worksheets).toHaveLength(1);
+    expect(workbook.worksheets[0].name).toBe(GROUP_BUY_PRODUCT_TOTALS_SHEET);
+  });
+
+  it('keeps the current two-sheet On-Hand workbook unchanged', async () => {
+    const report = buildWeeklyReport('2026-05-25', [anOrder()]);
+    const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'onhand');
+
     expect(workbook.worksheets).toHaveLength(2);
-    expect(workbook.worksheets[1].name).toBe(PRODUCT_TOTALS_SHEET);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      'On-Hand · Week 22',
+      PRODUCT_TOTALS_SHEET,
+    ]);
   });
 
   it('falls back to the unsegmented sheet name when no segment is given', async () => {
