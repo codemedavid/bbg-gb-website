@@ -379,4 +379,21 @@ describe('repeat commitments to the same group buy', () => {
 
     expect(Number(body.data.order.packingFeePhp)).toBe(300);
   });
+
+  it('charges one cycle fee when the same customer checks out concurrently', async () => {
+    const user = await signIn();
+    const c = await makeMoqCampaign({ moq: 10, pricePerKitPhp: 10000 });
+
+    const placed = await Promise.all([
+      checkout([campaignLine(c.id)], { idempotencyKey: 'cycle-race-11111111' }),
+      checkout([campaignLine(c.id)], { idempotencyKey: 'cycle-race-22222222' }),
+    ]);
+
+    expect(placed.map(({ res }) => res.status)).toEqual([201, 201]);
+
+    const rows = await (await getDb()).select({ packingFeePhp: orders.packingFeePhp })
+      .from(orders)
+      .where(eq(orders.userId, user.id));
+    expect(rows.map((row) => Number(row.packingFeePhp)).sort((a, b) => a - b)).toEqual([0, 300]);
+  });
 });
