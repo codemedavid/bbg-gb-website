@@ -11,7 +11,10 @@ export type ReportItem = {
   unitPricePhp: string;
 };
 
+export type ReportBuyType = 'solo' | 'kahati' | 'group_buy' | 'moq';
+
 export type ReportOrderInput = {
+  buyType?: ReportBuyType;
   orderNo: string;
   status: string;
   createdAt: string; // ISO instant
@@ -31,6 +34,7 @@ export type ReportOrderInput = {
 export type ReportRow = {
   index: number;
   invoice: string;
+  buyType: ReportBuyType;
   date: string;
   customer: string;
   /** Kept for the legacy single-cell layout; spreadsheets use phone/email. */
@@ -84,6 +88,7 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
   const rows: ReportRow[] = orders.map((o, i) => ({
     index: i + 1,
     invoice: o.orderNo,
+    buyType: o.buyType ?? 'solo',
     date: manilaDate(o.createdAt),
     customer: o.shipName,
     contact: [o.shipPhone, o.customerEmail].filter(Boolean).join('\n'),

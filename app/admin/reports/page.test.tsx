@@ -8,7 +8,7 @@ const report: WeeklyReport = {
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 1,
   counts: { paid: 1, pending: 0, cancelled: 0 }, totals: { usd: 100, php: 5000, packingFeePhp: 300 },
   rows: [{
-    index: 1, invoice: 'BBG-2500', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
+    index: 1, invoice: 'BBG-2500', buyType: 'solo', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
     phone: '0917', email: 'a@x.com', address: 'QC', productCodes: ['RT10'], products: ['Reta x5'], courier: 'J&T',
     packedBy: 'Cza', payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
     packingFeePhp: 300,

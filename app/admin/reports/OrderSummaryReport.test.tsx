@@ -11,7 +11,7 @@ const report: WeeklyReport = {
   totals: { usd: 100, php: 5000, packingFeePhp: 300 },
   rows: [
     {
-      index: 1, invoice: 'BBG-2500', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
+      index: 1, invoice: 'BBG-2500', buyType: 'solo', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
       phone: '09171234567', email: 'ana@example.com', address: 'QC',
       productCodes: ['RT10'], products: ['Retatrutide x5 @ $6.80'], courier: 'Lalamove', packedBy: 'Cza',
       payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,

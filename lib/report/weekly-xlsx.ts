@@ -10,7 +10,7 @@
 // top-level `import ExcelJS from 'exceljs'` here would be pulled into the admin
 // page chunk on load. The type-only import erases at compile time and costs
 // nothing. weekly-xlsx-download.test.ts pins both halves of that.
-import type { Workbook } from 'exceljs';
+import type { Workbook, Worksheet } from 'exceljs';
 import { REPORT_COLORS } from './constants';
 import { weekFilename } from './week';
 import type { WeeklyReport } from './build';
@@ -32,14 +32,35 @@ const MONEY_FORMAT = '#,##0.00';
 const argb = ([r, g, b]: [number, number, number]): string =>
   'FF' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
 
-export async function buildWeeklyWorkbook(
+function subsetReport(report: WeeklyReport, buyType: 'group_buy' | 'kahati'): WeeklyReport {
+  const rows = report.rows
+    .filter((row) => row.buyType === buyType)
+    .map((row, index) => ({ ...row, index: index + 1 }));
+  const counts = rows.reduce((acc, row) => {
+    if (row.orderStatus === 'Cancelled') acc.cancelled += 1;
+    else if (row.paymentStatus === 'Paid') acc.paid += 1;
+    else if (row.paymentStatus === 'Pending') acc.pending += 1;
+    return acc;
+  }, { paid: 0, pending: 0, cancelled: 0 });
+  const totals = rows.reduce((acc, row) => {
+    if (row.orderStatus !== 'Cancelled') {
+      acc.usd += row.usd;
+      acc.php += row.php;
+      acc.packingFeePhp += row.packingFeePhp;
+    }
+    return acc;
+  }, { usd: 0, php: 0, packingFeePhp: 0 });
+
+  return { ...report, rows, orderCount: rows.length, counts, totals };
+}
+
+function addReportSheet(
+  workbook: Workbook,
   report: WeeklyReport,
-  mondayYmd: string,
-): Promise<Workbook> {
-  const { default: ExcelJS } = await import('exceljs');
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'BBG Peptides';
-  const sheet = workbook.addWorksheet(`Week ${report.weekNo}`, {
+  sheetName: string,
+  tableName: string,
+): Worksheet {
+  const sheet = workbook.addWorksheet(sheetName, {
     views: [{ state: 'frozen', ySplit: 1 }],
   });
 
@@ -48,18 +69,13 @@ export async function buildWeeklyWorkbook(
   const orderRows = report.rows.map((row) => [
     row.index, row.invoice, row.date, row.customer, row.phone, row.email, row.address,
     row.productCodes.join('\n'),
-    // One line per item — the cell wraps, so a 4-line order stays readable.
     row.products.join('\n'),
     row.courier, row.packedBy, row.payment, row.paymentStatus, row.orderStatus,
     row.usd, row.packingFeePhp, row.php,
   ]);
 
-  // A named Excel Table is a stable PivotTable source: after download the
-  // admin can choose Insert → PivotTable and select WeeklyOrders without first
-  // finding or repairing a cell range. The custom totals row stays outside the
-  // table so it cannot be mistaken for an order in the pivot source.
   sheet.addTable({
-    name: 'WeeklyOrders',
+    name: tableName,
     ref: 'A1',
     headerRow: true,
     totalsRow: false,
@@ -87,8 +103,6 @@ export async function buildWeeklyWorkbook(
     sheet.getColumn(col).alignment = { wrapText: true, vertical: 'top' };
   }
 
-  // Totals mirror the report's own figures, which already exclude cancelled
-  // orders — recomputing here would risk the two disagreeing.
   const totalRow = sheet.addRow([]);
   totalRow.getCell(1).value = 'TOTAL';
   totalRow.getCell(XLSX_HEADERS.indexOf('Order Status') + 1).value =
@@ -101,6 +115,23 @@ export async function buildWeeklyWorkbook(
   totalRow.getCell(usdCol).numFmt = MONEY_FORMAT;
   totalRow.getCell(packingFeeCol).numFmt = MONEY_FORMAT;
   totalRow.getCell(phpCol).numFmt = MONEY_FORMAT;
+
+  return sheet;
+}
+
+export async function buildWeeklyWorkbook(
+  report: WeeklyReport,
+  mondayYmd: string,
+): Promise<Workbook> {
+  const { default: ExcelJS } = await import('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'BBG Peptides';
+  // Named Excel Tables are stable PivotTable sources. The complete report is
+  // preserved, while the two group-buy modes also get dedicated tabs and
+  // independent totals. Custom totals stay outside each source table.
+  addReportSheet(workbook, report, `Week ${report.weekNo}`, 'WeeklyOrders');
+  addReportSheet(workbook, subsetReport(report, 'group_buy'), 'Group Buy', 'GroupBuyOrders');
+  addReportSheet(workbook, subsetReport(report, 'kahati'), 'Kahati', 'KahatiOrders');
 
   return workbook;
 }

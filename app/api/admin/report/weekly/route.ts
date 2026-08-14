@@ -20,6 +20,7 @@ export const GET = handler(async (req: Request) => {
   const orderRows = await db
     .select({
       id: orders.id, orderNo: orders.orderNo, status: orders.status,
+      buyType: orders.buyType,
       createdAt: orders.createdAt, shipName: orders.shipName, shipPhone: orders.shipPhone,
       shipAddress: orders.shipAddress, courier: orders.courier, packedBy: orders.packedBy,
       paymentMethod: orders.paymentMethod, totalUsd: orders.totalUsd, totalPhp: orders.totalPhp,
@@ -70,6 +71,7 @@ export const GET = handler(async (req: Request) => {
 
   const inputs: ReportOrderInput[] = orderRows.map((o) => ({
     orderNo: o.orderNo,
+    buyType: o.buyType,
     status: o.status,
     createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
     shipName: o.shipName,
