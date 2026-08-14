@@ -10,6 +10,7 @@
 // route's select. A route that forgets either one still returns a plausible
 // report: right names, right money, everything filed under on-hand.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 
 vi.mock('@/lib/session', () => {
   class ApiError extends Error {
@@ -197,5 +198,40 @@ describe('the combined report stays available alongside the halves', () => {
 
     expect(report.orderCount).toBe(2);
     expect(report.productTotals.rows).toHaveLength(2);
+  });
+});
+
+describe('custom Manila calendar ranges', () => {
+  it('includes both selected dates and excludes the adjacent instants', async () => {
+    const db = await getDb();
+    const before = await seedOnHandOrder('BBG-20001');
+    const first = await seedOnHandOrder('BBG-20002');
+    const last = await seedOnHandOrder('BBG-20003');
+    const after = await seedOnHandOrder('BBG-20004');
+
+    await db.update(orders).set({ createdAt: new Date('2026-03-16T15:59:59.999Z') }).where(eq(orders.id, before.id));
+    await db.update(orders).set({ createdAt: new Date('2026-03-16T16:00:00.000Z') }).where(eq(orders.id, first.id));
+    await db.update(orders).set({ createdAt: new Date('2026-03-18T15:59:59.999Z') }).where(eq(orders.id, last.id));
+    await db.update(orders).set({ createdAt: new Date('2026-03-18T16:00:00.000Z') }).where(eq(orders.id, after.id));
+
+    const res = await GET(new Request(
+      'http://localhost/api/admin/report/weekly?from=2026-03-17&to=2026-03-18',
+    ));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.data.report.rows.map((row: { invoice: string }) => row.invoice).sort())
+      .toEqual(['BBG-20002', 'BBG-20003']);
+    expect(body.data.report.rangeLabel).toBe('Mar 17, 2026 – Mar 18, 2026');
+  });
+
+  it('rejects a range whose end is before its start', async () => {
+    const res = await GET(new Request(
+      'http://localhost/api/admin/report/weekly?from=2026-03-18&to=2026-03-17',
+    ));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/end date must be on or after/i);
   });
 });
