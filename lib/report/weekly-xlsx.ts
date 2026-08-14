@@ -35,6 +35,15 @@ export const PRODUCT_TOTALS_HEADERS = [
 ] as const;
 const PRODUCT_COLUMN_WIDTHS = [5, 38, 16, 24, 13, 12, 10];
 
+// The supplier-facing Group Buy workbook follows the Batch 6 sheet already
+// used by the operations team. The two rightmost values remain in the file for
+// calculations and auditing, but are hidden to reproduce that working view.
+export const GROUP_BUY_PRODUCT_TOTALS_SHEET = 'BBG-ProductTotals';
+export const GROUP_BUY_PRODUCT_TOTALS_HEADERS = [
+  '#', 'Product', 'Variant / Code', 'Specs', 'Total Qty', 'Total USD',
+] as const;
+const GROUP_BUY_PRODUCT_COLUMN_WIDTHS = [11.75, 26.75, 10.875, 10.375, 9, 0, 0];
+
 const MONEY_FORMAT = '#,##0.00';
 
 // ExcelJS wants 'FFRRGGBB'; REPORT_COLORS carries the PDF's [r,g,b] triples so
@@ -55,6 +64,12 @@ export async function buildWeeklyWorkbook(
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'BBG Peptides';
+
+  if (segment === 'groupbuy') {
+    addGroupBuyProductTotalsSheet(workbook, report);
+    return workbook;
+  }
+
   const title = segment
     ? `${SEGMENT_SHORT_LABEL[segment]} · Week ${report.weekNo}`
     : `Week ${report.weekNo}`;
@@ -112,6 +127,68 @@ export async function buildWeeklyWorkbook(
   addProductTotalsSheet(workbook, report);
 
   return workbook;
+}
+
+/** Build the one-tab supplier workbook matching BBG-ProductTotals Batch 6. */
+function addGroupBuyProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
+  const sheet = workbook.addWorksheet(GROUP_BUY_PRODUCT_TOTALS_SHEET, {
+    views: [{ state: 'normal', activeCell: 'B2' }],
+    pageSetup: {
+      orientation: 'portrait',
+      pageOrder: 'downThenOver',
+      scale: 100,
+      fitToWidth: 1,
+      fitToHeight: 1,
+    },
+  });
+
+  GROUP_BUY_PRODUCT_COLUMN_WIDTHS.forEach((width, i) => {
+    const column = sheet.getColumn(i + 1);
+    column.width = width;
+    column.hidden = i >= 5;
+  });
+
+  sheet.addRow([`# BBG Product Totals - Week ${report.weekNo} · ${report.rangeLabel}`]);
+  sheet.addRow([`# Orders: ${report.orderCount}  Units: ${report.productTotals.totals.qty}`]);
+  sheet.addRow([...GROUP_BUY_PRODUCT_TOTALS_HEADERS, null]);
+
+  for (const row of report.productTotals.rows) {
+    sheet.addRow([row.index, row.name, row.code, row.spec, row.kits, row.usd, row.qty]);
+  }
+
+  const totalRow = sheet.addRow([
+    'TOTAL', null, null, null,
+    report.productTotals.totals.qty,
+    report.productTotals.totals.usd,
+    report.productTotals.totals.qty,
+  ]);
+
+  const blackFill = {
+    type: 'pattern' as const,
+    pattern: 'solid' as const,
+    fgColor: { argb: 'FF000000' },
+  };
+  const whiteBoldFont = {
+    name: 'Aptos Narrow',
+    size: 11,
+    bold: true,
+    color: { argb: 'FFFFFFFF' },
+  };
+  const thinBorder = {
+    left: { style: 'thin' as const, color: { indexed: 64 } },
+    right: { style: 'thin' as const, color: { indexed: 64 } },
+    top: { style: 'thin' as const, color: { indexed: 64 } },
+    bottom: { style: 'thin' as const, color: { indexed: 64 } },
+  };
+
+  for (let rowNumber = 1; rowNumber <= totalRow.number; rowNumber++) {
+    for (let columnNumber = 1; columnNumber <= 7; columnNumber++) {
+      const cell = sheet.getRow(rowNumber).getCell(columnNumber);
+      cell.fill = blackFill;
+      cell.font = whiteBoldFont;
+      if (rowNumber >= 3 && rowNumber < totalRow.number) cell.border = thinBorder;
+    }
+  }
 }
 
 // Appended after the order sheet so the workbook opens on the view the team

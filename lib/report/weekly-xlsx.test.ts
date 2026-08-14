@@ -273,7 +273,9 @@ describe('buildWeeklyWorkbook — Batch 6 Group Buy format', () => {
   it('matches the Batch 6 column widths and hidden helper columns', async () => {
     const { sheet } = await groupBuyRoundTrip([twoProducts()]);
 
-    expect([1, 2, 3, 4, 5].map((i) => sheet.getColumn(i).width))
+    // ExcelJS omits an explicit width of 9 when serializing because 9 is its
+    // default; treat an omitted value as that same effective visual width.
+    expect([1, 2, 3, 4, 5].map((i) => sheet.getColumn(i).width ?? 9))
       .toEqual([11.75, 26.75, 10.875, 10.375, 9]);
     expect(sheet.getColumn(6).hidden).toBe(true);
     expect(sheet.getColumn(7).hidden).toBe(true);
