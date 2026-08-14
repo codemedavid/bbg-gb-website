@@ -111,7 +111,9 @@ export const GET = handler(async (req: Request) => {
           ...base,
           nameSnapshot: product.name, specSnapshot: product.spec, productId: product.id,
           code: product.code, kitSize: product.kitSize, qty,
-          unitPriceUsd: product.priceUsd == null ? null : Number(product.priceUsd) / product.kitSize,
+          unitPriceUsd: product.priceUsd == null
+            ? null
+            : String(Number(product.priceUsd) / product.kitSize),
         });
       }
     } else if (it.kahatiProductId) {
@@ -122,7 +124,9 @@ export const GET = handler(async (req: Request) => {
         productId: it.kahatiProductId, code: it.kahatiCode, kitSize,
         qty: it.qty,
         unitPriceUsd: it.unitPriceUsd
-          ?? (it.kahatiPriceUsd == null || !kitSize ? null : Number(it.kahatiPriceUsd) / kitSize),
+          ?? (it.kahatiPriceUsd == null || !kitSize
+            ? null
+            : String(Number(it.kahatiPriceUsd) / kitSize)),
       });
     } else {
       list.push({
