@@ -18,7 +18,8 @@ describe('buildWeeklyReport', () => {
   });
 
   it('formats the USD product line and Manila date', () => {
-    const r = buildWeeklyReport('2026-05-25', [order({})]);
+    const r = buildWeeklyReport('2026-05-25', [order({ buyType: 'group_buy' } as Partial<ReportOrderInput> & { buyType: string })]);
+    expect(r.rows[0].buyType).toBe('group_buy');
     expect(r.rows[0].productCodes).toEqual(['TR15']);
     expect(r.rows[0].products).toEqual(['Tirzepatide TR15 x5 @ $6.80']);
     expect(r.rows[0].date).toBe('5/27/2026');

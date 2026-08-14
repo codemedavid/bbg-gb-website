@@ -33,7 +33,7 @@ async function roundTrip(orders: ReportOrderInput[], monday = '2026-05-25') {
 
   const reopened = new ExcelJS.Workbook();
   await reopened.xlsx.load(buffer);
-  return { sheet: reopened.worksheets[0], report };
+  return { workbook: reopened, sheet: reopened.worksheets[0], report };
 }
 
 describe('buildWeeklyWorkbook', () => {
@@ -67,6 +67,24 @@ describe('buildWeeklyWorkbook', () => {
     }).model;
     expect(model.tableRef).toBe('A1:Q3');
     expect(model.columns.map((column) => column.name)).toEqual([...XLSX_HEADERS]);
+  });
+
+  it('separates Group Buy and Kahati orders into their own pivot-ready sheets', async () => {
+    const { workbook, sheet } = await roundTrip([
+      order({ orderNo: 'BBG-SOLO', buyType: 'solo' } as Partial<ReportOrderInput> & { buyType: string }),
+      order({ orderNo: 'BBG-GROUP', buyType: 'group_buy', totalPhp: '700.00' } as Partial<ReportOrderInput> & { buyType: string }),
+      order({ orderNo: 'BBG-KAHATI', buyType: 'kahati', totalPhp: '800.00' } as Partial<ReportOrderInput> & { buyType: string }),
+    ]);
+
+    const groupBuy = workbook.getWorksheet('Group Buy');
+    const kahati = workbook.getWorksheet('Kahati');
+    expect(sheet.getTable('WeeklyOrders')).toBeDefined();
+    expect(groupBuy?.getTable('GroupBuyOrders')).toBeDefined();
+    expect(kahati?.getTable('KahatiOrders')).toBeDefined();
+    expect(groupBuy?.getRow(2).getCell(columnOf('Invoice')).value).toBe('BBG-GROUP');
+    expect(kahati?.getRow(2).getCell(columnOf('Invoice')).value).toBe('BBG-KAHATI');
+    expect(groupBuy?.getRow(groupBuy.rowCount).getCell(columnOf('PHP')).value).toBe(700);
+    expect(kahati?.getRow(kahati.rowCount).getCell(columnOf('PHP')).value).toBe(800);
   });
 
   it('exports the buyer fields the client asked for', async () => {
