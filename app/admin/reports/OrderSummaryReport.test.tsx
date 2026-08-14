@@ -13,7 +13,7 @@ const report: WeeklyReport = {
     {
       index: 1, invoice: 'BBG-2500', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
       phone: '09171234567', email: 'ana@example.com', address: 'QC',
-      products: ['Retatrutide x5 @ $6.80'], courier: 'Lalamove', packedBy: 'Cza',
+      productCodes: ['RT10'], products: ['Retatrutide x5 @ $6.80'], courier: 'Lalamove', packedBy: 'Cza',
       payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
       packingFeePhp: 300,
     },
@@ -27,6 +27,7 @@ describe('OrderSummaryReport', () => {
     expect(screen.getByText('BBG-2500')).toBeInTheDocument();
     expect(screen.getByText('Ana Reyes')).toBeInTheDocument();
     expect(screen.getByText('Retatrutide x5 @ $6.80')).toBeInTheDocument();
+    expect(screen.getByText(/RT10/)).toBeInTheDocument();
     expect(screen.getByText('Lalamove')).toBeInTheDocument();
     // Rollup tiles present (unique labels).
     expect(screen.getByText('Orders')).toBeInTheDocument();

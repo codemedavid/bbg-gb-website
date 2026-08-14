@@ -17,13 +17,13 @@ import type { WeeklyReport } from './build';
 
 export const XLSX_HEADERS = [
   '#', 'Invoice', 'Date', 'Buyer Name', 'Contact Number', 'Email', 'Shipping Address',
-  'Order Details', 'Courier', 'Packed By', 'Payment Method', 'Payment Status',
+  'Product Codes', 'Order Details', 'Courier', 'Packed By', 'Payment Method', 'Payment Status',
   'Order Status', 'USD', 'Packing Fee (PHP)', 'PHP',
 ] as const;
 
 // Tuned so the wide free-text columns (address, order details) get room and the
 // short codes do not waste it.
-const COLUMN_WIDTHS = [5, 14, 12, 22, 16, 26, 34, 38, 10, 12, 16, 15, 20, 11, 18, 13];
+const COLUMN_WIDTHS = [5, 14, 12, 22, 16, 26, 34, 18, 38, 10, 12, 16, 15, 20, 11, 18, 13];
 
 const MONEY_FORMAT = '#,##0.00';
 
@@ -47,6 +47,7 @@ export async function buildWeeklyWorkbook(
 
   const orderRows = report.rows.map((row) => [
     row.index, row.invoice, row.date, row.customer, row.phone, row.email, row.address,
+    row.productCodes.join('\n'),
     // One line per item — the cell wraps, so a 4-line order stays readable.
     row.products.join('\n'),
     row.courier, row.packedBy, row.payment, row.paymentStatus, row.orderStatus,
@@ -76,12 +77,13 @@ export async function buildWeeklyWorkbook(
   const packingFeeCol = XLSX_HEADERS.indexOf('Packing Fee (PHP)') + 1;
   const phpCol = XLSX_HEADERS.indexOf('PHP') + 1;
   const detailsCol = XLSX_HEADERS.indexOf('Order Details') + 1;
+  const codesCol = XLSX_HEADERS.indexOf('Product Codes') + 1;
   const addressCol = XLSX_HEADERS.indexOf('Shipping Address') + 1;
 
   sheet.getColumn(usdCol).numFmt = MONEY_FORMAT;
   sheet.getColumn(packingFeeCol).numFmt = MONEY_FORMAT;
   sheet.getColumn(phpCol).numFmt = MONEY_FORMAT;
-  for (const col of [detailsCol, addressCol]) {
+  for (const col of [codesCol, detailsCol, addressCol]) {
     sheet.getColumn(col).alignment = { wrapText: true, vertical: 'top' };
   }
 

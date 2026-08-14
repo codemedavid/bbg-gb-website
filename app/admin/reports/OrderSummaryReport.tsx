@@ -52,7 +52,12 @@ export function OrderSummaryReport({ report }: { report: WeeklyReport }) {
                   <div className="text-[11px] text-ink-muted">{r.phone}</div>
                 </td>
                 <td className="px-3 py-3 text-ink-body">
-                  {r.products.map((p, i) => <div key={i}>{p}</div>)}
+                  {r.products.map((p, i) => (
+                    <div key={i}>
+                      {r.productCodes[i] ? <span className="font-semibold text-ink">{r.productCodes[i]} — </span> : null}
+                      {p}
+                    </div>
+                  ))}
                 </td>
                 <td className="px-3 py-3 text-ink-body">{r.courier}</td>
                 <td className="px-3 py-3 text-ink-body">

@@ -4,6 +4,7 @@ import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LA
 import { formatRange, isoWeekNumber } from './week';
 
 export type ReportItem = {
+  code?: string | null;
   nameSnapshot: string;
   qty: number;
   unitPriceUsd: string | null;
@@ -37,6 +38,7 @@ export type ReportRow = {
   phone: string;
   email: string;
   address: string;
+  productCodes: string[]; // aligned by index with products; blank means uncoded
   products: string[]; // one line per item, e.g. "Tirzepatide TR15 x5 @ $6.80"
   courier: string;
   packedBy: string;
@@ -88,6 +90,7 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     phone: o.shipPhone,
     email: o.customerEmail ?? '',
     address: o.shipAddress,
+    productCodes: o.items.map((item) => item.code?.trim() || ''),
     products: o.items.map(usdLine),
     courier: o.courier || '',
     packedBy: o.packedBy || '',
