@@ -43,22 +43,34 @@ export async function buildWeeklyWorkbook(
     views: [{ state: 'frozen', ySplit: 1 }],
   });
 
-  sheet.columns = XLSX_HEADERS.map((header, i) => ({ header, width: COLUMN_WIDTHS[i] }));
+  sheet.columns = COLUMN_WIDTHS.map((width) => ({ width }));
+
+  const orderRows = report.rows.map((row) => [
+    row.index, row.invoice, row.date, row.customer, row.phone, row.email, row.address,
+    // One line per item — the cell wraps, so a 4-line order stays readable.
+    row.products.join('\n'),
+    row.courier, row.packedBy, row.payment, row.paymentStatus, row.orderStatus,
+    row.usd, row.packingFeePhp, row.php,
+  ]);
+
+  // A named Excel Table is a stable PivotTable source: after download the
+  // admin can choose Insert → PivotTable and select WeeklyOrders without first
+  // finding or repairing a cell range. The custom totals row stays outside the
+  // table so it cannot be mistaken for an order in the pivot source.
+  sheet.addTable({
+    name: 'WeeklyOrders',
+    ref: 'A1',
+    headerRow: true,
+    totalsRow: false,
+    style: { theme: 'TableStyleMedium2', showRowStripes: true },
+    columns: XLSX_HEADERS.map((name) => ({ name, filterButton: true })),
+    rows: orderRows,
+  });
 
   const headerRow = sheet.getRow(1);
   headerRow.font = { bold: true, color: { argb: argb(REPORT_COLORS.headerText) } };
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.headerFill) } };
   headerRow.alignment = { vertical: 'middle', wrapText: true };
-
-  for (const row of report.rows) {
-    sheet.addRow([
-      row.index, row.invoice, row.date, row.customer, row.phone, row.email, row.address,
-      // One line per item — the cell wraps, so a 4-line order stays readable.
-      row.products.join('\n'),
-      row.courier, row.packedBy, row.payment, row.paymentStatus, row.orderStatus,
-      row.usd, row.packingFeePhp, row.php,
-    ]);
-  }
 
   const usdCol = XLSX_HEADERS.indexOf('USD') + 1;
   const packingFeeCol = XLSX_HEADERS.indexOf('Packing Fee (PHP)') + 1;
@@ -87,12 +99,6 @@ export async function buildWeeklyWorkbook(
   totalRow.getCell(usdCol).numFmt = MONEY_FORMAT;
   totalRow.getCell(packingFeeCol).numFmt = MONEY_FORMAT;
   totalRow.getCell(phpCol).numFmt = MONEY_FORMAT;
-
-  // Filters over the data range let the team slice by status without setup.
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: XLSX_HEADERS.length },
-  };
 
   return workbook;
 }

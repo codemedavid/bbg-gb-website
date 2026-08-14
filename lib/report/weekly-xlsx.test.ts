@@ -60,9 +60,14 @@ describe('buildWeeklyWorkbook', () => {
 
     const table = sheet.getTable('WeeklyOrders');
     expect(table).toBeDefined();
-    expect(table.ref).toBe('A1');
-    expect(table.columns.map((column) => column.name)).toEqual([...XLSX_HEADERS]);
-    expect(table.rows).toHaveLength(2);
+    // ExcelJS deserializes the persisted range as tableRef rather than through
+    // its ref accessor. P3 = header + two order rows; the totals row is row 4.
+    const model = table.model as unknown as {
+      tableRef: string;
+      columns: { name: string }[];
+    };
+    expect(model.tableRef).toBe('A1:P3');
+    expect(model.columns.map((column) => column.name)).toEqual([...XLSX_HEADERS]);
   });
 
   it('exports the buyer fields the client asked for', async () => {
