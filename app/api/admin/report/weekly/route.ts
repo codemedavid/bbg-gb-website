@@ -2,7 +2,8 @@ import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, orderItems, products, groupBuys, users } from '@/lib/db';
+import { getDb, orders, orderItems, products, groupBuys, moqCampaigns, users } from '@/lib/db';
+import type { IncludedProduct } from '@/lib/types';
 import {
   buildDateRangeReport, buildSegmentedDateRangeReport,
   type ReportItem, type ReportOrderInput,
@@ -55,32 +56,85 @@ export const GET = handler(async (req: Request) => {
           orderId: orderItems.orderId, kind: orderItems.kind, nameSnapshot: orderItems.nameSnapshot,
           specSnapshot: orderItems.specSnapshot, productId: orderItems.productId,
           qty: orderItems.qty, unitPriceUsd: orderItems.unitPriceUsd, unitPricePhp: orderItems.unitPricePhp,
-          code: products.code, kitSize: products.kitSize,
+          name: products.name, spec: products.spec, code: products.code,
+          priceUsd: products.priceUsd, kitSize: products.kitSize,
+          kahatiProductId: kahatiProducts.id,
+          kahatiName: kahatiProducts.name, kahatiSpec: kahatiProducts.spec,
+          kahatiCode: kahatiProducts.code, kahatiPriceUsd: kahatiProducts.priceUsd,
           kahatiKitSize: kahatiProducts.kitSize,
           kahatiVialCap: groupBuys.totalSlots,
+          campaignIncludedProducts: moqCampaigns.includedProducts,
         })
         .from(orderItems)
         .leftJoin(products, eq(orderItems.productId, products.id))
         .leftJoin(groupBuys, eq(orderItems.groupBuyId, groupBuys.id))
         .leftJoin(kahatiProducts, eq(groupBuys.productId, kahatiProducts.id))
+        .leftJoin(moqCampaigns, eq(orderItems.moqCampaignId, moqCampaigns.id))
         .where(inArray(orderItems.orderId, ids))
     : [];
+
+  // Campaign order items point at a batch rather than at its catalog products.
+  // Resolve every included product in one query so Batch #1, #2, ... can roll
+  // back up to stable product ids without adding one query per order line.
+  const campaignProductIds = [...new Set(itemRows.flatMap((item) =>
+    ((item.campaignIncludedProducts as IncludedProduct[] | null) ?? []).map((p) => p.productId),
+  ))];
+  const campaignProducts = campaignProductIds.length
+    ? await db.select({
+        id: products.id, name: products.name, spec: products.spec, code: products.code,
+        priceUsd: products.priceUsd, kitSize: products.kitSize,
+      }).from(products).where(inArray(products.id, campaignProductIds))
+    : [];
+  const campaignProductsById = new Map(campaignProducts.map((product) => [product.id, product]));
+
   const itemsByOrder = new Map<string, ReportItem[]>();
   for (const it of itemRows) {
     const list = itemsByOrder.get(it.orderId) ?? [];
-    list.push({
+    const base = {
       // `kind` is what puts a line's order on the group-buy side of the report
       // split when orders.buy_type says 'solo' only because that is its default.
       kind: it.kind,
-      nameSnapshot: it.nameSnapshot, specSnapshot: it.specSnapshot, productId: it.productId,
-      qty: it.qty, unitPriceUsd: it.unitPriceUsd, unitPricePhp: it.unitPricePhp,
-      // Direct line: the product's own kit size. Hatian line: the kit size of
-      // the product its counter names, falling back to the counter's vial cap —
-      // which IS one kit by the feature's definition and is NOT NULL, so a
-      // hatian always divides by something real. Leaving it null meant one kit
-      // per vial, which over-stated the largest rows on the sheet tenfold.
-      code: it.code, kitSize: it.kitSize ?? it.kahatiKitSize ?? it.kahatiVialCap,
-    });
+      unitPricePhp: it.unitPricePhp,
+    };
+
+    const included = ((it.campaignIncludedProducts as IncludedProduct[] | null) ?? [])
+      .map((entry) => campaignProductsById.get(entry.productId))
+      .filter((product): product is NonNullable<typeof product> => product != null);
+
+    if (it.kind === 'moq_campaign' && included.length > 0) {
+      for (const product of included) {
+        // Campaign quantities are kits. Convert them to supplier units before
+        // merging them with vial-counted Kahati lines; the builder then divides
+        // by this same kit size for the visible Total Qty value.
+        const qty = it.qty * product.kitSize;
+        list.push({
+          ...base,
+          nameSnapshot: product.name, specSnapshot: product.spec, productId: product.id,
+          code: product.code, kitSize: product.kitSize, qty,
+          unitPriceUsd: product.priceUsd == null ? null : Number(product.priceUsd) / product.kitSize,
+        });
+      }
+    } else if (it.kahatiProductId) {
+      const kitSize = it.kahatiKitSize ?? it.kahatiVialCap;
+      list.push({
+        ...base,
+        nameSnapshot: it.kahatiName!, specSnapshot: it.kahatiSpec,
+        productId: it.kahatiProductId, code: it.kahatiCode, kitSize,
+        qty: it.qty,
+        unitPriceUsd: it.unitPriceUsd
+          ?? (it.kahatiPriceUsd == null || !kitSize ? null : Number(it.kahatiPriceUsd) / kitSize),
+      });
+    } else {
+      list.push({
+        ...base,
+        nameSnapshot: it.name ?? it.nameSnapshot,
+        specSnapshot: it.spec ?? it.specSnapshot,
+        productId: it.productId,
+        qty: it.qty, unitPriceUsd: it.unitPriceUsd,
+        // A legacy unlinked Kahati still uses its vial cap as one supplier kit.
+        code: it.code, kitSize: it.kitSize ?? it.kahatiVialCap,
+      });
+    }
     itemsByOrder.set(it.orderId, list);
   }
 

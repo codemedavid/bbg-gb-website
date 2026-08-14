@@ -71,7 +71,7 @@ async function seedKahatiLine(
   let productId: string | null = null;
   if (opts.kitSize != null) {
     const [product] = await db.insert(products).values({
-      name: 'KLOW 80mg', spec: '80mg vial', pricePhp: '9000',
+      name: opts.name ?? 'KLOW 80mg', spec: '80mg vial', pricePhp: '9000',
       kitSize: opts.kitSize, stock: 0,
     }).returning();
     productId = product.id;

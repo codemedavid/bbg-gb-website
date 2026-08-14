@@ -196,7 +196,7 @@ describe('weekly report product totals', () => {
     ]);
     expect(sheet.getCell('A2').value).toBe('# Orders: 1  Units: 60');
     expect(sheet.getRow(sheet.rowCount).values).toEqual([
-      undefined, 'TOTAL', null, null, null, 60, 612, 60,
+      undefined, 'TOTAL', undefined, undefined, undefined, 60, 612, 60,
     ]);
   });
 });
