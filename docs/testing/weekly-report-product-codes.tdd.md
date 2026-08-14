@@ -43,5 +43,7 @@ As an admin, I want every catalog-backed item in the weekly order report to show
 - Result: **PASS**, 7 files and 51 tests passed; 100% statements, 82.6% branches, 100% functions, and 100% lines.
 - TypeScript command: `npx tsc --noEmit`.
 - Result: **PASS**.
+- Full regression command: `npm test -- --reporter=dot`.
+- Result: **PASS**, 131 files and 1,224 tests passed.
 - `npm run typecheck` is not defined in this repository; the compiler was invoked directly.
 - No feature tests are skipped or disabled.
