@@ -62,10 +62,9 @@ describe('buildWeeklyWorkbook', () => {
     expect(table).toBeDefined();
     // ExcelJS deserializes the persisted range as tableRef rather than through
     // its ref accessor. P3 = header + two order rows; the totals row is row 4.
-    const model = table.model as unknown as {
-      tableRef: string;
-      columns: { name: string }[];
-    };
+    const model = (table as unknown as {
+      model: { tableRef: string; columns: { name: string }[] };
+    }).model;
     expect(model.tableRef).toBe('A1:P3');
     expect(model.columns.map((column) => column.name)).toEqual([...XLSX_HEADERS]);
   });
