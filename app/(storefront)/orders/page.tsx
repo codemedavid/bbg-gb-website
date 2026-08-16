@@ -152,7 +152,8 @@ export default function OrdersPage() {
         <div className="px-5 py-16 text-center">
           <div className="mb-3 text-4xl">🔒</div>
           <div className="mb-4 text-[13px] text-ink-muted">Log in to see your orders.</div>
-          <button onClick={() => router.push('/login')} className="rounded-[12px] bg-brand-green px-6 py-3 text-[14px] font-bold text-white">Log in</button>
+          {/* Carry the way back: the settlement emails link at this page. */}
+          <button onClick={() => router.push(`/login?next=${encodeURIComponent('/orders')}`)} className="rounded-[12px] bg-brand-green px-6 py-3 text-[14px] font-bold text-white">Log in</button>
         </div>
       </>
     );

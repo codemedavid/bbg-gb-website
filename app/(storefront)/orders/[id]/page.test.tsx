@@ -11,13 +11,19 @@ import { Suspense, type ReactNode } from 'react';
 
 const push = vi.fn();
 const back = vi.fn();
+const replace = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push, back, replace: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push, back, replace, prefetch: vi.fn() }),
 }));
 
 const state = { detail: undefined as unknown, isLoading: false };
 vi.mock('@/lib/queries', () => ({
   useOrderDetail: () => ({ data: state.detail, isLoading: state.isLoading }),
+}));
+
+const auth = { user: { id: 'u1' } as unknown, loading: false };
+vi.mock('@/lib/useAuth', () => ({
+  useAuth: () => ({ user: auth.user, loading: auth.loading }),
 }));
 
 const OrderDetailPage = (await import('./page')).default;
@@ -74,8 +80,41 @@ const detail = {
 beforeEach(() => {
   push.mockReset();
   back.mockReset();
+  replace.mockReset();
   state.detail = detail;
   state.isLoading = false;
+  auth.user = { id: 'u1' };
+  auth.loading = false;
+});
+
+// The order emails link straight here, and this page needs a session. Before
+// this, a customer whose session had expired got the loading spinner forever:
+// the query 401s, `data` stays undefined, and the only guard on the page could
+// not tell "still fetching" from "will never arrive".
+describe('signed-out visitor', () => {
+  it('sends them to log in and back to this order', async () => {
+    auth.user = null;
+    state.detail = undefined;
+    await renderPage();
+
+    expect(replace).toHaveBeenCalledWith('/login?next=%2Forders%2Fo9');
+  });
+
+  it('waits for the session check before redirecting', async () => {
+    auth.user = null;
+    auth.loading = true;
+    state.detail = undefined;
+    state.isLoading = true;
+    await renderPage();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('leaves a signed-in customer alone', async () => {
+    await renderPage();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
 });
 
 describe('order information', () => {

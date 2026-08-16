@@ -392,3 +392,104 @@ describe('CheckoutPage stale cart lines', () => {
     expect(useToast.getState().message).toMatch(/no longer available/i);
   });
 });
+
+// The last stop before paying. A customer who added the wrong peptide four
+// boards ago must be able to take it back out here — and add one more — without
+// abandoning a checkout they have already filled in. Before this, checkout
+// showed totals only: the sole way to fix a mistake was to walk back to the
+// cart, and nothing on the screen said so.
+describe('CheckoutPage — fixing the cart before paying', () => {
+  const wrongLine = {
+    key: 'gb:g1', kind: 'group_buy' as const, refId: 'g1', name: 'Reta 20mg — kahati',
+    spec: 'Kahati · min 1 vials', unitPricePhp: 900, qty: 2, minQty: 1,
+  };
+  const keeper = {
+    key: 'product:p1:piece', kind: 'product' as const, refId: 'p1', name: 'Test Peptide',
+    spec: '10mg', unitPricePhp: 550, qty: 2, minQty: 1, unit: 'piece' as const, stock: 100,
+  };
+  const seedTwoLines = () => useCart.setState({ items: [wrongLine, keeper] });
+
+  it('lists every peptide in the cart, so the customer can check what they are paying for', () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.getByText('Reta 20mg — kahati')).toBeInTheDocument();
+    expect(screen.getByText('Test Peptide')).toBeInTheDocument();
+  });
+
+  it('removes the peptide added by mistake and keeps the rest of the cart', async () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+
+    screen.getByRole('button', { name: /remove reta 20mg — kahati from cart/i }).click();
+
+    await waitFor(() => expect(useCart.getState().items.map((i) => i.key)).toEqual(['product:p1:piece']));
+    expect(screen.queryByText('Reta 20mg — kahati')).not.toBeInTheDocument();
+  });
+
+  it('leaves the removed peptide out of the order it places', async () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+
+    screen.getByRole('button', { name: /remove reta 20mg — kahati from cart/i }).click();
+    await waitFor(() => expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled());
+    screen.getByRole('button', { name: /place order/i }).click();
+
+    await waitFor(() => expect(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+    const body = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].body as FormData;
+    const sent = JSON.parse(String(body.get('items'))) as { refId: string }[];
+    expect(sent.map((i) => i.refId)).toEqual(['p1']);
+  });
+
+  it('asks before throwing the whole cart away', async () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+
+    screen.getByRole('button', { name: /^clear cart$/i }).click();
+
+    // One tap must not wipe a cart assembled across four boards.
+    expect(await screen.findByRole('button', { name: /yes, clear cart/i })).toBeInTheDocument();
+    expect(useCart.getState().items).toHaveLength(2);
+  });
+
+  it('clears the cart once the customer confirms', async () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+
+    screen.getByRole('button', { name: /^clear cart$/i }).click();
+    (await screen.findByRole('button', { name: /yes, clear cart/i })).click();
+
+    await waitFor(() => expect(useCart.getState().items).toEqual([]));
+  });
+
+  it('keeps the cart when the customer backs out of clearing it', async () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+
+    screen.getByRole('button', { name: /^clear cart$/i }).click();
+    (await screen.findByRole('button', { name: /keep my items/i })).click();
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: /yes, clear cart/i })).not.toBeInTheDocument());
+    expect(useCart.getState().items).toHaveLength(2);
+  });
+
+  it('sends the customer back to the boards to add another peptide', () => {
+    seedTwoLines();
+    render(<CheckoutPage />, { wrapper });
+
+    screen.getByRole('button', { name: /add more items/i }).click();
+
+    expect(push).toHaveBeenCalledWith('/');
+  });
+
+  it('says the cart is empty once the last line is removed, instead of a dead payment form', async () => {
+    useCart.setState({ items: [keeper] });
+    render(<CheckoutPage />, { wrapper });
+
+    screen.getByRole('button', { name: /remove test peptide from cart/i }).click();
+
+    await waitFor(() => expect(screen.getByText(/wala nang laman/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^place order$/i })).not.toBeInTheDocument();
+  });
+});

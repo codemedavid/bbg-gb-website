@@ -53,3 +53,44 @@ describe('POST /api/admin/login', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// Sessions here are stateless JWTs, so nothing on the server would otherwise
+// remember that anyone ever signed in. This stamp is the only record, and it is
+// what Admin → Accounts reads to tell a live account from a dormant one.
+describe('POST /api/admin/login — last sign-in stamp', () => {
+  const lastLoginOf = async (email: string) => {
+    const db = await getDb();
+    const [row] = await db.select({ lastLoginAt: users.lastLoginAt }).from(users).where(eq(users.email, email));
+    return row.lastLoginAt;
+  };
+
+  it('stamps the last sign-in on a successful admin login', async () => {
+    const admin = await makeUser({ role: 'admin', email: 'stamp@bbg.test' });
+    await setPassword(admin.email, 'secret123');
+    expect(await lastLoginOf('stamp@bbg.test')).toBeNull();
+
+    await POST(req({ email: 'stamp@bbg.test', password: 'secret123' }));
+
+    expect(await lastLoginOf('stamp@bbg.test')).toBeInstanceOf(Date);
+  });
+
+  it('leaves the stamp alone when the password is wrong', async () => {
+    const admin = await makeUser({ role: 'admin', email: 'nostamp@bbg.test' });
+    await setPassword(admin.email, 'secret123');
+
+    await POST(req({ email: 'nostamp@bbg.test', password: 'nope' }));
+
+    expect(await lastLoginOf('nostamp@bbg.test')).toBeNull();
+  });
+
+  // A customer who tries the admin door is rejected at 403. Recording that as a
+  // sign-in would show the account as active on a login it never got.
+  it('leaves the stamp alone when a non-admin is turned away', async () => {
+    const customer = await makeUser({ role: 'customer', email: 'cust@bbg.test' });
+    await setPassword(customer.email, 'secret123');
+
+    await POST(req({ email: 'cust@bbg.test', password: 'secret123' }));
+
+    expect(await lastLoginOf('cust@bbg.test')).toBeNull();
+  });
+});

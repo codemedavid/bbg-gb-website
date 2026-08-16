@@ -8,6 +8,9 @@ who never hears from us.
 Captured in `lib/posthog.ts` via `posthog-node`. Nothing is sent when `POSTHOG_KEY`
 is unset (a valid local/dev state — the capture is logged and skipped).
 
+Gmail-safe HTML for each of these events lives in [`email-templates/`](email-templates/README.md) —
+paste one per workflow.
+
 ## Configuration
 
 ```
@@ -22,6 +25,7 @@ Set these in Vercel → Project Settings → Environment Variables.
 | Event | Fired when | Where |
 |---|---|---|
 | `order_placed` | Checkout succeeds (status starts at `proof_review`) | `app/api/orders/route.ts` |
+| `order_updated` | The order was edited — carries a revised receipt, status unchanged | `app/api/orders/[id]/route.ts` |
 | `order_proof_review` | Admin sets status back to Proof under review | `app/api/admin/orders/[id]/status/route.ts` |
 | `order_payment_confirmed` | Admin confirms the payment proof | ” |
 | `order_batch_filling` | Admin moves the order to Batch filling | ” |
@@ -30,6 +34,7 @@ Set these in Vercel → Project Settings → Environment Variables.
 | `order_cancelled` | Admin cancels the order | ” |
 | `kahati_cancelled` | A hatian expired under 7 vials and the batch was dropped | `lib/kahati-server.ts` |
 | `settlement_placed` | The hatian final checkout succeeds — one payment settling every completed hatian | `app/api/settlements/route.ts` |
+| `password_reset_requested` | A reset link was requested on `/forgot-password` | `app/api/auth/forgot-password/route.ts` |
 | `order_status_changed` | Fallback — only if a status is ever added without a name here | `lib/posthog.ts` |
 
 `order_status_changed` should get **no** workflow. It means a status was added
@@ -37,6 +42,13 @@ without a name in `ORDER_STATUS_EVENT`; it needs a developer, not a customer ema
 
 `kahati_cancelled` is deliberately separate from `order_cancelled`: it carries the
 refund amount and the hatian that fell through, so the email can explain *why*.
+
+`password_reset_requested` is the one event that carries a **credential**: its
+`resetUrl` property is a single-use link that expires in an hour. Its workflow must
+send immediately — batching or digesting it delivers a dead link — and must never CC
+or BCC an internal address, since a copy of the link is a copy of the account. The
+link's host comes from `APP_URL`; without that set, it falls back to the request's
+Host header, which an attacker can set.
 
 ## Identity
 
@@ -60,7 +72,13 @@ Common to every order event:
 | `buyType` | string | `solo` \| `kahati` |
 
 `order_placed` adds: `subtotalPhp`, `packingFeePhp`, `balancePhp` (total − downpayment,
-what a kahati customer still owes), `itemCount`, `paymentMethod`.
+what a kahati customer still owes), `itemCount`, `paymentMethod`, `items`.
+
+`order_updated` is the one order event with **no** `status` or `downpaymentPhp` — the
+edit does not move the order through the flow. It carries `subtotalPhp`,
+`packingFeePhp`, `totalPhp`, `editedBy` and `items`.
+
+`items` is `{ name, qty, unitPrice, lineTotal }[]` — what an emailed receipt loops over.
 
 Status-change events add: `statusLabel` (human-readable, e.g. "Payment confirmed"),
 `previousStatus`, `trackingNo`, `courier`, `note`.

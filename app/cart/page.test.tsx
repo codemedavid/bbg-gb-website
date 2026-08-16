@@ -182,3 +182,49 @@ describe('CartPage — order note', () => {
     expect(screen.queryByLabelText(/add a note to your order/i)).not.toBeInTheDocument();
   });
 });
+
+// Fixing a cart in bulk. The × on each line already existed; what did not was a
+// way to start over, or to say "one more thing" without hunting for the bottom
+// nav. Both live next to each other so the destructive one is never the only
+// button in reach.
+describe('CartPage — clearing and adding more', () => {
+  const twoLines = [
+    {
+      key: 'product:p1:piece', kind: 'product' as const, refId: 'p1', name: 'Test Peptide',
+      spec: '10mg', unitPricePhp: 550, qty: 1, minQty: 1, unit: 'piece' as const, stock: 100,
+    },
+    {
+      key: 'gb:g1', kind: 'group_buy' as const, refId: 'g1', name: 'Reta 20mg — kahati',
+      spec: 'Kahati · min 1 vials', unitPricePhp: 900, qty: 2, minQty: 1,
+    },
+  ];
+
+  it('asks before clearing, then empties the cart on confirmation', async () => {
+    useCart.setState({ items: twoLines });
+    const user = userEvent.setup();
+    render(<CartPage />, { wrapper });
+
+    await user.click(screen.getByRole('button', { name: /^clear cart$/i }));
+    expect(useCart.getState().items).toHaveLength(2); // one tap is not enough
+
+    await user.click(screen.getByRole('button', { name: /yes, clear cart/i }));
+    expect(useCart.getState().items).toEqual([]);
+  });
+
+  it('sends the customer back to the boards to add more', async () => {
+    useCart.setState({ items: twoLines });
+    const user = userEvent.setup();
+    render(<CartPage />, { wrapper });
+
+    await user.click(screen.getByRole('button', { name: /add more items/i }));
+
+    expect(push).toHaveBeenCalledWith('/');
+  });
+
+  it('offers nothing to clear when the cart is already empty', () => {
+    useCart.setState({ items: [] });
+    render(<CartPage />, { wrapper });
+
+    expect(screen.queryByRole('button', { name: /^clear cart$/i })).not.toBeInTheDocument();
+  });
+});

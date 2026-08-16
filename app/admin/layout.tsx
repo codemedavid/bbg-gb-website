@@ -21,6 +21,8 @@ const NAV = [
   { href: '/admin/group-buy', label: 'Group Buy', icon: '🎯' },
   { href: '/admin/moq-products', label: 'MOQ Products', icon: '🏷️' },
   { href: '/admin/payment-methods', label: 'Payment Methods', icon: '💳' },
+  // Registered accounts — the only view of a customer who has not ordered yet.
+  { href: '/admin/accounts', label: 'Accounts', icon: '👥' },
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ];
 

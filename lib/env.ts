@@ -37,6 +37,15 @@ export const env = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   mailFrom: process.env.MAIL_FROM || 'BBG Peptides <noreply@bbgpeptides.ph>',
+  // Public origin of this site, used to build links that leave the app — today
+  // the password-reset link. Set it in production: without it the link is built
+  // from the request's Host header, which an attacker controls. Vercel's own
+  // production URL is used when neither is set explicitly.
+  appUrl: sanitizeUrl(
+    process.env.APP_URL
+    || process.env.NEXT_PUBLIC_APP_URL
+    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : ''),
+  ),
   port: Number(process.env.PORT || 4000),
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   isProd: process.env.NODE_ENV === 'production',

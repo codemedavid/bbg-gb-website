@@ -1,0 +1,91 @@
+<!--
+  BBG Peptides — order_delivered
+  Trigger: PostHog event `order_delivered`
+  Subject: Order {{ event.properties.orderNo }} delivered — salamat!
+-->
+<div style="display:none;font-size:1px;color:#f4f7f1;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">Delivered! Refrigerate your vials and tell us how it went.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e6eae2;margin:0;padding:24px 12px;">
+<tr><td align="center">
+
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;font-family:Barlow,Arial,Helvetica,sans-serif;">
+
+  <tr>
+    <td bgcolor="#0a1f44" style="padding:18px 24px;border-radius:14px 14px 0 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="font:700 17px/1 Arial,Helvetica,sans-serif;color:#ffffff;letter-spacing:1.2px;">BBG PEPTIDES</td>
+          <td align="right"><span style="display:inline-block;background:#e8f5db;color:#3c7a0a;font:700 10px/1 Arial,Helvetica,sans-serif;letter-spacing:.8px;padding:6px 10px;border-radius:20px;">DELIVERED</span></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:18px 24px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="table-layout:fixed;">
+        <tr>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#57a814;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#57a814;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#57a814;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#57a814;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#57a814;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+        </tr>
+        <tr>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:.5px;">PENDING</td>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:.5px;">CONFIRMED</td>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:.5px;">PROCESSING</td>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:.5px;">SHIPPED</td>
+          <td style="padding:7px 3px 0;font:700 9px/1.3 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:.5px;">DELIVERED</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:22px 24px 0;">
+      <h1 style="margin:0 0 6px;font:700 24px/1.2 Arial,Helvetica,sans-serif;color:#1c2b26;">Delivered &#127881;</h1>
+      <p style="margin:0 0 16px;font:400 15px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+        Salamat sa pagtitiwala, {{ person.properties.name | default: 'kabahagi' }}! Order <strong style="color:#1c2b26;">{{ event.properties.orderNo }}</strong> is marked delivered.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f7f1;border-radius:10px;">
+        <tr>
+          <td style="padding:16px 18px;">
+            <div style="font:700 10px/1 Arial,Helvetica,sans-serif;color:#7a877f;letter-spacing:1px;padding-bottom:8px;">PAG-IINGAT SA VIALS</div>
+            <p style="margin:0;font:400 14px/1.7 Arial,Helvetica,sans-serif;color:#4c5a52;">
+              &bull; Ilagay agad sa ref (2&ndash;8&deg;C), hindi sa freezer.<br>
+              &bull; Keep them away from light and heat.<br>
+              &bull; Huwag i-shake nang malakas after reconstitution.
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:16px 0 0;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+        May problema sa parcel? Ipaalam mo sa amin sa loob ng 48 oras para maayos namin agad. Sali ka ulit sa susunod na hatian!
+      </p>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:22px 24px 26px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td bgcolor="#57a814" style="border-radius:8px;">
+            <a href="https://www.bbgph.org" style="display:inline-block;padding:13px 24px;font:700 14px/1 Arial,Helvetica,sans-serif;color:#ffffff;text-decoration:none;border-radius:8px;">Browse the next hatian</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td bgcolor="#f4f7f1" style="padding:16px 24px;border-radius:0 0 14px 14px;">
+      <p style="margin:0;font:400 12px/1.6 Arial,Helvetica,sans-serif;color:#7a877f;">
+        Automated message from <strong style="color:#4c5a52;">BBG Peptides</strong> about order {{ event.properties.orderNo }}. Do not reply — hindi binabantayan ang inbox na ito.
+      </p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>

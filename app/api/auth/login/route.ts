@@ -15,6 +15,10 @@ export const POST = handler(async (req: Request) => {
   if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
     throw new ApiError(401, 'Invalid email or password.');
   }
+  // The only record that this account was ever used: the token below is
+  // stateless, so nothing else would remember. Stamped after the password
+  // check, so a failed attempt never shows up as activity.
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
   const token = await signToken({ sub: user.id, role: user.role, email: user.email });
   (await cookies()).set(COOKIE_NAME, token, cookieOptions);
   return ok({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, address: user.address, role: user.role } });

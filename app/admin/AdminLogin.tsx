@@ -1,5 +1,6 @@
 'use client';
 import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
 
 // Admin sign-in gate shown in place of the admin UI until an admin session exists.
@@ -64,6 +65,14 @@ export function AdminLogin({ signedInEmail }: { signedInEmail?: string }) {
             {busy ? 'Signing in…' : 'Sign in to admin'}
           </button>
         </form>
+
+        {/* Admin accounts live in the same users table, so the customer-facing
+            reset works here too — and a locked-out admin has nobody to ask. */}
+        <p className="mt-4 text-center text-[12.5px]">
+          <Link href="/forgot-password" className="font-semibold text-brand-blue hover:underline">
+            Forgot your password?
+          </Link>
+        </p>
 
         {signedInEmail && (
           <p className="mt-5 text-[12px] text-ink-muted">

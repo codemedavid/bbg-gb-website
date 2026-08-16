@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import { useKahatiCommitments, usePaymentMethods } from '@/lib/queries';
 import { KahatiCommitmentsCard } from '@/components/KahatiCommitmentsCard';
+import { CheckoutItemsCard } from '@/components/CheckoutItemsCard';
 import { ProofUploader } from '@/components/ProofUploader';
 import { php } from '@/lib/format';
 import { friendlyCheckoutError, staleCheckoutLine } from '@/lib/checkout-error';
@@ -131,14 +132,26 @@ export default function CheckoutPage() {
     }
   };
 
+  // Removing the last line here leaves nothing to ship, pay for or prove, so
+  // the form comes off and the items card says so. `submitting` holds the
+  // screen together through the moment a successful order clears the cart —
+  // otherwise the customer gets an "empty cart" flash on the way to the receipt.
+  const cartEmpty = items.length === 0 && !submitting;
+
   const methodChosen = confirmOnly || methods.length === 0 || !!selectedMethod;
   const canPlace = (proofs.length > 0 || confirmOnly) && items.length > 0 && !!name && !!phone && !!address && methodChosen;
 
   return (
     <OverlayShell>
       <BackHeader title="Checkout" onBack={() => router.push('/cart')} showHome />
+      {cartEmpty ? (
+        <div className="mx-auto w-full max-w-xl p-4"><CheckoutItemsCard /></div>
+      ) : (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-3.5 p-4 lg:grid lg:max-w-none lg:grid-cols-[1fr_360px] lg:items-start lg:gap-5 lg:p-6">
         <div className="flex flex-col gap-3.5">
+        {/* First on the page, above the address: what you are buying is what a
+            customer checks before they check anything else. */}
+        <CheckoutItemsCard />
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-2.5 text-[13px] font-bold text-ink">Deliver to</div>
           <input name="shipName" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name"
@@ -247,6 +260,7 @@ export default function CheckoutPage() {
         </button>
         </div>
       </div>
+      )}
     </OverlayShell>
   );
 }

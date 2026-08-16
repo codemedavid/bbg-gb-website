@@ -49,6 +49,26 @@ const wrap = (title: string, body: string) => `
     </div>
   </div>`;
 
+// The forgotten-password link. Unlike every other mail here this one carries a
+// credential, so it says plainly how long it lives and what to do if the
+// customer did not ask for it — an unexpected reset mail is the first sign
+// someone else is trying the account.
+export function passwordResetEmail(o: { name: string; resetUrl: string; expiresInMinutes: number }) {
+  const href = escapeHtml(o.resetUrl);
+  return {
+    subject: 'Reset your BBG Peptides password',
+    html: wrap('Reset your password', `
+      <p>Hi ${escapeHtml(o.name)},</p>
+      <p>We got a request to reset the password for this account. Tap the button below to choose a new one.</p>
+      <p style="margin:18px 0">
+        <a href="${href}" style="background:#1f7a4d;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700;display:inline-block">Reset password</a>
+      </p>
+      <p style="font-size:12.5px;color:#7a877f">Or paste this link into your browser:<br><span style="word-break:break-all">${href}</span></p>
+      <p>This link works once and expires in <strong>${o.expiresInMinutes} minutes</strong>.</p>
+      <p>Hindi ikaw ang humiling? Ignore this email — your password stays as it is.</p>`),
+  };
+}
+
 // `confirmed` marks a commitment that owed nothing at checkout, because the
 // customer already had a kahati commitment in progress. Promising to "verify
 // your payment proof" there would be a review of a payment nobody made.

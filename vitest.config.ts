@@ -41,6 +41,11 @@ export default defineConfig({
       JWT_SECRET: 'test-secret',
       STORAGE_DRIVER: 'local',
       SMTP_HOST: '',
+      // Cleared so the reset-link tests see the request origin, whatever the
+      // developer happens to have in their own .env.
+      APP_URL: '',
+      NEXT_PUBLIC_APP_URL: '',
+      VERCEL_PROJECT_PRODUCTION_URL: '',
     },
     coverage: {
       reporter: ['text', 'html'],

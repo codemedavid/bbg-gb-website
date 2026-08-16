@@ -1,0 +1,98 @@
+<!--
+  BBG Peptides — order_payment_confirmed
+  Trigger: PostHog event `order_payment_confirmed`
+  Subject: Order {{ event.properties.orderNo }} — payment confirmed
+-->
+<div style="display:none;font-size:1px;color:#f4f7f1;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">Verified! Your payment cleared and your order is queued for batch filling.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e6eae2;margin:0;padding:24px 12px;">
+<tr><td align="center">
+
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;font-family:Barlow,Arial,Helvetica,sans-serif;">
+
+  <tr>
+    <td bgcolor="#0a1f44" style="padding:18px 24px;border-radius:14px 14px 0 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="font:700 17px/1 Arial,Helvetica,sans-serif;color:#ffffff;letter-spacing:1.2px;">BBG PEPTIDES</td>
+          <td align="right"><span style="display:inline-block;background:#e0eafc;color:#0b46b8;font:700 10px/1 Arial,Helvetica,sans-serif;letter-spacing:.8px;padding:6px 10px;border-radius:20px;">PAYMENT CONFIRMED</span></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:18px 24px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="table-layout:fixed;">
+        <tr>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#57a814;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#0a1f44;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#d9e2d2;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#d9e2d2;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+          <td width="20%" style="padding:0 3px;"><div style="height:4px;background:#d9e2d2;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+        </tr>
+        <tr>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:.5px;">PENDING</td>
+          <td style="padding:7px 3px 0;font:700 9px/1.3 Arial,Helvetica,sans-serif;color:#0a1f44;letter-spacing:.5px;">CONFIRMED</td>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#98a29b;letter-spacing:.5px;">PROCESSING</td>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#98a29b;letter-spacing:.5px;">SHIPPED</td>
+          <td style="padding:7px 3px 0;font:600 9px/1.3 Arial,Helvetica,sans-serif;color:#98a29b;letter-spacing:.5px;">DELIVERED</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:22px 24px 0;">
+      <h1 style="margin:0 0 6px;font:700 24px/1.2 Arial,Helvetica,sans-serif;color:#1c2b26;">Payment confirmed &#10003;</h1>
+      <p style="margin:0 0 16px;font:400 15px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+        Salamat, {{ person.properties.name | default: 'kabahagi' }}! We verified the payment for order <strong style="color:#1c2b26;">{{ event.properties.orderNo }}</strong>. It is now queued for batch filling.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f7f1;border-radius:10px;">
+        <tr>
+          <td style="padding:14px 18px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">Order</td>
+                <td align="right" style="font:700 14px/1.6 Arial,Helvetica,sans-serif;color:#1c2b26;">{{ event.properties.orderNo }}</td>
+              </tr>
+              <tr>
+                <td style="font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">Amount verified</td>
+                <td align="right" style="font:700 14px/1.6 Arial,Helvetica,sans-serif;color:#3c7a0a;">&#8369;{{ event.properties.totalPhp }}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+      {% if event.properties.note %}
+      <p style="margin:14px 0 0;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;"><strong style="color:#1c2b26;">Note:</strong> {{ event.properties.note }}</p>
+      {% endif %}
+      <p style="margin:16px 0 0;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+        Next: our team fills your vials and preps the parcel. We will email you again the moment it ships.
+      </p>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:22px 24px 26px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td bgcolor="#57a814" style="border-radius:8px;">
+            <a href="https://www.bbgph.org/orders/{{ event.properties.orderId }}" style="display:inline-block;padding:13px 24px;font:700 14px/1 Arial,Helvetica,sans-serif;color:#ffffff;text-decoration:none;border-radius:8px;">Track my order</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td bgcolor="#f4f7f1" style="padding:16px 24px;border-radius:0 0 14px 14px;">
+      <p style="margin:0;font:400 12px/1.6 Arial,Helvetica,sans-serif;color:#7a877f;">
+        Automated message from <strong style="color:#4c5a52;">BBG Peptides</strong> about order {{ event.properties.orderNo }}. Do not reply — hindi binabantayan ang inbox na ito.
+      </p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>

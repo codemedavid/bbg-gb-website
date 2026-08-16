@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SectionHeader } from '@/components/headers';
 import { useAuth } from '@/lib/useAuth';
@@ -138,6 +139,12 @@ export default function AccountPage() {
               {pwBusy ? 'Changing…' : 'Change password'}
             </button>
           </form>
+          {/* This form needs the current password, which is exactly what someone
+              who forgot it cannot supply. The emailed link is their way through. */}
+          <div className="mt-3 text-center text-[12.5px] text-ink-muted">
+            Nakalimutan ang current password?{' '}
+            <Link href="/forgot-password" className="font-semibold text-brand-blue">Email me a reset link</Link>
+          </div>
         </Card>
 
         <button onClick={async () => { await logout(); router.push('/'); }}

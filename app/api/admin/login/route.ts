@@ -20,6 +20,9 @@ export const POST = handler(async (req: Request) => {
   if (user.role !== 'admin') {
     throw new ApiError(403, 'This account does not have admin access.');
   }
+  // After the role check, not before: a customer turned away at the admin door
+  // was never signed in, and recording it would show a dormant account as live.
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
   const token = await signToken({ sub: user.id, role: user.role, email: user.email });
   (await cookies()).set(COOKIE_NAME, token, cookieOptions);
   return ok({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, address: user.address, role: user.role } });

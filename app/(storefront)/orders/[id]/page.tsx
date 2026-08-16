@@ -1,5 +1,5 @@
 'use client';
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { BackHeader } from '@/components/headers';
@@ -8,6 +8,7 @@ import { OrderItemsEditor, type OrderItemDraft } from '@/components/OrderItemsEd
 import { OrderStatusTrail } from '@/components/OrderStatusTrail';
 import { OrderProofSection } from '@/components/OrderProofSection';
 import { useOrderDetail } from '@/lib/queries';
+import { useAuth } from '@/lib/useAuth';
 import { apiSend } from '@/lib/api-client';
 import { useToast } from '@/lib/store/toast';
 import { php, shortDate } from '@/lib/format';
@@ -60,8 +61,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const qc = useQueryClient();
   const toast = useToast((s) => s.show);
   const { data, isLoading } = useOrderDetail(id);
+  const { user, loading: isCheckingSession } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // The status emails link straight at this page, and it needs a session — so
+  // most people arriving here are doing it days later, from a phone, with a
+  // cookie that has expired.
+  //
+  // Without this the request 401s, `data` stays undefined, and the guard below
+  // cannot tell "still fetching" from "will never arrive": the customer sits on
+  // the loading line forever with nothing to click. Send them to log in instead,
+  // carrying the way back, so the order they came for is what they land on.
+  useEffect(() => {
+    if (isCheckingSession || user) return;
+    router.replace(`/login?next=${encodeURIComponent(`/orders/${id}`)}`);
+  }, [isCheckingSession, user, id, router]);
 
   const save = async (items: OrderItemDraft[]) => {
     setIsSaving(true);

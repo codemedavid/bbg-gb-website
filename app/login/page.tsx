@@ -1,12 +1,14 @@
 'use client';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthShell, inputCls } from '@/components/AuthShell';
 import { useAuth } from '@/lib/useAuth';
+import { safeReturnPath } from '@/lib/return-path';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -16,7 +18,10 @@ export default function LoginPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); setBusy(true);
-    try { await login(email, password); router.replace('/'); }
+    // Back to wherever they were headed — an emailed order link, usually. The
+    // guard is not optional: `next` comes from the URL, so an unchecked value
+    // turns this screen into an open redirect.
+    try { await login(email, password); router.replace(safeReturnPath(searchParams.get('next'))); }
     catch (err) { setError(err instanceof Error ? err.message : 'Login failed'); setBusy(false); }
   };
 
@@ -30,9 +35,22 @@ export default function LoginPage() {
           {busy ? 'Logging in…' : 'Log in'}
         </button>
       </form>
-      <div className="mt-4 text-center text-[13px] text-ink-muted">
+      <div className="mt-3 text-center text-[13px]">
+        <Link href="/forgot-password" className="font-semibold text-brand-blue">Nakalimutan ang password?</Link>
+      </div>
+      <div className="mt-3 text-center text-[13px] text-ink-muted">
         Wala pang account? <Link href="/register" className="font-bold text-brand-blue">Mag-register</Link>
       </div>
     </AuthShell>
+  );
+}
+
+// useSearchParams suspends during prerender, so the boundary is required for the
+// route to build — same shape as the reset-password page.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<AuthShell title="Kumusta! 👋" sub="Log in to track orders and join kahati."><div /></AuthShell>}>
+      <LoginForm />
+    </Suspense>
   );
 }

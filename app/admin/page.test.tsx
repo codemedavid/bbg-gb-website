@@ -1,8 +1,13 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const refetch = vi.fn();
 
 let stats = {
   isLoading: false,
+  error: null as Error | null,
+  refetch,
   data: {
     totals: {
       week: { count: 3, revenue: 5000 },
@@ -23,8 +28,11 @@ vi.mock('@/lib/admin-api', () => ({
 const DashboardPage = (await import('./page')).default;
 
 beforeEach(() => {
+  refetch.mockClear();
   stats = {
     isLoading: false,
+    error: null,
+    refetch,
     data: {
       totals: {
         week: { count: 3, revenue: 5000 },
@@ -68,5 +76,23 @@ describe('admin dashboard packing-fee analytics', () => {
     render(<DashboardPage />);
 
     expect(screen.getByText('Loading dashboard…')).toBeInTheDocument();
+  });
+
+  // A failed /admin/stats call used to leave the page on "Loading dashboard…"
+  // forever, because the guard only asked for data and never for an error. The
+  // reason the request failed has to reach the admin, not be swallowed.
+  it('surfaces the failure instead of loading forever when analytics cannot be fetched', async () => {
+    stats.isLoading = false;
+    stats.error = new Error('Request failed (500)');
+    stats.data = undefined as unknown as typeof stats.data;
+
+    render(<DashboardPage />);
+
+    expect(screen.queryByText('Loading dashboard…')).not.toBeInTheDocument();
+    expect(screen.getByText(/could not load the dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText('Request failed (500)')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(refetch).toHaveBeenCalled();
   });
 });

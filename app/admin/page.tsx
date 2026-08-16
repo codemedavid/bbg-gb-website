@@ -13,7 +13,24 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
 }
 
 export default function DashboardPage() {
-  const { data, isLoading } = useStats();
+  const { data, isLoading, error, refetch } = useStats();
+  // A failed stats call has to say so. Falling through to the loading state
+  // leaves the admin staring at "Loading dashboard…" with no way to tell a slow
+  // request apart from a dead API, and no sign of what actually broke.
+  if (error && !data) {
+    return (
+      <div role="alert" className="rounded-[16px] bg-white p-6 shadow-card">
+        <div className="font-display text-[18px] font-bold text-ink">Could not load the dashboard</div>
+        <p className="mt-1.5 text-[13px] text-ink-muted">{error instanceof Error ? error.message : 'The analytics request failed.'}</p>
+        <button
+          onClick={() => refetch()}
+          className="mt-4 rounded-[10px] bg-brand-navy px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (isLoading || !data) return <div className="text-ink-muted">Loading dashboard…</div>;
 
   const maxRev = Math.max(1, ...data.weeklySummary.map((d) => d.revenue));

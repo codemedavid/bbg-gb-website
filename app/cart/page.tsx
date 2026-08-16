@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { OverlayShell } from '@/components/OverlayShell';
 import { BackHeader } from '@/components/headers';
 import { OrderSummary } from '@/components/OrderSummary';
+import { CartEditActions } from '@/components/CartEditActions';
 import { useCart, groupCartByMode, maxQtyFor, type CartGroup, type CartItem } from '@/lib/store/cart';
 import { php } from '@/lib/format';
 import { VIALS_PER_KIT } from '@/lib/pricing';
@@ -140,6 +141,10 @@ export default function CartPage() {
 
         {items.length > 0 && (
           <>
+            {/* Paired deliberately: the destructive one is never the only
+                button within reach of a thumb. */}
+            <div className="mt-2.5"><CartEditActions /></div>
+
             <div className="mt-3.5 rounded-[14px] bg-white p-4 shadow-card">
               <label htmlFor="order-note" className="mb-1 block text-[13px] font-bold text-ink">
                 Add a note to your order
