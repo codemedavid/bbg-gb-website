@@ -4,6 +4,7 @@ import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
 import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
+import type { AccountRow } from './accounts';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -30,6 +31,16 @@ export type DashboardStats = {
 };
 
 export const useStats = () => useQuery({ queryKey: ['admin', 'stats'], queryFn: () => apiGet<DashboardStats>('/admin/stats') });
+// Every registered account, for Admin → Accounts. The row shape is the server's
+// own (lib/accounts.ts) so the table cannot drift from what the route returns.
+export const useAdminAccounts = (search?: string, role?: string) =>
+  useQuery({
+    queryKey: ['admin', 'accounts', search ?? '', role ?? ''],
+    queryFn: () => apiGet<AccountRow[]>(`/admin/accounts${qs({ search, role })}`),
+    // The list is re-fetched on every keystroke of the search box; holding the
+    // previous rows keeps the table from blinking to "Loading…" between them.
+    placeholderData: (prev) => prev,
+  });
 export const useAdminProducts = () => useQuery({ queryKey: ['admin', 'products'], queryFn: () => apiGet<Product[]>('/admin/products') });
 export const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], queryFn: () => apiGet<Category[]>('/admin/categories') });
 export const useAdminGroupBuys = () => useQuery({ queryKey: ['admin', 'groupbuys'], queryFn: () => apiGet<GroupBuy[]>('/admin/groupbuys') });
@@ -115,6 +126,7 @@ export function useMutate() {
     // Multipart so the product image rides along with the fields.
     saveMoqProduct: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/moq-products/${v.id}`, 'PATCH', v.body) : apiSend('/admin/moq-products', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save MOQ product.') }),
     deleteMoqProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/moq-products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete MOQ product.') }),
+    closeMoqCycle: useMutation({ mutationFn: (id: string) => apiSend(`/admin/moq-products/${id}/cycle`, 'POST'), onSuccess: invalidate, onError: toastError('Could not close the MOQ round.') }),
     saveCampaign: useMutation({ mutationFn: (c: CampaignPayload) => c.id ? apiSend(`/campaigns/${c.id}`, 'PATCH', c) : apiSend('/campaigns', 'POST', c), onSuccess: invalidate }),
     deleteCampaign: useMutation({ mutationFn: (id: string) => apiSend(`/campaigns/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete campaign.') }),
     campaignAction: useMutation({ mutationFn: (v: { id: string; action: 'approve' | 'extend' | 'cancel'; deadline?: string | null }) => apiSend(`/campaigns/${v.id}/action`, 'POST', v), onSuccess: invalidate, onError: toastError('Could not update campaign.') }),

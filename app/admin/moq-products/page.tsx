@@ -15,7 +15,7 @@ import { emptyMoqDraft, moqDraftFrom, moqProductFormData, type MoqDraft } from '
 
 export default function AdminMoqProductsPage() {
   const { data: items = [], isLoading } = useAdminMoqProducts();
-  const { saveMoqProduct, deleteMoqProduct } = useMutate();
+  const { saveMoqProduct, deleteMoqProduct, closeMoqCycle } = useMutate();
   const confirm = useConfirm();
   const [draft, setDraft] = useState<MoqDraft | null>(null);
   const [image, setImage] = useState<File | null>(null);
@@ -41,6 +41,22 @@ export default function AdminMoqProductsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the MOQ product.');
     }
+  };
+
+  // Closing a round records that the buy went to the supplier: the units
+  // committed so far belong to that order, and the shelf starts collecting
+  // again from zero. Confirmed rather than instant because it cannot be undone
+  // from this screen — and when the round is short, the dialog says by how much.
+  const handleCloseCycle = async (p: MoqProduct) => {
+    const ok = await confirm({
+      title: `Close round ${p.cycleNo} of "${p.name}"?`,
+      message: p.reached
+        ? `${p.committed} units committed. Closing marks this round as ordered and starts the next one at 0.`
+        : `Only ${p.committed} of ${p.moq} committed — ${p.remaining} short. Close it anyway only if you have placed the order; the next round starts at 0.`,
+      confirmLabel: 'Close the round',
+    });
+    if (!ok) return;
+    await closeMoqCycle.mutateAsync(p.id);
   };
 
   const handleDelete = async (p: MoqProduct) => {
@@ -112,6 +128,13 @@ export default function AdminMoqProductsPage() {
 
               <div className="mt-3 flex gap-2">
                 <button onClick={() => startEdit(p)} className="flex-1 rounded-[10px] bg-brand-navy px-3 py-2 text-[12.5px] font-bold text-white">Edit</button>
+                {/* Emphasised only once the target is met: closing early is
+                    allowed but is the exception, so it should not look like the
+                    expected next step on every card. */}
+                <button onClick={() => handleCloseCycle(p)}
+                  className={`rounded-[10px] px-3 py-2 text-[12.5px] font-bold ${p.reached ? 'bg-brand-green text-white' : 'border border-line text-ink-body'}`}>
+                  Close round
+                </button>
                 <button onClick={() => handleDelete(p)} className="rounded-[10px] border border-[#e3b9b9] px-3 py-2 text-[12.5px] font-bold text-[#a33]">Delete</button>
               </div>
             </div>

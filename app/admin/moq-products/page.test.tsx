@@ -19,6 +19,7 @@ const render = (ui: ReactElement) => rtlRender(<ConfirmProvider>{ui}</ConfirmPro
 let shelf: { data: MoqProduct[]; isLoading: boolean } = { data: [], isLoading: false };
 const saveMutate = vi.fn();
 const deleteMutate = vi.fn();
+const closeCycleMutate = vi.fn();
 let savePending = false;
 
 vi.mock('@/lib/admin-api', () => ({
@@ -26,6 +27,7 @@ vi.mock('@/lib/admin-api', () => ({
   useMutate: () => ({
     saveMoqProduct: { mutateAsync: saveMutate, isPending: savePending },
     deleteMoqProduct: { mutateAsync: deleteMutate },
+    closeMoqCycle: { mutateAsync: closeCycleMutate },
   }),
 }));
 
@@ -51,6 +53,7 @@ beforeEach(() => {
   shelf = { data: [], isLoading: false };
   saveMutate.mockReset().mockResolvedValue(undefined);
   deleteMutate.mockReset().mockResolvedValue(undefined);
+  closeCycleMutate.mockReset().mockResolvedValue(undefined);
   savePending = false;
 });
 
@@ -107,6 +110,56 @@ describe('shelf listing', () => {
 
     expect(screen.getByRole('img', { name: 'With image' })).toHaveAttribute('src', 'https://cdn.test/x.png');
     expect(screen.getByText('🧪')).toBeInTheDocument();
+  });
+});
+
+// Reaching the MOQ means the buy CAN go ahead, not that anyone has sent it. The
+// admin closing the round is what records that they did — and it is the only
+// thing that starts the shelf item collecting again.
+describe('closing a round', () => {
+  it('offers to close a round whose target has been reached', () => {
+    shelf = { data: [product({ committed: 500, moq: 500, reached: true })], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    expect(screen.getByRole('button', { name: /close round/i })).toBeInTheDocument();
+  });
+
+  it('closes the round once the admin confirms', async () => {
+    shelf = { data: [product({ id: 'm1', committed: 500, reached: true })], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: /close round/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /close the round/i }));
+
+    await waitFor(() => expect(closeCycleMutate).toHaveBeenCalledWith('m1'));
+  });
+
+  it('does not close the round when the admin backs out', async () => {
+    shelf = { data: [product({ committed: 500, reached: true })], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: /close round/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /cancel/i }));
+
+    expect(closeCycleMutate).not.toHaveBeenCalled();
+  });
+
+  // Closing short is a real decision, so the button is always there - the
+  // dialog is what makes the admin think about it.
+  it('still offers to close a round that has not reached its target', () => {
+    shelf = { data: [product({ committed: 12, moq: 500, reached: false })], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    expect(screen.getByRole('button', { name: /close round/i })).toBeInTheDocument();
+  });
+
+  it('warns that an unreached round is being closed short', async () => {
+    shelf = { data: [product({ committed: 12, moq: 500, remaining: 488, reached: false })], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: /close round/i }));
+
+    expect(await screen.findByText(/488 short/i)).toBeInTheDocument();
   });
 });
 
