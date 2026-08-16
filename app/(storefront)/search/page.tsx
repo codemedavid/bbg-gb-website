@@ -75,7 +75,7 @@ export default function SearchPage() {
 
   const addMoq = (p: MoqProduct) => {
     add(moqCartLine(p));
-    toast(`${p.name} × ${p.minOrderQty} added to cart`);
+    toast(`${p.name} added to cart`);
   };
 
   return (

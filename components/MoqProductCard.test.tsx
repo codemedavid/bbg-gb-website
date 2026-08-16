@@ -1,10 +1,11 @@
 // The MOQ shelf card.
 //
-// This card deliberately shares no component with GroupBuyCard or CampaignCard:
-// the MOQ page is its own surface, and a progress bar or slot counter would be
-// meaningless here. What it must show is what the client asked for — image,
-// name, price, availability and description — plus the one thing that makes
-// this page different: the minimum order quantity.
+// This card deliberately shares no component with GroupBuyCard or CampaignCard,
+// even though all three now show progress: those two count kits towards a batch
+// that seals at ten, this one counts units towards an arbitrary target that is
+// welcome to be overshot. What it must show is image, name, price and
+// description, plus the fact that makes this page different: how far the buy
+// has got, and how much is left before it goes ahead.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -14,8 +15,9 @@ import { MoqProductCard } from './MoqProductCard';
 const product = (o: Partial<MoqProduct> = {}): MoqProduct => ({
   id: 'm1', name: 'FUAN GTT1500', spec: '1500mg', description: 'Bulk research peptide.',
   imageUrl: null, imageEmoji: '📦', pricePhp: '4500.00', priceUsd: null,
-  stock: 50, minOrderQty: 5, packingFeePhp: null, arrivalGroup: 'white_powder',
-  isActive: true, sortOrder: 0, inStock: true,
+  minOrderQty: 1, packingFeePhp: null, arrivalGroup: 'white_powder',
+  isActive: true, sortOrder: 0,
+  moq: 500, committed: 120, cycleNo: 1, remaining: 380, progress: 0.24, reached: false,
   ...o,
 });
 
@@ -33,9 +35,9 @@ describe('MoqProductCard', () => {
     expect(screen.getByText(/4,500/)).toBeInTheDocument();
   });
 
-  it('shows the minimum order quantity — the point of the page', () => {
-    render(<MoqProductCard p={product({ minOrderQty: 5 })} onAdd={vi.fn()} />);
-    expect(screen.getByText(/min 5/i)).toBeInTheDocument();
+  it('shows the target — the point of the page', () => {
+    render(<MoqProductCard p={product({ moq: 500 })} onAdd={vi.fn()} />);
+    expect(screen.getByText(/moq 500/i)).toBeInTheDocument();
   });
 
   it('shows the description when there is one', () => {
@@ -54,39 +56,50 @@ describe('MoqProductCard', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
-  it('reports availability while in stock', () => {
-    render(<MoqProductCard p={product({ stock: 50, inStock: true })} onAdd={vi.fn()} />);
-    expect(screen.getByText(/50 in stock/i)).toBeInTheDocument();
+  it('shows how far the buy has got against its target', () => {
+    render(<MoqProductCard p={product({ committed: 120, moq: 500 })} onAdd={vi.fn()} />);
+    expect(screen.getByText('120 / 500')).toBeInTheDocument();
   });
 
-  it('adds the minimum order quantity to the cart, not a single unit', async () => {
+  it('tells the customer how many units are still needed', () => {
+    render(<MoqProductCard p={product({ remaining: 380 })} onAdd={vi.fn()} />);
+    expect(screen.getByText(/380 more to go/i)).toBeInTheDocument();
+  });
+
+  it('reports the progress to assistive tech, not just as a coloured bar', () => {
+    render(<MoqProductCard p={product({ committed: 120, moq: 500 })} onAdd={vi.fn()} />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '120');
+    expect(bar).toHaveAttribute('aria-valuemax', '500');
+  });
+
+  it('celebrates a target that has been reached', () => {
+    render(<MoqProductCard p={product({ committed: 500, remaining: 0, progress: 1, reached: true })} onAdd={vi.fn()} />);
+    expect(screen.getByText(/target reached/i)).toBeInTheDocument();
+  });
+
+  // The shelf holds nothing, so nothing can be out of it. A listed item is
+  // always buyable — a short target is the REASON to order, not a blocker.
+  it('stays buyable while the target is unreached', async () => {
     const onAdd = vi.fn();
-    render(<MoqProductCard p={product({ minOrderQty: 5 })} onAdd={onAdd} />);
+    render(<MoqProductCard p={product({ committed: 0, remaining: 500 })} onAdd={onAdd} />);
+
+    const btn = screen.getByRole('button', { name: /add/i });
+    expect(btn).toBeEnabled();
+    await userEvent.click(btn);
+    expect(onAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays buyable after the target is reached — more is welcome', async () => {
+    const onAdd = vi.fn();
+    render(<MoqProductCard p={product({ committed: 620, remaining: 0, progress: 1, reached: true })} onAdd={onAdd} />);
 
     await userEvent.click(screen.getByRole('button', { name: /add/i }));
-
     expect(onAdd).toHaveBeenCalledTimes(1);
-    expect(onAdd.mock.calls[0][0]).toMatchObject({ id: 'm1', minOrderQty: 5 });
   });
 
-  it('marks an out-of-stock product and refuses to add it', async () => {
-    const onAdd = vi.fn();
-    render(<MoqProductCard p={product({ stock: 0, inStock: false })} onAdd={onAdd} />);
-
-    expect(screen.getByText(/out of stock/i)).toBeInTheDocument();
-    const btn = screen.getByRole('button', { name: /add|unavailable/i });
-    expect(btn).toBeDisabled();
-
-    await userEvent.click(btn);
-    expect(onAdd).not.toHaveBeenCalled();
-  });
-
-  it('refuses to add when stock cannot cover one whole minimum order', async () => {
-    const onAdd = vi.fn();
-    // 3 units left but the minimum order is 5 — nobody can legally buy this.
-    render(<MoqProductCard p={product({ stock: 3, minOrderQty: 5, inStock: false })} onAdd={onAdd} />);
-
-    await userEvent.click(screen.getByRole('button', { name: /add|unavailable/i }));
-    expect(onAdd).not.toHaveBeenCalled();
+  it('says nothing about stock anywhere', () => {
+    render(<MoqProductCard p={product()} onAdd={vi.fn()} />);
+    expect(screen.queryByText(/stock/i)).not.toBeInTheDocument();
   });
 });

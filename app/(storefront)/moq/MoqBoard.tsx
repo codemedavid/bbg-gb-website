@@ -8,15 +8,16 @@ import type { MoqProduct } from '@/lib/types';
 
 // The MOQ shelf.
 //
-// Its own route, its own card and its own business rule: every item carries an
-// admin-set minimum order quantity, so adding to the cart seeds the line at that
-// minimum rather than at 1. Nothing here is shared with the Kahati board or the
-// Group Buy campaign board — no slots, no MOQ progress bar, no commitments.
+// Its own route, its own card and its own business rule: every item carries a
+// MOQ — the units all buyers together must reach before the order is placed with
+// the supplier. Nothing here is shared with the Kahati board or the Group Buy
+// campaign board: those count kits into a batch that seals at ten, this counts
+// units towards a target that is welcome to be passed.
 const STEPS = [
-  'Each item on this shelf has a minimum order quantity — add it and you start at that minimum.',
-  'Adjust the quantity in your cart, up to whatever stock is left.',
-  'Check out and upload your proof of payment. MOQ items are paid in full.',
-  'MOQ items check out as their own order, separate from on-hand, hatian and group buy.',
+  'Each item has a MOQ — the total units all of us together need to reach before it can be ordered.',
+  'Order any quantity you want. Every order adds to the total, and the bar shows how close it is.',
+  'Once the MOQ is reached, the buy goes ahead. Until then your order waits with the rest.',
+  'Check out and upload your proof of payment — MOQ items are paid in full, as their own order.',
 ];
 
 export function MoqBoard() {
@@ -26,12 +27,12 @@ export function MoqBoard() {
 
   const handleAdd = (p: MoqProduct) => {
     add(moqCartLine(p));
-    toast(`${p.name} × ${p.minOrderQty} added to cart`);
+    toast(`${p.name} added to cart`);
   };
 
   return (
     <>
-      <SectionHeader title="🏷️ MOQ" sub="Bulk shelf · minimum order per item" />
+      <SectionHeader title="🏷️ MOQ" sub="Bulk buys · we order once the target is reached" />
       <div className="p-4 md:p-6">
         <div className="mb-3.5 rounded-[14px] bg-white px-4 py-3.5 shadow-card">
           <h2 className="mb-2.5 text-[13px] font-bold text-ink">How the MOQ shelf works</h2>

@@ -66,8 +66,9 @@ const campaign = (o: Partial<MoqCampaign> = {}): MoqCampaign => ({
 const moq = (o: Partial<MoqProduct> = {}): MoqProduct => ({
   id: 'm1', name: 'Retatrutide bulk', spec: '20mg', description: null,
   imageUrl: null, imageEmoji: '📦', pricePhp: '5000.00', priceUsd: null,
-  stock: 30, minOrderQty: 5, packingFeePhp: null, arrivalGroup: 'white_powder',
-  isActive: true, sortOrder: 0, inStock: true,
+  minOrderQty: 1, packingFeePhp: null, arrivalGroup: 'white_powder',
+  isActive: true, sortOrder: 0,
+  moq: 500, committed: 120, cycleNo: 1, remaining: 380, progress: 0.24, reached: false,
   ...o,
 });
 

@@ -44,9 +44,11 @@ export const maxQtyFor = (item: CartItem): number => {
   // opens, for as many batches as it takes. Checked before `stock` so a line
   // persisted with a stale figure stops clamping too.
   if (item.kind === 'moq_campaign') return Infinity;
+  // An MOQ shelf line is uncapped too, and for the plainest reason of the three:
+  // the shelf holds nothing. Its number is a target buyers are filling, so a
+  // large order is the best thing that can happen to it, not an oversell.
+  if (item.kind === 'moq_product') return Infinity;
   if (item.stock == null) return Infinity;
-  // MOQ lines are sold by the unit, so stock caps quantity directly.
-  if (item.kind === 'moq_product') return item.stock;
   if (item.kind !== 'product') return Infinity;
   return Math.floor(item.stock / vialsFor(item.unit ?? 'piece', 1));
 };
@@ -255,10 +257,10 @@ export const moqCartLine = (p: MoqProduct): CartItem => ({
   name: p.name,
   spec: p.spec,
   unitPricePhp: Number(p.pricePhp),
-  // MOQ lines start at the product's minimum: a line seeded at 1 would be
-  // rejected by checkout.
-  minQty: p.minOrderQty,
-  qty: p.minOrderQty,
-  stock: p.stock,
+  // Seeded at the per-ORDER floor, which is 1 unless an admin raised it — NOT at
+  // the shelf target. The target is what everyone reaches together; starting one
+  // customer's line at 500 would ask them to fill the whole buy alone.
+  minQty: Math.max(1, p.minOrderQty),
+  qty: Math.max(1, p.minOrderQty),
   packingFeePhp: p.packingFeePhp != null ? Number(p.packingFeePhp) : undefined,
 });

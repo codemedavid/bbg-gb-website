@@ -163,7 +163,7 @@ describe('per-system order references', () => {
 
   it('leaves MOQ shelf orders on the BBG- series', async () => {
     await signIn();
-    const m = await makeMoqProduct({ pricePhp: 300, stock: 50, minOrderQty: 1 });
+    const m = await makeMoqProduct({ pricePhp: 300, moq: 500 });
 
     const { orders } = await place([{ kind: 'moq_product', refId: m.id, qty: 1 }]);
 

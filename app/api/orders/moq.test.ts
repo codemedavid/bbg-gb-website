@@ -2,9 +2,12 @@
 //
 // MOQ is the fourth purchase mode, so an MOQ line must reach checkout as its own
 // order with its own packing fee — never folded into the on-hand, hatian or
-// pasabay order. Stock is drawn down under the same guarded UPDATE the shop uses
-// so two concurrent checkouts cannot oversell, and the per-product minimum order
-// quantity is re-checked server-side because the client is never trusted.
+// pasabay order.
+//
+// The shelf holds no stock: an order does not draw anything down, it COMMITS
+// units towards a target every buyer is filling together. The counter moves
+// under a guarded UPDATE so two concurrent checkouts both land, and each line
+// records the cycle it joined so a later reset cannot rewrite its history.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const session = { current: null as { sub: string; role: 'customer' | 'admin'; email: string } | null };
@@ -44,7 +47,7 @@ beforeEach(async () => {
 describe('MOQ checkout', () => {
   it('creates an order with buyType "moq" and the MOQ packing fee', async () => {
     await signIn();
-    const p = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 5 });
+    const p = await makeMoqProduct({ pricePhp: 4500, moq: 500, minOrderQty: 5 });
 
     const res = await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 5 }]));
     const body = await res.json();
@@ -59,7 +62,7 @@ describe('MOQ checkout', () => {
 
   it('records the line against the MOQ product with a name snapshot', async () => {
     await signIn();
-    const p = await makeMoqProduct({ name: 'FUAN GTT1500', pricePhp: 4500, stock: 50 });
+    const p = await makeMoqProduct({ name: 'FUAN GTT1500', pricePhp: 4500, moq: 500 });
 
     const body = await (await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 2 }]))).json();
 
@@ -71,20 +74,58 @@ describe('MOQ checkout', () => {
     expect(line.qty).toBe(2);
   });
 
-  it('draws the purchased quantity out of stock', async () => {
+  it('commits the purchased quantity towards the target', async () => {
     await signIn();
-    const p = await makeMoqProduct({ stock: 50, minOrderQty: 1 });
+    const p = await makeMoqProduct({ moq: 500, committed: 100 });
 
     await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 8 }]));
 
     const db = await getDb();
     const [row] = await db.select().from(moqProducts).where(eq(moqProducts.id, p.id));
-    expect(row.stock).toBe(42);
+    expect(row.committed).toBe(108);
+  });
+
+  it('stamps the line with the cycle it joined', async () => {
+    await signIn();
+    const p = await makeMoqProduct({ moq: 500, cycleNo: 3 });
+
+    const body = await (await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 2 }]))).json();
+
+    const db = await getDb();
+    const [line] = await db.select().from(orderItems).where(eq(orderItems.orderId, body.data.order.id));
+    expect(line.moqCycleNo).toBe(3);
+  });
+
+  // The whole point of the shelf: one buyer can carry a target over the line,
+  // and going past it is a good outcome, not an oversell.
+  it('accepts a quantity that overshoots the target', async () => {
+    await signIn();
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
+
+    const res = await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 620 }]));
+    expect(res.status).toBe(201);
+
+    const db = await getDb();
+    const [row] = await db.select().from(moqProducts).where(eq(moqProducts.id, p.id));
+    expect(row.committed).toBe(620);
+  });
+
+  it('adds a second buyer on top of the first rather than replacing them', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
+
+    await signIn();
+    await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 120 }]));
+    await signIn();
+    await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 80 }]));
+
+    const db = await getDb();
+    const [row] = await db.select().from(moqProducts).where(eq(moqProducts.id, p.id));
+    expect(row.committed).toBe(200);
   });
 
   it('prices server-side and ignores any price the client sends', async () => {
     await signIn();
-    const p = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 1 });
+    const p = await makeMoqProduct({ pricePhp: 4500, moq: 500 });
 
     const body = await (await POST(checkoutRequest([
       { kind: 'moq_product', refId: p.id, qty: 1, unitPricePhp: 1 },
@@ -95,7 +136,7 @@ describe('MOQ checkout', () => {
 
   it('honours a per-listing packing fee over the global MOQ default', async () => {
     await signIn();
-    const p = await makeMoqProduct({ pricePhp: 4500, stock: 50, packingFeePhp: 450 });
+    const p = await makeMoqProduct({ pricePhp: 4500, moq: 500, packingFeePhp: 450 });
 
     const body = await (await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 1 }]))).json();
     expect(Number(body.data.order.packingFeePhp)).toBe(450);
@@ -103,35 +144,28 @@ describe('MOQ checkout', () => {
 
   it('rejects a quantity below the product minimum order quantity', async () => {
     await signIn();
-    const p = await makeMoqProduct({ stock: 50, minOrderQty: 5 });
+    const p = await makeMoqProduct({ moq: 500, minOrderQty: 5 });
 
     const res = await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 4 }]));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain('5');
   });
 
-  it('rejects a quantity beyond available stock', async () => {
+  it('leaves the counter untouched when the order is rejected', async () => {
     await signIn();
-    const p = await makeMoqProduct({ stock: 3, minOrderQty: 1 });
+    const p = await makeMoqProduct({ moq: 500, committed: 40, minOrderQty: 5 });
 
-    const res = await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 10 }]));
+    const res = await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 2 }]));
     expect(res.status).toBe(400);
-  });
-
-  it('leaves stock untouched when the order is rejected', async () => {
-    await signIn();
-    const p = await makeMoqProduct({ stock: 3, minOrderQty: 1 });
-
-    await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 10 }]));
 
     const db = await getDb();
     const [row] = await db.select().from(moqProducts).where(eq(moqProducts.id, p.id));
-    expect(row.stock).toBe(3);
+    expect(row.committed).toBe(40);
   });
 
   it('refuses to sell an archived MOQ product', async () => {
     await signIn();
-    const p = await makeMoqProduct({ stock: 50, isActive: false });
+    const p = await makeMoqProduct({ moq: 500, isActive: false });
 
     const res = await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 1 }]));
     expect(res.status).toBe(400);
@@ -156,7 +190,7 @@ describe('MOQ never shares an order with another mode', () => {
   it('splits an on-hand + MOQ cart into two orders with their own packing fees', async () => {
     await signIn();
     const onHand = await makeProduct({ onHandPiecePhp: 550, stock: 50 });
-    const moq = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 1 });
+    const moq = await makeMoqProduct({ pricePhp: 4500, moq: 500 });
 
     const body = await (await POST(checkoutRequest([
       { kind: 'product', refId: onHand.id, qty: 2, unit: 'piece' },
@@ -179,7 +213,7 @@ describe('MOQ never shares an order with another mode', () => {
   it('gives each split order its own order number', async () => {
     await signIn();
     const onHand = await makeProduct({ onHandPiecePhp: 550, stock: 50 });
-    const moq = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 1 });
+    const moq = await makeMoqProduct({ pricePhp: 4500, moq: 500 });
 
     const body = await (await POST(checkoutRequest([
       { kind: 'product', refId: onHand.id, qty: 1, unit: 'piece' },
@@ -192,7 +226,7 @@ describe('MOQ never shares an order with another mode', () => {
 
   it('charges no downpayment on an MOQ order — it is paid in full', async () => {
     await signIn();
-    const p = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 1 });
+    const p = await makeMoqProduct({ pricePhp: 4500, moq: 500 });
 
     const body = await (await POST(checkoutRequest([{ kind: 'moq_product', refId: p.id, qty: 1 }]))).json();
     expect(Number(body.data.order.downpaymentPhp)).toBe(0);

@@ -65,15 +65,16 @@ beforeEach(async () => {
 describe('every cart line kind is accepted by checkout', () => {
   it('checks out an MOQ line added the way the MOQ board adds it', async () => {
     await signIn();
-    const p = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 5 });
+    const p = await makeMoqProduct({ pricePhp: 4500, moq: 500 });
 
     // The exact line MoqBoard pushes into the cart — built by the production
     // helper, so this test cannot drift from what the storefront really sends.
     useCart.getState().add(moqCartLine({
       id: p.id, name: p.name, spec: '1500mg', description: null,
       imageUrl: null, imageEmoji: null, pricePhp: '4500.00', priceUsd: null,
-      stock: 50, minOrderQty: 5, packingFeePhp: null,
-      arrivalGroup: 'white_powder', isActive: true, sortOrder: 0, inStock: true,
+      minOrderQty: 1, packingFeePhp: null,
+      arrivalGroup: 'white_powder', isActive: true, sortOrder: 0,
+  moq: 500, committed: 120, cycleNo: 1, remaining: 380, progress: 0.24, reached: false,
     }));
 
     const res = await POST(checkoutRequestFromCart());
@@ -133,7 +134,7 @@ describe('every cart line kind is accepted by checkout', () => {
   it('checks out a mixed cart, splitting it into one order per mode', async () => {
     await signIn();
     const onHand = await makeProduct({ onHandPiecePhp: 550, stock: 50 });
-    const moq = await makeMoqProduct({ pricePhp: 4500, stock: 50, minOrderQty: 1 });
+    const moq = await makeMoqProduct({ pricePhp: 4500, moq: 500 });
 
     useCart.getState().add({
       key: `product:${onHand.id}:piece`, kind: 'product', refId: onHand.id,
@@ -143,8 +144,9 @@ describe('every cart line kind is accepted by checkout', () => {
       ...moqCartLine({
         id: moq.id, name: moq.name, spec: '1500mg', description: null,
         imageUrl: null, imageEmoji: null, pricePhp: '4500.00', priceUsd: null,
-        stock: 50, minOrderQty: 1, packingFeePhp: null,
-        arrivalGroup: 'white_powder', isActive: true, sortOrder: 0, inStock: true,
+        minOrderQty: 1, packingFeePhp: null,
+        arrivalGroup: 'white_powder', isActive: true, sortOrder: 0,
+  moq: 500, committed: 120, cycleNo: 1, remaining: 380, progress: 0.24, reached: false,
       }),
       qty: 2,
     });

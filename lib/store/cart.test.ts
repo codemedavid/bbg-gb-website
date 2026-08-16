@@ -236,10 +236,12 @@ describe('MOQ cart lines', () => {
     expect(useCart.getState().items).toHaveLength(0);
   });
 
-  it('clamps an MOQ line to the stock on hand', () => {
+  // Nothing to clamp to: the shelf holds no stock, and a big order is what
+  // fills the target rather than something to protect the shelf from.
+  it('lets an MOQ line grow as large as the customer wants', () => {
     useCart.getState().add(moqItem({ qty: 5, stock: 8 }));
     useCart.getState().setQty('moq:m1', 99);
-    expect(useCart.getState().items[0].qty).toBe(8);
+    expect(useCart.getState().items[0].qty).toBe(99);
   });
 
   it('counts MOQ units toward the cart badge and subtotal', () => {
