@@ -6,7 +6,8 @@ import { useToast } from '@/lib/store/toast';
 import { field, btnPrimary } from '@/components/admin-ui';
 import { addDays, mostRecentFullWeekMonday } from '@/lib/report/week';
 import { downloadWeeklyReportXlsx } from '@/lib/report/weekly-xlsx';
-import { REPORT_SEGMENTS, SEGMENT_LABEL, type ReportSegment } from '@/lib/report/segment';
+import { buildPackingList, openPackingListPrint } from '@/lib/report/packing-list';
+import { REPORT_SEGMENTS, SEGMENT_LABEL, SEGMENT_SHORT_LABEL, type ReportSegment } from '@/lib/report/segment';
 import type { SegmentedWeeklyReport, WeeklyReport } from '@/lib/report/build';
 import { SegmentReport } from './SegmentReport';
 
@@ -28,6 +29,19 @@ export default function AdminReportsPage() {
     enabled: !!from && !!to && to >= from,
   });
   const segments = data?.segments;
+
+  const printPackingList = (segment: ReportSegment) => {
+    const report = segments?.[segment];
+    if (!report?.rows.length) { showToast(`No ${SEGMENT_LABEL[segment]} orders in that date range.`); return; }
+    try {
+      openPackingListPrint(buildPackingList(report), {
+        title: SEGMENT_SHORT_LABEL[segment],
+        rangeLabel: report.rangeLabel,
+      });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not open the packing list.');
+    }
+  };
 
   const download = async (segment: ReportSegment) => {
     const report = segments?.[segment];
@@ -70,6 +84,7 @@ export default function AdminReportsPage() {
             report={segments[segment]}
             isBusy={busySegment === segment}
             onDownload={download}
+            onPrintPackingList={printPackingList}
           />
         ))}
     </div>

@@ -1,12 +1,17 @@
 'use client';
-import { use } from 'react';
+import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { BackHeader } from '@/components/headers';
 import { OrderItemList } from '@/components/OrderItemList';
+import { OrderItemsEditor, type OrderItemDraft } from '@/components/OrderItemsEditor';
 import { OrderStatusTrail } from '@/components/OrderStatusTrail';
 import { OrderProofSection } from '@/components/OrderProofSection';
 import { useOrderDetail } from '@/lib/queries';
+import { apiSend } from '@/lib/api-client';
+import { useToast } from '@/lib/store/toast';
 import { php, shortDate } from '@/lib/format';
+import { customerEditability, EDIT_BLOCKED_MESSAGE } from '@/lib/order-edit';
 import { STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
 
 // One order, whole, on one screen.
@@ -52,7 +57,28 @@ function Money({ label, value, strong = false }: { label: string; value: string 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const qc = useQueryClient();
+  const toast = useToast((s) => s.show);
   const { data, isLoading } = useOrderDetail(id);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const save = async (items: OrderItemDraft[]) => {
+    setIsSaving(true);
+    try {
+      await apiSend(`/orders/${id}`, 'PATCH', { items });
+      // Both caches: the list screen shows each order's total, and leaving it
+      // stale means the customer sees two different figures for one order.
+      await qc.invalidateQueries({ queryKey: ['order', id] });
+      await qc.invalidateQueries({ queryKey: ['orders'] });
+      setIsEditing(false);
+      toast('Order updated — we emailed you the revised receipt.');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not update your order.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (isLoading || !data) {
     return (
@@ -66,6 +92,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { order, customer, items, proofUrl, proofs = [] } = data;
   const downpayment = Number(order.downpaymentPhp ?? 0);
   const shipping = Number(order.shippingPhp ?? 0);
+  // The same rule the server enforces (lib/order-edit.ts), so the button is
+  // offered exactly when PATCH would accept it.
+  const editability = customerEditability(order, order.settlementStatus ?? null);
 
   return (
     <>
@@ -101,7 +130,35 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         </Section>
 
         <Section title={`Ordered items (${items.length})`} testId="items-block">
-          <OrderItemList items={items} />
+          {isEditing ? (
+            <OrderItemsEditor
+              items={items}
+              isSaving={isSaving}
+              onCancel={() => setIsEditing(false)}
+              onSave={save}
+            />
+          ) : (
+            <>
+              <OrderItemList items={items} />
+              {/* Only while the order is genuinely still changeable. When it is
+                  not, the reason is stated rather than the button silently
+                  missing — "why can't I fix this" is the support message this
+                  whole feature exists to stop. */}
+              {editability === 'editable' ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="mt-3 w-full rounded-[12px] border-[1.5px] border-line bg-white py-2.5 text-[13.5px] font-semibold text-ink-body transition-colors hover:border-brand-green hover:text-brand-greendark"
+                >
+                  ✏️ Edit items
+                </button>
+              ) : (
+                <p data-testid="order-edit-blocked" className="mt-3 text-[11.5px] leading-snug text-ink-muted">
+                  {EDIT_BLOCKED_MESSAGE[editability]}
+                </p>
+              )}
+            </>
+          )}
         </Section>
 
         {order.notes && (

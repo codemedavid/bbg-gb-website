@@ -16,18 +16,30 @@ describe('buildWeeklyReport', () => {
     expect(r.rows[0].status).toBe('Payment Verification');
   });
 
-  it('formats the USD product line and Manila date', () => {
+  // The customer is billed in pesos, so the order-detail line quotes pesos. It
+  // used to quote the supplier's USD unit price beside a peso order total, which
+  // read as a currency error to everyone working the sheet.
+  it('prices the product line in pesos and dates it in Manila', () => {
     const r = buildWeeklyReport('2026-05-25', [order({ buyType: 'group_buy' })]);
     expect(r.rows[0].buyType).toBe('group_buy');
     expect(r.rows[0].productCodes).toEqual(['TR15']);
-    expect(r.rows[0].products).toEqual(['Tirzepatide TR15 x5 @ $6.80']);
+    expect(r.rows[0].products).toEqual(['Tirzepatide TR15 x5 @ ₱380.00']);
     expect(r.rows[0].date).toBe('5/27/2026');
     expect(r.rows[0].contact).toBe('0912\ng@x.com');
   });
 
-  it('omits the "@ $" suffix when a line has no USD price', () => {
+  // A USD price on the line is no longer what the suffix is drawn from, so a
+  // line carrying one must still read in pesos.
+  it('quotes pesos even when the line also carries a USD price', () => {
     const r = buildWeeklyReport('2026-05-25', [order({
-      items: [{ nameSnapshot: 'Kahati vial', qty: 3, unitPriceUsd: null, unitPricePhp: '500.00' }],
+      items: [{ nameSnapshot: 'Kahati vial', qty: 3, unitPriceUsd: '6.80', unitPricePhp: '500.00' }],
+    })]);
+    expect(r.rows[0].products).toEqual(['Kahati vial x3 @ ₱500.00']);
+  });
+
+  it('omits the "@ ₱" suffix when a line has no peso price', () => {
+    const r = buildWeeklyReport('2026-05-25', [order({
+      items: [{ nameSnapshot: 'Kahati vial', qty: 3, unitPriceUsd: '6.80', unitPricePhp: '0' }],
     })]);
     expect(r.rows[0].products).toEqual(['Kahati vial x3']);
   });

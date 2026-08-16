@@ -105,13 +105,30 @@ export const GET = handler(async (req: Request) => {
       .filter((product): product is NonNullable<typeof product> => product != null);
 
     if (it.kind === 'moq_campaign' && included.length > 0) {
-      for (const product of included) {
+      // A campaign is bought as a kit at ONE peso price covering every included
+      // product, so no product here has a peso unit price of its own. Carrying
+      // the kit's price down onto each expanded row unchanged would quote the
+      // whole bundle's price against each of its parts — and the per-buyer
+      // summary would then total a campaign order at n times what was paid.
+      //
+      // Split it by each product's share of the kit's supplier cost, which is
+      // the only cost basis these rows carry. The shares sum to 1, so the
+      // expanded rows sum back to exactly kitPrice x kits. An all-zero-USD kit
+      // has no basis to weigh by and splits evenly instead.
+      const kitUsd = included.map((product) => Number(product.priceUsd) || 0);
+      const basis = kitUsd.reduce((sum, usd) => sum + usd, 0);
+      const shareOf = (i: number) => basis > 0 ? kitUsd[i] / basis : 1 / included.length;
+      const kitPricePhp = Number(base.unitPricePhp) || 0;
+
+      for (const [index, product] of included.entries()) {
         // Campaign quantities are kits. Convert them to supplier units before
         // merging them with vial-counted Kahati lines; the builder then divides
         // by this same kit size for the visible Total Qty value.
         const qty = it.qty * product.kitSize;
         list.push({
           ...base,
+          // Per VIAL, so it multiplies back up against the vial-counted qty above.
+          unitPricePhp: String(kitPricePhp * shareOf(index) / product.kitSize),
           nameSnapshot: product.name, specSnapshot: product.spec, productId: product.id,
           code: reportProductCode(product.name, product.spec, product.code), kitSize: product.kitSize, qty,
           unitPriceUsd: product.priceUsd == null

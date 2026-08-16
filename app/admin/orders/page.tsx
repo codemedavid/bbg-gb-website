@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { useAdminOrders, useAdminOrder, useMutate } from '@/lib/admin-api';
+import { useAdminOrders, useAdminOrder, useAdminProducts, useMutate } from '@/lib/admin-api';
 import { Modal, field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { php, shortDate } from '@/lib/format';
 import { reconcileProofs } from '@/lib/proof-reconciliation';
@@ -11,13 +11,25 @@ import type { OrderItem } from '@/lib/types';
 
 const FILTERS = [['', 'All'], ['proof_review', 'Proof review'], ['payment_confirmed', 'Confirmed'], ['batch_filling', 'Filling'], ['shipped', 'Shipped'], ['delivered', 'Delivered']] as const;
 
-type EditableLine = Pick<OrderItem, 'nameSnapshot' | 'specSnapshot' | 'qty'> & { id?: string; unitPricePhp: number };
+// A row in the editor. An existing line has `id`. A NEW row is one of two
+// things: `productId` set means a real catalog product, which the server prices
+// and draws stock for; neither set means a free-text manual adjustment, which
+// does neither and is only ever a correction the catalog has no row for.
+type EditableLine = Pick<OrderItem, 'nameSnapshot' | 'specSnapshot' | 'qty'> & {
+  id?: string;
+  unitPricePhp: number;
+  productId?: string;
+  unit?: 'piece' | 'kit';
+};
 
 function OrderItemsEditor({ orderId, status, items, onSaved }: {
   orderId: string; status: string; items: OrderItem[]; onSaved: () => void;
 }) {
   const { editOrderItems } = useMutate();
+  // Only fetched once the editor is actually open — the catalog is not needed to
+  // render a sheet nobody is editing.
   const [editing, setEditing] = useState(false);
+  const { data: catalog = [] } = useAdminProducts();
   const [rows, setRows] = useState<EditableLine[]>(() => items.map((item) => ({
     id: item.id, nameSnapshot: item.nameSnapshot, specSnapshot: item.specSnapshot,
     qty: item.qty, unitPricePhp: Number(item.unitPricePhp),
@@ -33,8 +45,23 @@ function OrderItemsEditor({ orderId, status, items, onSaved }: {
       setError('An order must keep at least one item. Cancel the order instead.');
       return;
     }
+    // An "Add product" row nobody picked a product for would post as a nameless
+    // manual line — a blank row with a price on the customer's receipt. The
+    // server refuses it too; saying so here saves a round trip to be told.
+    if (rows.some((row) => !row.id && row.productId === '')) {
+      setError('Pick a product for every product line, or delete the empty row.');
+      return;
+    }
     try {
-      await editOrderItems.mutateAsync({ id: orderId, items: rows });
+      await editOrderItems.mutateAsync({
+        id: orderId,
+        // A product line sends its id and unit and nothing else that matters:
+        // name and price are the catalog's, and posting the blank local values
+        // would only invite the server to trust them.
+        items: rows.map((row) => row.productId
+          ? { id: row.id, productId: row.productId, unit: row.unit ?? 'piece', qty: row.qty, nameSnapshot: '', unitPricePhp: 0 }
+          : row),
+      });
       setEditing(false);
       onSaved();
     } catch (err) {
@@ -53,23 +80,55 @@ function OrderItemsEditor({ orderId, status, items, onSaved }: {
     <div className="mt-3 rounded-[10px] border border-line-soft bg-surface-mist p-3">
       <div className="mb-2 text-[12px] font-bold text-ink">Edit order items</div>
       <div className="flex flex-col gap-2">
-        {rows.map((row, index) => (
-          <div key={row.id ?? `new-${index}`} className="grid grid-cols-[1fr_70px_92px_30px] gap-1.5">
-            <input aria-label={`Item ${index + 1} name`} className={field} value={row.nameSnapshot}
-              onChange={(e) => update(index, { nameSnapshot: e.target.value })} placeholder="Item name" />
-            <input aria-label={`Item ${index + 1} quantity`} className={field} type="number" min={1} value={row.qty}
-              onChange={(e) => update(index, { qty: Number(e.target.value) })} />
-            <input aria-label={`Item ${index + 1} unit price`} className={field} type="number" min={0} step="0.01" value={row.unitPricePhp}
-              onChange={(e) => update(index, { unitPricePhp: Number(e.target.value) })} />
-            <button type="button" aria-label={`Delete item ${index + 1}`} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}
-              className="rounded-md text-lg text-[#a33] hover:bg-[#fdeaea]">×</button>
-          </div>
-        ))}
+        {rows.map((row, index) => {
+          const isNewProduct = !row.id && row.productId !== undefined;
+          return (
+            <div key={row.id ?? `new-${index}`} className="grid grid-cols-[1fr_70px_92px_30px] gap-1.5">
+              {isNewProduct ? (
+                // Name and price are the catalog's, so neither is typed here —
+                // the server reads both off the product row and ignores anything
+                // the browser sends for them.
+                <select aria-label={`Item ${index + 1} product`} className={field} value={row.productId}
+                  onChange={(e) => update(index, { productId: e.target.value })}>
+                  <option value="">Select a product…</option>
+                  {catalog.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} {p.spec}{p.stock != null ? ` · ${p.stock} in stock` : ''}</option>
+                  ))}
+                </select>
+              ) : (
+                <input aria-label={`Item ${index + 1} name`} className={field} value={row.nameSnapshot}
+                  onChange={(e) => update(index, { nameSnapshot: e.target.value })} placeholder="Item name" />
+              )}
+              <input aria-label={`Item ${index + 1} quantity`} className={field} type="number" min={1} value={row.qty}
+                onChange={(e) => update(index, { qty: Number(e.target.value) })} />
+              {isNewProduct ? (
+                <select aria-label={`Item ${index + 1} unit`} className={field} value={row.unit ?? 'piece'}
+                  onChange={(e) => update(index, { unit: e.target.value as 'piece' | 'kit' })}>
+                  <option value="piece">per piece</option>
+                  <option value="kit">per kit</option>
+                </select>
+              ) : (
+                <input aria-label={`Item ${index + 1} unit price`} className={field} type="number" min={0} step="0.01" value={row.unitPricePhp}
+                  onChange={(e) => update(index, { unitPricePhp: Number(e.target.value) })} />
+              )}
+              <button type="button" aria-label={`Delete item ${index + 1}`} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}
+                className="rounded-md text-lg text-[#a33] hover:bg-[#fdeaea]">×</button>
+            </div>
+          );
+        })}
       </div>
-      <button type="button" className="mt-2 text-[12px] font-semibold text-brand-blue" onClick={() => setRows((current) => [...current, {
-        nameSnapshot: '', specSnapshot: null, qty: 1, unitPricePhp: 0,
-      }])}>+ Add item</button>
-      <p className="mt-2 text-[11px] text-ink-muted">Totals recalculate automatically. New free-text lines are recorded as manual admin adjustments.</p>
+      <div className="mt-2 flex gap-3">
+        <button type="button" className="text-[12px] font-semibold text-brand-blue" onClick={() => setRows((current) => [...current, {
+          nameSnapshot: '', specSnapshot: null, qty: 1, unitPricePhp: 0, productId: '', unit: 'piece',
+        }])}>+ Add product</button>
+        <button type="button" className="text-[12px] font-semibold text-ink-muted" onClick={() => setRows((current) => [...current, {
+          nameSnapshot: '', specSnapshot: null, qty: 1, unitPricePhp: 0,
+        }])}>+ Add manual line</button>
+      </div>
+      <p className="mt-2 text-[11px] text-ink-muted">
+        Totals recalculate automatically. A product line is priced from the catalog and draws stock.
+        A manual line is a free-text adjustment — no product, no stock movement, no USD price on the batch order.
+      </p>
       {error && <p role="alert" className="mt-2 text-[12px] text-[#a33]">{error}</p>}
       <div className="mt-2 flex justify-end gap-2">
         <button type="button" className={btnGhost} onClick={() => setEditing(false)}>Cancel</button>

@@ -79,6 +79,6 @@ describe('order details', () => {
       ],
     });
 
-    expect(r.products).toEqual(['Tirzepatide TR15 x5 @ $6.80', 'BAC Water 3ml x2']);
+    expect(r.products).toEqual(['Tirzepatide TR15 x5 @ ₱380.00', 'BAC Water 3ml x2 @ ₱55.00']);
   });
 });

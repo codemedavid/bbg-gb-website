@@ -2,6 +2,7 @@
 // renders. No I/O, no clock — fully testable.
 import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LABEL } from './constants';
 import { num } from './money';
+import { buildBuyerSummary, type BuyerSummary } from './buyer-summary';
 import { buildProductTotals, type ProductTotals } from './product-totals';
 import { partitionBySegment, type ReportSegment } from './segment';
 import { formatDateRange, formatRange, isoWeekNumber, mondayOf } from './week';
@@ -66,7 +67,7 @@ export type ReportRow = {
   email: string;
   address: string;
   productCodes: string[]; // aligned by index with products; blank means uncoded
-  products: string[]; // one line per item, e.g. "Tirzepatide TR15 x5 @ $6.80"
+  products: string[]; // one line per item, e.g. "Tirzepatide TR15 x5 @ ₱380.00"
   courier: string;
   packedBy: string;
   payment: string;
@@ -76,6 +77,14 @@ export type ReportRow = {
   orderStatus: string;
   /** @deprecated Use orderStatus — kept so older callers keep compiling. */
   status: string;
+  /**
+   * Whether this order was cancelled, as a fact rather than as wording.
+   * Consumers that must EXCLUDE cancelled orders — the packing list prints a
+   * parcel for every row it is given — cannot key off orderStatus: that is a
+   * display label, and renaming it would silently start packing refunded
+   * orders.
+   */
+  isCancelled: boolean;
   usd: number;
   php: number;
   packingFeePhp: number;
@@ -90,6 +99,8 @@ export type WeeklyReport = {
   rows: ReportRow[];
   /** The same week's orders rolled up per product, for the batch order. */
   productTotals: ProductTotals;
+  /** The same week's orders rolled up per buyer, packing fee included. */
+  buyerSummary: BuyerSummary;
 };
 
 // Manila-local M/D/YYYY for an ISO instant (report matches the +08:00 sample).
@@ -98,10 +109,19 @@ function manilaDate(iso: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`;
 }
 
-function usdLine(item: ReportItem): string {
+// The order-detail line quotes what the CUSTOMER was charged, in pesos.
+//
+// It used to quote item.unitPriceUsd — the supplier's price — beside a peso
+// order total in the next column, so a sheet reading "x10 @ $9.30" sat next to
+// "₱5,950" and every person working it read a currency bug. USD has not gone
+// anywhere: it is still the Total USD column of the Product Totals sheet, which
+// is where the batch order is actually priced.
+//
+// A line with no peso price gets no suffix rather than "@ ₱0.00".
+function itemLine(item: ReportItem): string {
   const base = `${item.nameSnapshot} x${item.qty}`;
-  const usd = num(item.unitPriceUsd);
-  return usd > 0 ? `${base} @ $${usd.toFixed(2)}` : base;
+  const php = num(item.unitPricePhp);
+  return php > 0 ? `${base} @ ₱${php.toFixed(2)}` : base;
 }
 
 export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[]): WeeklyReport {
@@ -116,13 +136,14 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     email: o.customerEmail ?? '',
     address: o.shipAddress,
     productCodes: o.items.map((item) => item.code?.trim() || ''),
-    products: o.items.map(usdLine),
+    products: o.items.map(itemLine),
     courier: o.courier || '',
     packedBy: o.packedBy || '',
     payment: o.paymentMethod || '',
     paymentStatus: PAYMENT_STATUS_LABEL[o.status] ?? o.status,
     orderStatus: REPORT_STATUS_LABEL[o.status] ?? o.status,
     status: REPORT_STATUS_LABEL[o.status] ?? o.status,
+    isCancelled: o.status === 'cancelled',
     usd: num(o.totalUsd),
     php: num(o.totalPhp),
     packingFeePhp: num(o.packingFeePhp),
@@ -159,6 +180,7 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     totals,
     rows,
     productTotals: buildProductTotals(orders),
+    buyerSummary: buildBuyerSummary(orders),
   };
 }
 

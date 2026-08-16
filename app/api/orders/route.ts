@@ -516,15 +516,22 @@ export const POST = handler(async (req: Request) => {
   // totals, downpayments and delivery timelines, so a single combined notice would
   // misstate what the customer owes on each.
   for (const { order, orderNo, totals, lineCount, lines, confirmOnly } of created) {
+    // The same lines go to both channels, built once. PostHog is what actually
+    // delivers the mail (lib/posthog.ts), so a receipt it cannot itemise is a
+    // receipt the customer never gets — sendEmail's beautifully rendered one
+    // only leaves the building when SMTP is configured, and configuring SMTP
+    // would double-send every status change PostHog already handles.
+    const receiptItems = lines.map((line) => ({
+      name: line.nameSnapshot, qty: line.qty, unitPrice: line.unitPricePhp,
+      lineTotal: round2(line.unitPricePhp * line.qty),
+    }));
+
     await sendEmail({
       to: session.email,
       ...orderPlacedEmail({
         name: body.shipName, orderNo, total: totals.total, subtotal: totals.subtotal,
         packingFee: totals.packingFee, downpayment: Number(order.downpaymentPhp), confirmed: confirmOnly,
-        items: lines.map((line) => ({
-          name: line.nameSnapshot, qty: line.qty, unitPrice: line.unitPricePhp,
-          lineTotal: round2(line.unitPricePhp * line.qty),
-        })),
+        items: receiptItems,
       }),
       kind: 'order_receipt',
     });
@@ -539,6 +546,10 @@ export const POST = handler(async (req: Request) => {
         downpaymentPhp: Number(order.downpaymentPhp),
         balancePhp: round2(totals.total - Number(order.downpaymentPhp)),
         itemCount: lineCount, paymentMethod: order.paymentMethod,
+        // What the receipt is made of. Without these the destination can only
+        // state a total, and "we received ₱10,700" is a notification, not a
+        // receipt — the customer cannot check it against what they ordered.
+        items: receiptItems,
       },
     });
   }

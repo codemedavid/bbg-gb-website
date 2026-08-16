@@ -41,14 +41,43 @@ export default function SettlePage() {
 
   const selectedMethod = methods.find((m) => m.id === methodId) ?? null;
   const orders = preview?.orders ?? [];
-  const totals = preview?.totals ?? { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 };
+  const quoted = preview?.totals ?? { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 };
+
+  // Which orders this payment covers. Everything, until the customer says
+  // otherwise — the common case is settling the lot, and a screen that opens
+  // with nothing ticked reads as "nothing is ready".
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  const isChosen = (id: string) => !excluded.has(id);
+  const chosen = orders.filter((o) => isChosen(o.id));
+  const toggle = (id: string) => setExcluded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  // Re-totalled from the selection rather than read off the preview, so the
+  // figure on the button is the figure being paid. The packing fee is NOT
+  // re-derived here: the server decides it (one parcel, one fee, however many
+  // instalments the customer settles in) and a second rule here is exactly how
+  // a quote comes to disagree with the charge.
+  const balancePhp = chosen.reduce(
+    (sum, o) => sum + Math.max(0, Number(o.totalPhp) - Number(o.downpaymentPhp)),
+    0,
+  );
+  const packingFeePhp = chosen.length ? quoted.packingFeePhp : 0;
+  const totals = { balancePhp, packingFeePhp, totalPhp: balancePhp + packingFeePhp };
 
   const pay = async () => {
-    if (proofs.length === 0 || !orders.length || submitting) return;
+    if (proofs.length === 0 || !chosen.length || submitting) return;
     setSubmitting(true);
     try {
       const fd = new FormData();
       if (selectedMethod) fd.append('paymentMethod', selectedMethod.label);
+      // Sent only when the customer actually narrowed the set. Omitting it on
+      // the common path keeps the request identical to what it has always been.
+      if (chosen.length !== orders.length) {
+        fd.append('orderIds', JSON.stringify(chosen.map((o) => o.id)));
+      }
       // Repeated field name; the route reads them with getAll('proof').
       for (const proof of proofs) fd.append('proof', proof);
       if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
@@ -100,7 +129,7 @@ export default function SettlePage() {
   // A settlement claims every ready order and marks them awaiting review, so it
   // must not be submittable when there is no method to have paid into — that
   // would file a payment nobody could have made.
-  const canPay = proofs.length > 0 && orders.length > 0 && !!selectedMethod;
+  const canPay = proofs.length > 0 && chosen.length > 0 && !!selectedMethod;
 
   return (
     <>
@@ -111,12 +140,26 @@ export default function SettlePage() {
           <h2 className="m-0 mb-1 text-[13px] font-bold text-ink">Ready to settle</h2>
           <p className="mb-3 text-[12px] text-ink-muted">
             {orders.length} completed hatian order{orders.length === 1 ? '' : 's'} — isang packing fee lang para sa lahat.
+            {orders.length > 1 && ' Alisin ang check sa hindi mo pa babayaran ngayon.'}
           </p>
           {orders.map((o) => {
             const balance = Math.max(0, Number(o.totalPhp) - Number(o.downpaymentPhp));
+            const checked = isChosen(o.id);
             return (
-              <div key={o.id} className="flex items-start justify-between border-b border-line-soft py-2.5 last:border-0">
-                <div>
+              // The whole row is the control. A 16px checkbox is a hard target
+              // on a phone, and this screen is used on one.
+              <label
+                key={o.id}
+                className={`flex cursor-pointer items-start gap-3 border-b border-line-soft py-2.5 last:border-0 ${checked ? '' : 'opacity-55'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(o.id)}
+                  aria-label={`Settle order ${o.orderNo}`}
+                  className="mt-1 h-[18px] w-[18px] flex-none accent-brand-green"
+                />
+                <div className="min-w-0 flex-1">
                   <div className="text-[13.5px] font-semibold text-ink">{o.orderNo}</div>
                   <div className="text-[11.5px] text-ink-muted">
                     {o.hatianNames.join(' · ')} — joined {shortDate(o.createdAt)}
@@ -126,14 +169,22 @@ export default function SettlePage() {
                   <div className="text-[13.5px] font-bold text-ink">{php(balance)}</div>
                   <div className="text-[11px] text-ink-muted">balance</div>
                 </div>
-              </div>
+              </label>
             );
           })}
+          {/* A settlement of nothing is not a payment. Said here rather than
+              only by disabling the button, which explains nothing. */}
+          {!chosen.length && (
+            <p data-testid="settle-none-chosen" className="mt-2.5 rounded-[10px] bg-warn-softbg px-3 py-2 text-[11.5px] leading-snug text-[#6b5a24]">
+              Pumili ng kahit isang order na babayaran ngayon. Ang hindi mo napili ay mananatili
+              dito at pwede mong bayaran sa susunod — hindi na ito sisingilin ng bagong packing fee.
+            </p>
+          )}
         </section>
 
         <section className="rounded-[14px] bg-white p-4 shadow-card">
           <div className="mb-1.5 flex justify-between text-[13px] text-ink-body">
-            <span>Balance ({orders.length} order{orders.length === 1 ? '' : 's'})</span>
+            <span>Balance ({chosen.length} order{chosen.length === 1 ? '' : 's'})</span>
             <span>{php(totals.balancePhp)}</span>
           </div>
           <div className="mb-1.5 flex justify-between text-[13px] text-ink-body">

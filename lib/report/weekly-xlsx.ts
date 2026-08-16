@@ -44,7 +44,17 @@ export const GROUP_BUY_PRODUCT_TOTALS_HEADERS = [
 ] as const;
 const GROUP_BUY_PRODUCT_COLUMN_WIDTHS = [11.75, 26.75, 10.875, 10.375, 9, 0, 0];
 
+// Third sheet: the same range pivoted per buyer, which is the view packing day
+// is worked from. Column names match the pivot the team already circulates
+// ("Row Labels", "Sum of Quantity", "Sum of Amount") so the sheet reads as the
+// one they know rather than as a new report to learn.
+export const SUMMARY_SHEET = 'SUMMARY';
+export const SUMMARY_HEADERS = ['Row Labels', 'Sum of Quantity', 'Sum of Amount'] as const;
+const SUMMARY_COLUMN_WIDTHS = [34, 17, 17];
+const GRAND_TOTAL_LABEL = 'Grand Total';
+
 const MONEY_FORMAT = '#,##0.00';
+const QTY_FORMAT = '#,##0.00';
 
 // ExcelJS wants 'FFRRGGBB'; REPORT_COLORS carries the PDF's [r,g,b] triples so
 // both exports stay on one palette.
@@ -67,6 +77,10 @@ export async function buildWeeklyWorkbook(
 
   if (segment === 'groupbuy') {
     addGroupBuyProductTotalsSheet(workbook, report);
+    // The supplier sheet says what to ORDER; the summary says who it is for and
+    // what each of them owes. The team's own Batch 7 workbook carries both tabs,
+    // and packing day needs the second one.
+    addBuyerSummarySheet(workbook, report);
     return workbook;
   }
 
@@ -139,6 +153,7 @@ export async function buildWeeklyWorkbook(
   };
 
   addProductTotalsSheet(workbook, report);
+  addBuyerSummarySheet(workbook, report);
 
   return workbook;
 }
@@ -207,6 +222,50 @@ function addGroupBuyProductTotalsSheet(workbook: Workbook, report: WeeklyReport)
 
 // Appended after the order sheet so the workbook opens on the view the team
 // already knows, with the batch-order view one tab away.
+// The per-buyer pivot: one bold row per buyer carrying their totals, their
+// products indented under it, and a Grand Total closing the sheet.
+//
+// Written as plain rows rather than as a real Excel PivotTable because ExcelJS
+// cannot author one — and because a pivot would recompute from a source range
+// the team would then have to keep intact. These figures already agree with the
+// order sheet; freezing them is the point.
+function addBuyerSummarySheet(workbook: Workbook, report: WeeklyReport): void {
+  const sheet = workbook.addWorksheet(SUMMARY_SHEET, {
+    views: [{ state: 'frozen', ySplit: 1 }],
+  });
+
+  sheet.columns = SUMMARY_HEADERS.map((header, i) => ({ header, width: SUMMARY_COLUMN_WIDTHS[i] }));
+
+  const headerRow = sheet.getRow(1);
+  headerRow.font = { bold: true, color: { argb: argb(REPORT_COLORS.headerText) } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.headerFill) } };
+  headerRow.alignment = { vertical: 'middle', wrapText: true };
+
+  for (const group of report.buyerSummary.groups) {
+    const buyerRow = sheet.addRow([group.buyer, group.qty, group.amountPhp]);
+    buyerRow.font = { bold: true };
+
+    for (const line of group.lines) {
+      // Indented rather than moved into a second column: a pivot's row labels
+      // share one column, and keeping that shape is what lets the team collapse
+      // and filter the sheet the way they already do.
+      const lineRow = sheet.addRow([line.label, line.qty, line.amountPhp]);
+      lineRow.getCell(1).alignment = { indent: 2 };
+    }
+  }
+
+  const totalRow = sheet.addRow([
+    GRAND_TOTAL_LABEL,
+    report.buyerSummary.totals.qty,
+    report.buyerSummary.totals.amountPhp,
+  ]);
+  totalRow.font = { bold: true };
+  totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.totalFill) } };
+
+  sheet.getColumn(SUMMARY_HEADERS.indexOf('Sum of Quantity') + 1).numFmt = QTY_FORMAT;
+  sheet.getColumn(SUMMARY_HEADERS.indexOf('Sum of Amount') + 1).numFmt = MONEY_FORMAT;
+}
+
 function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
   const sheet = workbook.addWorksheet(PRODUCT_TOTALS_SHEET, {
     views: [{ state: 'frozen', ySplit: 1 }],

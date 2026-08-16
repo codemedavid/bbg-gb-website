@@ -279,3 +279,105 @@ describe('packing fee status through the settlement lifecycle', () => {
     expect(confirmed.status).toBe('paid');
   });
 });
+
+// Client feedback: "option to delete or add some orders prior to proceeding
+// checkout". A final checkout used to take every ready order whether or not the
+// customer could pay for all of them that day.
+//
+// The route still never TRUSTS the list — it intersects whatever the client
+// sends with the set the server computed, so a crafted request can only ever
+// settle fewer of its own orders, never someone else's and never more.
+describe('POST /api/settlements — settling a chosen subset', () => {
+  // Two ready orders belonging to the signed-in customer.
+  async function twoReadyOrders() {
+    await committedAndClosedHatian(3);
+    await committedAndClosedHatian(2);
+    const db = await getDb();
+    const rows = await db.select({ id: orders.id, orderNo: orders.orderNo })
+      .from(orders).where(eq(orders.userId, session.current!.sub)).orderBy(orders.createdAt);
+    return rows;
+  }
+
+  it('settles every ready order when no selection is sent', async () => {
+    await signIn();
+    const all = await twoReadyOrders();
+
+    const res = await POST(settlementRequest());
+    expect(res.status).toBe(201);
+    expect((await res.json()).data.orderCount).toBe(all.length);
+  });
+
+  it('settles only the chosen orders and leaves the rest ready', async () => {
+    await signIn();
+    const [first, second] = await twoReadyOrders();
+
+    const res = await POST(settlementRequest({ orderIds: [first.id] }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).data.orderCount).toBe(1);
+
+    const db = await getDb();
+    const [kept] = await db.select({ settlementId: orders.settlementId })
+      .from(orders).where(eq(orders.id, second.id));
+    expect(kept.settlementId).toBeNull();
+  });
+
+  it('leaves the unchosen order settleable in a later checkout', async () => {
+    await signIn();
+    const [first, second] = await twoReadyOrders();
+
+    await POST(settlementRequest({ orderIds: [first.id] }));
+    const res = await POST(settlementRequest({ orderIds: [second.id] }));
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).data.orderCount).toBe(1);
+  });
+
+  // The whole point of the final checkout is one fee for one parcel. Letting a
+  // customer split it into two settlements must not turn into two fees.
+  it('never charges the packing fee twice when the settlement is split', async () => {
+    await signIn();
+    const [first, second] = await twoReadyOrders();
+
+    const one = await (await POST(settlementRequest({ orderIds: [first.id] }))).json();
+    const two = await (await POST(settlementRequest({ orderIds: [second.id] }))).json();
+
+    const fees = [one.data.totals.packingFeePhp, two.data.totals.packingFeePhp];
+    expect(fees.filter((f: number) => f > 0).length).toBeLessThanOrEqual(1);
+  });
+
+  it("refuses a selection naming another customer's order", async () => {
+    await signIn();
+    await committedAndClosedHatian(3);
+    const db = await getDb();
+    const [mine] = await db.select({ id: orders.id }).from(orders)
+      .where(eq(orders.userId, session.current!.sub));
+
+    const victim = await signIn(); // a different customer
+    await committedAndClosedHatian(2);
+
+    const res = await POST(settlementRequest({ orderIds: [mine.id] }));
+    expect(res.status).toBe(400);
+    void victim;
+
+    // …and the order it tried to reach is untouched.
+    const [stolen] = await db.select({ settlementId: orders.settlementId })
+      .from(orders).where(eq(orders.id, mine.id));
+    expect(stolen.settlementId).toBeNull();
+  });
+
+  it('refuses an empty selection rather than silently settling everything', async () => {
+    await signIn();
+    await twoReadyOrders();
+
+    const res = await POST(settlementRequest({ orderIds: [] }));
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a selection of orders that are not ready to settle', async () => {
+    await signIn();
+    await twoReadyOrders();
+
+    const res = await POST(settlementRequest({ orderIds: [crypto.randomUUID()] }));
+    expect(res.status).toBe(400);
+  });
+});

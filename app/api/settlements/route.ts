@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, ne, or } from 'drizzle-orm';
 import { getDb, orders, paymentMethods, settlements, settlementPaymentProofs, users } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
+import { round2 } from '@/lib/pricing';
 import { settlementTotals } from '@/lib/settlement';
 import { readySettlementOrders, findReplayedSettlement } from '@/lib/settlement-server';
 import { validateAndStoreProofs } from '@/lib/proof';
@@ -15,21 +16,68 @@ const settlementSchema = z.object({
   // final checkout replays the original settlement instead of charging a
   // second packing fee.
   idempotencyKey: z.string().min(8).max(64).optional(),
+  // Which of the customer's ready orders to settle now. Absent means all of
+  // them, which is what every client sent before the picker existed.
+  orderIds: z.array(z.string().uuid()).optional(),
 });
 
-// Customer: the hatian final checkout. Settles EVERY completed hatian order the
-// customer still owes on, under one packing fee.
+// The picker posts its selection as a JSON array in a multipart field. Malformed
+// JSON is a bad request, not a reason to fall back to "settle everything" — that
+// fallback would charge the customer for orders they had just deselected.
+function parseOrderIds(raw: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ApiError(400, 'Could not read which orders you selected. Please refresh and try again.');
+  }
+  if (!Array.isArray(parsed)) {
+    throw new ApiError(400, 'Could not read which orders you selected. Please refresh and try again.');
+  }
+  // De-duplicated: the same id twice would make the count check fail against an
+  // intersection that is correctly shorter.
+  return [...new Set(parsed.map(String))];
+}
+
+// Has this customer already paid to have this parcel packed, through a
+// settlement that is still standing? A cancelled settlement collected nothing,
+// so it cannot be the reason a later one is free.
+async function hasLiveSettlementFee(
+  tx: Parameters<typeof readySettlementOrders>[0],
+  userId: string,
+): Promise<boolean> {
+  const [row] = await tx.select({ id: settlements.id }).from(settlements)
+    .where(and(
+      eq(settlements.userId, userId),
+      ne(settlements.status, 'cancelled'),
+      gt(settlements.packingFeePhp, '0'),
+    ))
+    .limit(1);
+  return !!row;
+}
+
+// Customer: the hatian final checkout. Settles the completed hatian orders the
+// customer still owes on — by default all of them — under one packing fee.
 //
-// The client sends payment details only — never a list of orders. The server
-// picks the set, which is what makes "one fee per parcel" true no matter what a
-// client sends, and stops a crafted request from settling someone else's orders
-// or splitting its own into several fee-bearing checkouts.
+// The client may now NARROW that set (client feedback: "option to delete or add
+// some orders prior to proceeding checkout") but never widen it. The server
+// still computes the eligible set itself and intersects the request with it, so
+// a crafted list can only ever settle fewer of the sender's own orders — never
+// someone else's, and never one that is not ready.
+//
+// Splitting the checkout must not split the fee into two. The parcel is packed
+// once, so a customer who already has a live settlement carrying a packing fee
+// pays none on the next one — see settlementPackingFeeDue.
 export const POST = handler(async (req: Request) => {
   const session = await requireSession();
   const form = await req.formData();
+  const rawOrderIds = form.get('orderIds');
   const body = settlementSchema.parse({
     paymentMethod: form.get('paymentMethod') ?? undefined,
     idempotencyKey: form.get('idempotencyKey') ?? undefined,
+    // Absent and "[]" are different requests: the first says "settle
+    // everything", the second names nothing and must not be read as the first.
+    orderIds: rawOrderIds == null ? undefined : parseOrderIds(String(rawOrderIds)),
   });
 
   const db = await getDb();
@@ -56,11 +104,35 @@ export const POST = handler(async (req: Request) => {
     }
 
     // Re-read inside the transaction; never trust a quote the client held onto.
-    const ready = await readySettlementOrders(tx, session.sub);
-    if (!ready.length) {
+    const all = await readySettlementOrders(tx, session.sub);
+    if (!all.length) {
       throw new ApiError(400, 'You have no completed hatian orders to settle yet.');
     }
-    const totals = settlementTotals(ready);
+
+    // Intersect rather than look up: an id the customer does not own, or one
+    // that is not ready, simply is not in `all` and so cannot be settled. The
+    // count check then turns that silence into a refusal, because quietly
+    // settling fewer orders than the customer asked for — and billing them for
+    // it — is worse than failing.
+    const selected = body.orderIds;
+    const ready = selected ? all.filter((o) => selected.includes(o.id)) : all;
+    if (selected && ready.length !== selected.length) {
+      throw new ApiError(400, 'Some of the orders you selected are no longer ready to settle. Please refresh and try again.');
+    }
+    if (!ready.length) {
+      throw new ApiError(400, 'Select at least one order to settle.');
+    }
+
+    // The parcel is packed once. A customer settling in instalments has already
+    // paid for that with an earlier live settlement, so this one owes no fee.
+    const quoted = settlementTotals(ready);
+    const feeAlreadyPaid = await hasLiveSettlementFee(tx, session.sub);
+    const packingFeePhp = feeAlreadyPaid ? 0 : quoted.packingFeePhp;
+    const totals = {
+      ...quoted,
+      packingFeePhp,
+      totalPhp: round2(quoted.balancePhp + packingFeePhp),
+    };
 
     const [settlement] = await tx.insert(settlements).values({
       userId: session.sub,

@@ -93,6 +93,9 @@ export async function makeUser(
 export async function makeProduct(
   overrides: Partial<{
     pricePhp: number; stock: number; name: string; spec: string;
+    // Price-list code and supplier USD price. Both feed the weekly batch order
+    // rather than anything the customer sees, so they default to absent.
+    code: string | null; priceUsd: string | null; kitSize: number;
     isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
     // The two board channels, independent of each other: isGroupBuy is the
     // campaign board, isKahati the vial counters (lib/product-channels.ts).
@@ -113,6 +116,9 @@ export async function makeProduct(
   const onHandKitPhp = overrides.onHandKitPhp !== undefined ? overrides.onHandKitPhp : 5000;
   const [row] = await db.insert(products).values({
     name: overrides.name ?? 'Test Peptide', spec: overrides.spec ?? '10mg', categoryId: cat.id,
+    code: overrides.code ?? null,
+    priceUsd: overrides.priceUsd ?? null,
+    kitSize: overrides.kitSize ?? 10,
     pricePhp: String(pricePhp), stock: overrides.stock ?? 100,
     isActive: overrides.isActive ?? true,
     isOnHand: overrides.isOnHand ?? true,
@@ -251,11 +257,14 @@ export function settlementRequest(
     withProof?: boolean; paymentMethod?: string; idempotencyKey?: string;
     /** How many proofs to attach — a customer who paid in several transfers. */
     proofCount?: number;
+    /** Settle only these orders. Omitted means "everything that is ready". */
+    orderIds?: string[];
   } = {},
 ): Request {
   const form = new FormData();
   if (opts.paymentMethod) form.set('paymentMethod', opts.paymentMethod);
   if (opts.idempotencyKey) form.set('idempotencyKey', opts.idempotencyKey);
+  if (opts.orderIds) form.set('orderIds', JSON.stringify(opts.orderIds));
   if (opts.withProof !== false) {
     // Appended under one repeated field name, which is what a multi-file input
     // posts and what the route reads with getAll().

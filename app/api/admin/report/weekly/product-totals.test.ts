@@ -199,4 +199,56 @@ describe('weekly report product totals', () => {
       undefined, 'TOTAL', undefined, undefined, undefined, 60, 612, 60,
     ]);
   });
+
+  // A multi-product kit is one peso price covering several products. Copying
+  // that price onto each expanded row would report the order at n times what
+  // the customer paid, which the per-buyer summary then totals and the grand
+  // total carries. The split is by each product's share of the kit's supplier
+  // cost, and it must sum back to exactly the kit price.
+  it('splits a multi-product campaign kit price across its included products', async () => {
+    const db = await getDb();
+    const user = await makeUser();
+    const [tirze] = await db.insert(products).values({
+      name: 'Tirzepatide', spec: '30mg', code: 'TR30',
+      pricePhp: '9000', priceUsd: '150', kitSize: 10, isGroupBuy: true,
+    }).returning();
+    const [bac] = await db.insert(products).values({
+      name: 'BAC Water', spec: '3ml', code: 'BA03',
+      pricePhp: '3000', priceUsd: '50', kitSize: 5, isGroupBuy: true,
+    }).returning();
+
+    const seriesId = crypto.randomUUID();
+    const [campaign] = await db.insert(moqCampaigns).values({
+      id: seriesId, seriesId, batchNo: 1, name: 'Starter kit',
+      pricePerKitPhp: '10000', moq: 10, committed: 2, status: 'open',
+      includedProducts: [
+        { productId: tirze.id, name: tirze.name, outOfStock: false },
+        { productId: bac.id, name: bac.name, outOfStock: false },
+      ],
+    }).returning();
+
+    const [order] = await db.insert(orders).values({
+      orderNo: 'BBG-88002', userId: user.id, status: 'payment_confirmed', buyType: 'group_buy',
+      subtotalPhp: '20000', totalPhp: '20000', totalUsd: '0',
+      shipName: 'Reylyn', shipPhone: '0917', shipAddress: 'Manila', createdAt: IN_WEEK,
+    }).returning();
+    await db.insert(orderItems).values({
+      orderId: order.id, kind: 'moq_campaign', moqCampaignId: campaign.id,
+      nameSnapshot: 'Starter kit — group buy', specSnapshot: 'Group Buy · Batch #1',
+      unitPricePhp: '10000', qty: 2, lineTotalPhp: '20000',
+    });
+
+    const res = await GET(new Request(`http://localhost/api/admin/report/weekly?week=${MONDAY}`));
+    const body = await res.json();
+    const row = body.data.segments.groupbuy.rows[0];
+
+    // USD basis 150:50 → 75% / 25% of ₱10,000 per kit.
+    // Tirzepatide: ₱7,500 per kit ÷ 10 vials = ₱750. BAC: ₱2,500 ÷ 5 = ₱500.
+    expect(row.products).toEqual([
+      'Tirzepatide x20 @ ₱750.00',
+      'BAC Water x10 @ ₱500.00',
+    ]);
+    // 20 x 750 + 10 x 500 = the ₱20,000 actually charged, not a multiple of it.
+    expect(row.php).toBe(20000);
+  });
 });

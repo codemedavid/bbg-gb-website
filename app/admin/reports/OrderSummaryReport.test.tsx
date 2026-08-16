@@ -14,7 +14,7 @@ const report: WeeklyReport = {
       index: 1, invoice: 'BBG-2500', buyType: 'kahati', date: '5/25/2025', customer: 'Ana Reyes', contact: '',
       phone: '09171234567', email: 'ana@example.com', address: 'QC',
       productCodes: ['RT30'], products: ['Retatrutide x5 @ $6.80'], courier: 'Lalamove', packedBy: 'Cza',
-      payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
+      payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', isCancelled: false, usd: 100, php: 5000,
       packingFeePhp: 350,
     },
   ],
@@ -22,6 +22,7 @@ const report: WeeklyReport = {
     rows: [{ index: 1, name: 'Retatrutide', code: 'RT30', spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
     totals: { usd: 100, qty: 5 },
   },
+  buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 };
 
 describe('OrderSummaryReport', () => {

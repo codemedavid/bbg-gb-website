@@ -23,6 +23,9 @@ vi.mock('@/lib/admin-api', () => ({
     }],
     isLoading: false,
   }),
+  // The item editor offers a catalog product picker, so the sheet reads the
+  // product list even when the test is about something else.
+  useAdminProducts: () => ({ data: [] }),
   useAdminOrder: () => ({
     data: {
       order: order.current,

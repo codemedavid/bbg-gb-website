@@ -139,3 +139,89 @@ describe('hatian final checkout', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/orders'));
   });
 });
+
+// Client feedback: "option to delete or add some orders prior to proceeding
+// checkout". The page used to settle every ready order with no way to say
+// "not this one, not this month".
+describe('SettlePage — choosing which orders to settle', () => {
+  const attachProof = () => {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      value: [new File([Buffer.from('proof')], 'proof.png', { type: 'image/png' })],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  it('starts with every ready order selected', async () => {
+    render(<SettlePage />, { wrapper });
+
+    const boxes = await screen.findAllByRole('checkbox');
+    expect(boxes).toHaveLength(2);
+    for (const box of boxes) expect(box).toBeChecked();
+  });
+
+  it('drops the deselected order out of the total', async () => {
+    render(<SettlePage />, { wrapper });
+
+    // BBG-2418: 2700 - 150 = 2550. BBG-2419: 1800 - 150 = 1650. Fee 150.
+    expect(await screen.findByText('₱4,350')).toBeInTheDocument();
+
+    const box = await screen.findByRole('checkbox', { name: /BBG-2419/i });
+    box.click();
+
+    // 2550 + 150 fee = 2700.
+    await waitFor(() => expect(screen.getByText('₱2,700')).toBeInTheDocument());
+  });
+
+  it('posts only the chosen orders', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true, json: async () => ({ success: true, data: { settlement: { id: 's1' } } }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SettlePage />, { wrapper });
+    (await screen.findByRole('checkbox', { name: /BBG-2419/i })).click();
+    attachProof();
+
+    const button = await screen.findByRole('button', { name: /pay/i });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    button.click();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, init] = (fetchMock as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0];
+    const sent = init.body as FormData;
+    expect(JSON.parse(String(sent.get('orderIds')))).toEqual(['o1']);
+  });
+
+  // Settling everything is the common path, and it must keep sending exactly
+  // the request it always sent — no selection field at all.
+  it('sends no selection at all when everything is still chosen', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true, json: async () => ({ success: true, data: { settlement: { id: 's1' } } }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SettlePage />, { wrapper });
+    attachProof();
+
+    const button = await screen.findByRole('button', { name: /pay/i });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    button.click();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, init] = (fetchMock as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0];
+    expect((init.body as FormData).get('orderIds')).toBeNull();
+  });
+
+  it('cannot be paid, and says why, when nothing is chosen', async () => {
+    render(<SettlePage />, { wrapper });
+    attachProof();
+
+    for (const box of await screen.findAllByRole('checkbox')) box.click();
+
+    expect(await screen.findByTestId('settle-none-chosen')).toBeInTheDocument();
+    const button = await screen.findByRole('button', { name: /pay|upload proof/i });
+    await waitFor(() => expect(button).toBeDisabled());
+  });
+});

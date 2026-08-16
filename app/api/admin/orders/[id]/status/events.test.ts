@@ -64,6 +64,31 @@ describe('order status events', () => {
     expect(payload.properties.orderNo).toBe(order.orderNo);
   });
 
+  // PostHog is what actually delivers customer mail (see lib/posthog.ts), so a
+  // receipt it cannot itemise is a receipt the customer never gets. The app's
+  // own orderPlacedEmail renders the lines beautifully and then only sends them
+  // when SMTP is configured — which it deliberately is not, because that would
+  // double-send every status change. The lines have to ride the event.
+  it('emits order_placed with the line items a receipt is made of', async () => {
+    const { order } = await placeAnOrder();
+
+    const [{ properties: props }] = eventsNamed('order_placed');
+    expect(props.items).toEqual([
+      expect.objectContaining({ qty: 2, name: expect.any(String), unitPrice: expect.any(Number), lineTotal: expect.any(Number) }),
+    ]);
+    expect(props.orderNo).toBe(order.orderNo);
+  });
+
+  it('carries the money breakdown the receipt prints beneath its lines', async () => {
+    await placeAnOrder();
+
+    const [{ properties: props }] = eventsNamed('order_placed');
+    const items = props.items as { lineTotal: number }[];
+    // The receipt has to add up: lines, then fee, then the total charged.
+    expect(items.reduce((sum, i) => sum + i.lineTotal, 0)).toBe(props.subtotalPhp);
+    expect(Number(props.subtotalPhp) + Number(props.packingFeePhp)).toBe(props.totalPhp);
+  });
+
   it('emits a status-specific event when the admin confirms payment', async () => {
     const { order } = await placeAnOrder();
     captureEvent.mockClear();

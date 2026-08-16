@@ -20,16 +20,18 @@ const half = (invoice: string, buyType: 'solo' | 'group_buy' | 'kahati'): Weekly
   rows: [{
     index: 1, invoice, buyType, date: '5/25/2025', customer: 'Ana', contact: '', phone: '0917',
     email: 'a@x.com', address: 'QC', productCodes: ['RT30'], products: ['Reta x5'], courier: 'J&T', packedBy: 'Cza',
-    payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
+    payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', isCancelled: false, usd: 100, php: 5000,
     packingFeePhp: 0,
   }],
   productTotals: { rows: [], totals: { usd: 0, qty: 0 } },
+  buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 });
 
 const emptyHalf: WeeklyReport = {
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 0,
   counts: { paid: 0, pending: 0, cancelled: 0 }, totals: { usd: 0, php: 0, packingFee: 0 },
   rows: [], productTotals: { rows: [], totals: { usd: 0, qty: 0 } },
+  buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 };
 
 const onhand = half('BBG-2500', 'solo');

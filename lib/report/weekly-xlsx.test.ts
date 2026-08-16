@@ -14,6 +14,8 @@ import {
   GROUP_BUY_PRODUCT_TOTALS_SHEET,
   PRODUCT_TOTALS_HEADERS,
   PRODUCT_TOTALS_SHEET,
+  SUMMARY_HEADERS,
+  SUMMARY_SHEET,
   XLSX_HEADERS,
 } from './weekly-xlsx';
 
@@ -87,7 +89,7 @@ describe('buildWeeklyWorkbook', () => {
     expect(cell('Email')).toBe('gelly@example.com');
     expect(cell('Shipping Address')).toBe('12 Mabini St, Quezon City');
     expect(cell('Product Codes')).toBe('TR15');
-    expect(cell('Order Details')).toBe('Tirzepatide TR15 x5 @ $6.80');
+    expect(cell('Order Details')).toBe('Tirzepatide TR15 x5 @ ₱380.00');
     expect(cell('Payment Method')).toBe('GCash');
     expect(cell('Payment Status')).toBe('Paid');
     expect(cell('Order Status')).toBe('Payment Verified');
@@ -116,7 +118,7 @@ describe('buildWeeklyWorkbook', () => {
     const details = sheet.getRow(2).getCell(columnOf('Order Details'));
     const codes = sheet.getRow(2).getCell(columnOf('Product Codes'));
     expect(codes.value).toBe('TR15\nBA03');
-    expect(details.value).toBe('Tirzepatide TR15 x5 @ $6.80\nBAC Water 3ml x2');
+    expect(details.value).toBe('Tirzepatide TR15 x5 @ ₱380.00\nBAC Water 3ml x2 @ ₱55.00');
     expect(details.alignment?.wrapText).toBe(true);
   });
 
@@ -203,8 +205,9 @@ describe('buildWeeklyWorkbook — Product Totals sheet', () => {
   it('adds the product rollup as a second sheet, keeping the order sheet first', async () => {
     const { workbook } = await roundTrip([twoProducts()]);
 
-    expect(workbook.worksheets).toHaveLength(2);
+    expect(workbook.worksheets).toHaveLength(3);
     expect(workbook.worksheets[1].name).toBe(PRODUCT_TOTALS_SHEET);
+    expect(workbook.worksheets[2].name).toBe(SUMMARY_SHEET);
   });
 
   it('writes a header row naming every product column', async () => {
@@ -267,10 +270,11 @@ describe('buildWeeklyWorkbook — Batch 6 Group Buy format', () => {
     ],
   });
 
-  it('exports one BBG-ProductTotals worksheet instead of the order-detail workbook', async () => {
+  it('exports the BBG-ProductTotals and SUMMARY sheets instead of the order-detail workbook', async () => {
     const { workbook, sheet } = await groupBuyRoundTrip([twoProducts()]);
 
-    expect(workbook.worksheets).toHaveLength(1);
+    expect(workbook.worksheets.map((w) => w.name))
+      .toEqual([GROUP_BUY_PRODUCT_TOTALS_SHEET, SUMMARY_SHEET]);
     expect(sheet.name).toBe(GROUP_BUY_PRODUCT_TOTALS_SHEET);
   });
 
@@ -375,18 +379,18 @@ describe('buildWeeklyWorkbook — per-segment workbooks', () => {
     const report = buildWeeklyReport('2026-05-25', [anOrder()]);
     const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'groupbuy');
 
-    expect(workbook.worksheets).toHaveLength(1);
-    expect(workbook.worksheets[0].name).toBe(GROUP_BUY_PRODUCT_TOTALS_SHEET);
+    expect(workbook.worksheets.map((sheet) => sheet.name))
+      .toEqual([GROUP_BUY_PRODUCT_TOTALS_SHEET, SUMMARY_SHEET]);
   });
 
   it('keeps the current two-sheet On-Hand workbook unchanged', async () => {
     const report = buildWeeklyReport('2026-05-25', [anOrder()]);
     const workbook = await buildWeeklyWorkbook(report, '2026-05-25', 'onhand');
 
-    expect(workbook.worksheets).toHaveLength(2);
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
       'On-Hand · Week 22',
       PRODUCT_TOTALS_SHEET,
+      SUMMARY_SHEET,
     ]);
   });
 
@@ -403,5 +407,91 @@ describe('buildWeeklyWorkbook — per-segment workbooks', () => {
     const workbook = await buildWeeklyWorkbook(report, '2026-05-25');
 
     expect(workbook.worksheets[0].name).toBe('Week 22');
+  });
+});
+
+// Packing day is worked per buyer, not per order and not per product: "what is
+// Reylyn's whole batch and what does she owe" is a question neither of the other
+// two sheets can answer. Client feedback: the amounts must include the packing
+// fee, so a buyer's figure reconciles to what was actually collected.
+describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
+  const summarySheet = async (orders: ReportOrderInput[]) => {
+    const { workbook, report } = await roundTrip(orders);
+    const sheet = workbook.getWorksheet(SUMMARY_SHEET);
+    if (!sheet) throw new Error(`workbook has no "${SUMMARY_SHEET}" sheet`);
+    return { sheet, report };
+  };
+
+  const rowsOf = (sheet: ExcelJS.Worksheet) => {
+    const rows: unknown[][] = [];
+    sheet.eachRow((row) => rows.push((row.values as unknown[]).slice(1)));
+    return rows;
+  };
+
+  it('names the pivot columns the way the circulated sheet does', async () => {
+    const { sheet } = await summarySheet([order({})]);
+    expect((sheet.getRow(1).values as unknown[]).slice(1)).toEqual([...SUMMARY_HEADERS]);
+  });
+
+  it('writes a buyer row with their products indented beneath it', async () => {
+    const { sheet } = await summarySheet([order({
+      shipName: 'Abba Gaspar',
+      packingFeePhp: '0',
+      items: [
+        { nameSnapshot: 'RJ HB', code: 'RJ HB', qty: 1, unitPriceUsd: null, unitPricePhp: '2500' },
+        { nameSnapshot: 'RJ HEALER', code: 'RJ HEALER', qty: 1, unitPriceUsd: null, unitPricePhp: '3450' },
+      ],
+    })]);
+
+    expect(rowsOf(sheet)).toEqual([
+      [...SUMMARY_HEADERS],
+      ['Abba Gaspar', 2, 5950],
+      ['RJ HB', 1, 2500],
+      ['RJ HEALER', 1, 3450],
+      ['Grand Total', 2, 5950],
+    ]);
+    expect(sheet.getRow(2).font?.bold).toBe(true);
+    expect(sheet.getRow(3).getCell(1).alignment?.indent).toBe(2);
+  });
+
+  it("includes the buyer's packing fee in their amount, as its own line", async () => {
+    const { sheet } = await summarySheet([order({
+      shipName: 'Venice Gaa',
+      packingFeePhp: '150',
+      items: [{ nameSnapshot: 'Tirzepatide', code: 'TR30', qty: 1, unitPriceUsd: null, unitPricePhp: '4850' }],
+    })]);
+
+    expect(rowsOf(sheet)).toEqual([
+      [...SUMMARY_HEADERS],
+      ['Venice Gaa', 1, 5000],
+      ['TR30', 1, 4850],
+      ['Packing fee', 0, 150],
+      ['Grand Total', 1, 5000],
+    ]);
+  });
+
+  it('writes money and quantity as numbers with a format, not as text', async () => {
+    const { sheet } = await summarySheet([order({})]);
+    const amount = sheet.getRow(2).getCell(SUMMARY_HEADERS.indexOf('Sum of Amount') + 1);
+
+    expect(typeof amount.value).toBe('number');
+    expect(amount.numFmt).toContain('0.00');
+  });
+
+  it('closes with a Grand Total across every buyer', async () => {
+    const { sheet, report } = await summarySheet([
+      order({ shipName: 'Kris', packingFeePhp: '0', items: [{ nameSnapshot: 'CP10', code: 'CP10', qty: 10, unitPriceUsd: null, unitPricePhp: '500' }] }),
+      order({ shipName: 'Jam', packingFeePhp: '0', items: [{ nameSnapshot: 'RT20', code: 'RT20', qty: 10, unitPriceUsd: null, unitPricePhp: '600' }] }),
+    ]);
+
+    const last = sheet.getRow(sheet.rowCount);
+    expect((last.values as unknown[]).slice(1)).toEqual(['Grand Total', 20, 11000]);
+    expect(last.font?.bold).toBe(true);
+    expect(report.buyerSummary.totals).toEqual({ qty: 20, amountPhp: 11000 });
+  });
+
+  it('still emits a headed sheet with a zero Grand Total for an empty range', async () => {
+    const { sheet } = await summarySheet([]);
+    expect(rowsOf(sheet)).toEqual([[...SUMMARY_HEADERS], ['Grand Total', 0, 0]]);
   });
 });

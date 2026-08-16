@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { WeeklyReport } from '@/lib/report/build';
 import { mostRecentFullWeekMonday } from '@/lib/report/week';
+import { useToast } from '@/lib/store/toast';
 
 // The page picks the week itself and defaults to the most recent full one, so
 // that — not the mocked response — is the Monday it exports under.
@@ -16,13 +17,14 @@ const half = (invoice: string, code: string, name: string, buyType: 'solo' | 'gr
   rows: [{
     index: 1, invoice, buyType, date: '5/25/2025', customer: 'Ana Reyes', contact: '',
     phone: '0917', email: 'a@x.com', address: 'QC', productCodes: [code], products: [`${name} x5`], courier: 'J&T',
-    packedBy: 'Cza', payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', usd: 100, php: 5000,
+    packedBy: 'Cza', payment: 'GCash', paymentStatus: 'Paid', orderStatus: 'Shipped', status: 'Shipped', isCancelled: false, usd: 100, php: 5000,
     packingFeePhp: 300,
   }],
   productTotals: {
     rows: [{ index: 1, name, code, spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
     totals: { usd: 100, qty: 5 },
   },
+  buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 });
 
 const onhand = half('BBG-2500', 'TR15', 'Tirzepatide', 'solo');
@@ -33,6 +35,7 @@ const emptyHalf: WeeklyReport = {
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 0,
   counts: { paid: 0, pending: 0, cancelled: 0 }, totals: { usd: 0, php: 0, packingFee: 0 },
   rows: [], productTotals: { rows: [], totals: { usd: 0, qty: 0 } },
+  buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 };
 
 const segments = { onhand, groupbuy, kahati };
@@ -124,5 +127,52 @@ describe('AdminReportsPage', () => {
 
     expect(await screen.findByRole('button', { name: /on-hand excel/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /group buy excel/i })).toBeDisabled();
+  });
+});
+
+// Packing day is worked from addresses, not from a spreadsheet. The button
+// opens the printable list; the browser's print dialog is what saves the PDF.
+describe('AdminReportsPage — packing list', () => {
+  const fakeWindow = () => ({
+    document: { write: vi.fn(), close: vi.fn(), readyState: 'complete' },
+    print: vi.fn(),
+    addEventListener: vi.fn(),
+  });
+
+  it('prints the segment addresses and order contents', async () => {
+    const opened = fakeWindow();
+    const open = vi.spyOn(window, 'open').mockReturnValue(opened as unknown as Window);
+    const user = userEvent.setup();
+    render(<Page />, { wrapper });
+
+    const buttons = await screen.findAllByRole('button', { name: /packing list pdf/i });
+    await user.click(buttons[0]);
+
+    expect(open).toHaveBeenCalled();
+    const html = String(opened.document.write.mock.calls[0][0]);
+    expect(html).toContain('Ana Reyes');
+    expect(html).toContain('BBG-2500');
+    expect(opened.print).toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  // A blocked pop-up is the common failure, and a button that silently does
+  // nothing leaves the admin with no idea why no sheet appeared. The toast
+  // itself is rendered by the admin layout, so this asserts on the store the
+  // page publishes to rather than on markup this render does not own.
+  it('explains itself when the browser blocks the print window', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const shown: string[] = [];
+    const showToast = vi.spyOn(useToast.getState(), 'show')
+      .mockImplementation((message: string) => { shown.push(message); });
+    const user = userEvent.setup();
+    render(<Page />, { wrapper });
+
+    const buttons = await screen.findAllByRole('button', { name: /packing list pdf/i });
+    await user.click(buttons[0]);
+
+    expect(shown.join(' ')).toMatch(/blocked the print window/i);
+    open.mockRestore();
+    showToast.mockRestore();
   });
 });
