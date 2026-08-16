@@ -1,0 +1,12 @@
+--- When an account was last signed in.
+---
+--- Auth is a stateless JWT: /api/auth/login and /api/admin/login issue a token
+--- and forget it, so until now nothing on the server recorded that an account
+--- had ever been used. Admin → Accounts could only have shown sign-up dates,
+--- which say nothing about whether a customer is still around.
+---
+--- Nullable with no default and no backfill, deliberately. Every existing row
+--- starts NULL and reads as "Never", which is the honest answer: those sign-ins
+--- happened before anything was recording them. Stamping created_at here
+--- instead would invent a login for every account that has never had one.
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "last_login_at" timestamp with time zone;
