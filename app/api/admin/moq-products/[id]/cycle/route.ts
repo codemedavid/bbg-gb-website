@@ -38,8 +38,13 @@ export const POST = handler(async (_req: Request, ctx: { params: Promise<{ id: s
 
   // Lost the race: the other click already opened the round this one intended
   // to open, which is the outcome asked for. Answer with what the shelf holds
-  // now rather than erroring on a button that did what it said.
-  if (!row) return ok(await serializeMoqProduct((await db.select().from(moqProducts).where(eq(moqProducts.id, id)))[0]));
+  // now rather than erroring on a button that did what it said — unless the
+  // product is gone entirely, which is the 404 this route raises above.
+  if (!row) {
+    const [fresh] = await db.select().from(moqProducts).where(eq(moqProducts.id, id));
+    if (!fresh) throw new ApiError(404, 'MOQ product not found.');
+    return ok(await serializeMoqProduct(fresh));
+  }
 
   return ok(await serializeMoqProduct(row));
 });

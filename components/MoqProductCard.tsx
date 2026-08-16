@@ -45,8 +45,13 @@ export function MoqProductCard({ p, onAdd }: { p: MoqProduct; onAdd: (p: MoqProd
               {p.reached ? '🎉 Target reached' : `${p.remaining} more to go`}
             </span>
           </div>
+          {/* valuenow is clamped to the target because committed deliberately is
+              not: 620/500 is a supported state, and an unclamped valuenow would
+              have a screen reader announce "124%". The real figure is not lost —
+              valuetext carries it, and it is on screen directly above. */}
           <div role="progressbar" aria-label={`${p.name} group buy progress`}
-            aria-valuenow={p.committed} aria-valuemin={0} aria-valuemax={p.moq}
+            aria-valuenow={Math.min(p.committed, p.moq)} aria-valuemin={0} aria-valuemax={p.moq}
+            aria-valuetext={`${p.committed} of ${p.moq} units committed`}
             className="h-2 overflow-hidden rounded-full bg-[#e8eee5]">
             <div className={`h-full rounded-full transition-[width] duration-700 ease-out ${p.reached ? 'bg-brand-green' : 'bg-brand-navy'}`}
               style={{ width: `${Math.round(p.progress * 100)}%` }} />

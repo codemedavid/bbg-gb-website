@@ -61,16 +61,28 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
       // just wrong in the expensive direction. Updated by id without an
       // isActive filter: an archived product's counter was still moved.
       //
-      // GREATEST(...,0) because the counter is a live figure, not a ledger: an
-      // admin who reset a cycle between the order and its cancellation would
-      // otherwise drive it negative and make the next round read as pre-filled.
+      // Guarded on the cycle the line joined. Once a round is closed its units
+      // were ordered from the supplier, and a refund against that placed order
+      // must not be taken off the round now filling — those units belong to the
+      // people who committed them, and erasing them stalls a buy that was ready.
+      // So a line from a closed round is left alone; only the live round moves.
+      //
+      // GREATEST(...,0) still guards the live round, because a counter is a
+      // running figure rather than a ledger and must never read negative.
       const moqLines = await tx.select().from(orderItems)
         .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'moq_product')));
       for (const line of moqLines) {
         if (line.moqProductId) {
           await tx.update(moqProducts)
             .set({ committed: sql`GREATEST(${moqProducts.committed} - ${line.qty}, 0)` })
-            .where(eq(moqProducts.id, line.moqProductId));
+            .where(and(
+              eq(moqProducts.id, line.moqProductId),
+              // A legacy line carries no cycle number; it belongs to whatever is
+              // running now, which is the only round it could have joined.
+              line.moqCycleNo == null
+                ? sql`true`
+                : eq(moqProducts.cycleNo, line.moqCycleNo),
+            ));
         }
       }
 

@@ -95,11 +95,21 @@ export async function applyOrderItemEdit(
       if (!changed) throw new ApiError(409, `Not enough stock to increase ${old.nameSnapshot}.`);
     } else if (old.moqProductId) {
       // The MOQ shelf has no ceiling to run out of, so editing a line just moves
-      // the shared counter by the delta in either direction. Floored at zero so
-      // an edit made after a cycle reset cannot leave the next round negative.
+      // the shared counter by the delta in either direction — floored at zero,
+      // because a counter is a running figure and must never read negative.
+      //
+      // Guarded on the cycle the line joined. A correction to an order from a
+      // round that has already closed must not touch the round now filling:
+      // those units belong to the buyers who committed them, and quietly
+      // debiting them there would stall a buy that was ready to place.
       await tx.update(moqProducts)
         .set({ committed: sql`GREATEST(${moqProducts.committed} + ${delta}, 0)` })
-        .where(eq(moqProducts.id, old.moqProductId));
+        .where(and(
+          eq(moqProducts.id, old.moqProductId),
+          // A legacy line carries no cycle number; it belongs to whatever round
+          // is running now, which is the only one it could have joined.
+          old.moqCycleNo == null ? sql`true` : eq(moqProducts.cycleNo, old.moqCycleNo),
+        ));
     } else if (old.moqCampaignId) {
       const [changed] = await tx.update(moqCampaigns)
         .set({ committed: sql`${moqCampaigns.committed} + ${delta}` })

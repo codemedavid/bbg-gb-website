@@ -73,6 +73,15 @@ describe('MoqProductCard', () => {
     expect(bar).toHaveAttribute('aria-valuemax', '500');
   });
 
+  // An overshoot is a real state on this shelf, but valuenow > valuemax is not
+  // valid ARIA and makes a screen reader announce something like "124%".
+  it('does not announce more than 100% when the target is overshot', () => {
+    render(<MoqProductCard p={product({ committed: 620, moq: 500, reached: true })} onAdd={vi.fn()} />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '500');
+    expect(bar).toHaveAttribute('aria-valuetext', '620 of 500 units committed');
+  });
+
   it('celebrates a target that has been reached', () => {
     render(<MoqProductCard p={product({ committed: 500, remaining: 0, progress: 1, reached: true })} onAdd={vi.fn()} />);
     expect(screen.getByText(/target reached/i)).toBeInTheDocument();

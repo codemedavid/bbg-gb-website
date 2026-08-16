@@ -133,6 +133,25 @@ describe('cancelling an MOQ order releases its commitment', () => {
     expect(await committedOf(b.id)).toBe(0);
   });
 
+  // The release must debit the round the order actually joined. Once a round is
+  // closed the units it held were ordered from the supplier; cancelling one of
+  // those orders afterwards is a refund against a buy that already went out, and
+  // taking the units off the CURRENT counter would erase demand that belongs to
+  // the people now filling round 2 — stalling a buy that was ready to place.
+  it('leaves the current round alone when cancelling an order from a closed one', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
+    const orderId = await buyAsCustomer(p.id, 200);
+
+    const db = await getDb();
+    // The admin closed round 1 and round 2 has been filling since.
+    await db.update(moqProducts).set({ cycleNo: 2, committed: 300 }).where(eq(moqProducts.id, p.id));
+
+    await asAdmin();
+    await PATCH(statusReq('cancelled'), ctx(orderId));
+
+    expect(await committedOf(p.id)).toBe(300);
+  });
+
   it('releases an archived product too — the commitment was still real', async () => {
     const p = await makeMoqProduct({ moq: 500, committed: 0 });
     const orderId = await buyAsCustomer(p.id, 8);
