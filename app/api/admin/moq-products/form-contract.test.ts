@@ -29,6 +29,8 @@ const { PATCH } = await import('./[id]/route');
 const { moqProductFormData, emptyMoqDraft, moqDraftFrom } = await import('@/lib/moq-product-form');
 const { getDb, moqProducts } = await import('@/lib/db');
 const { resetDb, makeMoqProduct } = await import('@/lib/test/harness');
+const { moqProductStatus } = await import('@/lib/moq-product-cycle');
+type MoqProduct = import('@/lib/types').MoqProduct;
 
 const req = (body: FormData, method: string) =>
   new Request('http://localhost/api/admin/moq-products', { method, body });
@@ -39,6 +41,13 @@ const rowOf = async (id: string) => {
   return row;
 };
 
+// The stored row as the admin screen receives it, so an edit draft is built from
+// the same shape the real form prefills from.
+const serialized = (row: Awaited<ReturnType<typeof rowOf>>): MoqProduct => ({
+  ...row, imageUrl: null,
+  ...moqProductStatus(row.committed, row.moq),
+});
+
 beforeEach(resetDb);
 
 describe('what the admin create form sends is what the API stores', () => {
@@ -46,7 +55,7 @@ describe('what the admin create form sends is what the API stores', () => {
     const body = moqProductFormData({
       ...emptyMoqDraft,
       name: 'FUAN GTT1500', spec: '1500mg', description: 'Bulk peptide.',
-      pricePhp: '4500', stock: '40', minOrderQty: '5',
+      pricePhp: '4500', moq: '500',
       packingFeePhp: '450', imageEmoji: '🧪', sortOrder: '2', isActive: true,
     }, null);
 
@@ -59,8 +68,10 @@ describe('what the admin create form sends is what the API stores', () => {
     expect(row.spec).toBe('1500mg');
     expect(row.description).toBe('Bulk peptide.');
     expect(Number(row.pricePhp)).toBe(4500);
-    expect(row.stock).toBe(40);
-    expect(row.minOrderQty).toBe(5);
+    expect(row.moq).toBe(500);
+    // A brand new buy has nothing committed and is on its first round.
+    expect(row.committed).toBe(0);
+    expect(row.cycleNo).toBe(1);
     expect(Number(row.packingFeePhp)).toBe(450);
     expect(row.imageEmoji).toBe('🧪');
     expect(row.sortOrder).toBe(2);
@@ -90,27 +101,28 @@ describe('what the admin create form sends is what the API stores', () => {
 
 describe('what the admin edit form sends is what the API updates', () => {
   it('round-trips an edit built from the existing product', async () => {
-    const p = await makeMoqProduct({ name: 'Old', pricePhp: 4500, stock: 40, minOrderQty: 5 });
+    const p = await makeMoqProduct({ name: 'Old', pricePhp: 4500, moq: 500, committed: 120 });
     const existing = await rowOf(p.id);
 
     // The form prefills from the product, the admin changes two fields.
-    const draft = { ...moqDraftFrom({ ...existing, imageUrl: null, inStock: true }), name: 'New', stock: '99' };
+    const draft = { ...moqDraftFrom(serialized(existing)), name: 'New', moq: '900' };
     const res = await PATCH(req(moqProductFormData(draft, null), 'PATCH'), ctx(p.id));
     expect(res.status).toBe(200);
 
     const row = await rowOf(p.id);
     expect(row.name).toBe('New');
-    expect(row.stock).toBe(99);
+    expect(row.moq).toBe(900);
     // Untouched fields must survive the round trip.
     expect(Number(row.pricePhp)).toBe(4500);
-    expect(row.minOrderQty).toBe(5);
+    // Raising the target must not disturb what buyers have already committed.
+    expect(row.committed).toBe(120);
   });
 
   it('preserves an existing packing fee across an edit that does not change it', async () => {
     const p = await makeMoqProduct({ packingFeePhp: 450 });
     const existing = await rowOf(p.id);
 
-    const draft = moqDraftFrom({ ...existing, imageUrl: null, inStock: true });
+    const draft = moqDraftFrom(serialized(existing));
     await PATCH(req(moqProductFormData(draft, null), 'PATCH'), ctx(p.id));
 
     expect(Number((await rowOf(p.id)).packingFeePhp)).toBe(450);
@@ -120,7 +132,7 @@ describe('what the admin edit form sends is what the API updates', () => {
     const p = await makeMoqProduct({ imageKey: 'original.png' });
     const existing = await rowOf(p.id);
 
-    const draft = moqDraftFrom({ ...existing, imageUrl: null, inStock: true });
+    const draft = moqDraftFrom(serialized(existing));
     await PATCH(req(moqProductFormData(draft, null), 'PATCH'), ctx(p.id));
 
     expect((await rowOf(p.id)).imageKey).toBe('original.png');
@@ -130,7 +142,7 @@ describe('what the admin edit form sends is what the API updates', () => {
     const p = await makeMoqProduct({ imageKey: 'original.png' });
     const existing = await rowOf(p.id);
 
-    const draft = moqDraftFrom({ ...existing, imageUrl: null, inStock: true });
+    const draft = moqDraftFrom(serialized(existing));
     const image = new File([Buffer.from('new-bytes')], 'new.png', { type: 'image/png' });
     await PATCH(req(moqProductFormData(draft, image), 'PATCH'), ctx(p.id));
 
@@ -143,7 +155,7 @@ describe('what the admin edit form sends is what the API updates', () => {
     const p = await makeMoqProduct({ isActive: true });
     const existing = await rowOf(p.id);
 
-    const draft = { ...moqDraftFrom({ ...existing, imageUrl: null, inStock: true }), isActive: false };
+    const draft = { ...moqDraftFrom(serialized(existing)), isActive: false };
     await PATCH(req(moqProductFormData(draft, null), 'PATCH'), ctx(p.id));
 
     expect((await rowOf(p.id)).isActive).toBe(false);

@@ -109,8 +109,11 @@ export const moqProductSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   pricePhp: z.number().nonnegative(),
   priceUsd: z.number().nonnegative().nullable().optional(),
-  stock: z.number().int().nonnegative().optional(),
-  // The "MOQ" the page is named for: a customer must order at least this many.
+  // The "MOQ" the page is named for: units ALL buyers together must reach for
+  // the buy to go ahead. Not a stock figure — this shelf holds nothing.
+  moq: z.number().int().positive().optional(),
+  // The per-order floor, which is 1 unless an admin deliberately raises it. Not
+  // collected by the form; kept so an existing value round-trips through a PATCH.
   minOrderQty: z.number().int().positive().optional(),
   packingFeePhp: z.number().nonnegative().nullable().optional(),
   arrivalGroup: z.enum(['white_powder', 'salt_liquid']).optional(),
@@ -144,7 +147,7 @@ export function parseMoqProductForm(form: FormData, partial: boolean) {
 
   const raw = {
     name: str('name'), spec: str('spec'), description: nullableStr('description'),
-    pricePhp: num('pricePhp'), priceUsd: num('priceUsd'), stock: num('stock'),
+    pricePhp: num('pricePhp'), priceUsd: num('priceUsd'), moq: num('moq'),
     minOrderQty: num('minOrderQty'), packingFeePhp: num('packingFeePhp'),
     arrivalGroup: str('arrivalGroup'), imageEmoji: str('imageEmoji'),
     isActive: bool('isActive'), sortOrder: num('sortOrder'),

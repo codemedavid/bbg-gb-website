@@ -35,7 +35,7 @@ export const POST = handler(async (req: Request) => {
     name: b.name, spec: b.spec ?? '', description: b.description ?? null,
     imageKey, imageEmoji: b.imageEmoji ?? '📦',
     pricePhp: String(b.pricePhp), priceUsd: numToStr(b.priceUsd),
-    stock: b.stock ?? 0, minOrderQty: b.minOrderQty ?? 1,
+    moq: b.moq ?? 1, minOrderQty: b.minOrderQty ?? 1,
     packingFeePhp: numToStr(b.packingFeePhp),
     arrivalGroup: b.arrivalGroup ?? 'white_powder',
     isActive: b.isActive ?? true, sortOrder: b.sortOrder ?? 0,

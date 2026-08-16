@@ -86,18 +86,27 @@ export default function AdminMoqProductsPage() {
                 {!p.isActive && <span className="flex-none rounded-md bg-warn-bg px-2 py-[3px] text-[10.5px] font-bold text-warn-fg">Archived</span>}
               </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              {/* Price sits beside the buy's progress, because those are the two
+                  questions the admin opens this screen to answer: what does it
+                  cost, and how close is it to going ahead. */}
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center">
                 <div className="rounded-[8px] bg-[#f5f8f3] py-1.5">
                   <div className="text-[13px] font-bold text-brand-greendark">{php(p.pricePhp)}</div>
                   <div className="text-[10.5px] text-ink-muted">price</div>
                 </div>
                 <div className="rounded-[8px] bg-[#f5f8f3] py-1.5">
-                  <div className="text-[13px] font-bold text-ink">{p.stock}</div>
-                  <div className="text-[10.5px] text-ink-muted">stock</div>
+                  <div className="text-[13px] font-bold text-ink">{p.committed} / {p.moq}</div>
+                  <div className="text-[10.5px] text-ink-muted">committed</div>
                 </div>
-                <div className="rounded-[8px] bg-[#f5f8f3] py-1.5">
-                  <div className="text-[13px] font-bold text-ink">{p.minOrderQty}</div>
-                  <div className="text-[10.5px] text-ink-muted">min qty</div>
+              </div>
+
+              <div className="mt-2">
+                <div className="h-1.5 overflow-hidden rounded-full bg-[#e8eee5]">
+                  <div className={`h-full rounded-full transition-[width] duration-500 ${p.reached ? 'bg-brand-green' : 'bg-brand-navy'}`}
+                    style={{ width: `${Math.round(p.progress * 100)}%` }} />
+                </div>
+                <div className={`mt-1 text-[11px] font-semibold ${p.reached ? 'text-brand-greendark' : 'text-ink-muted'}`}>
+                  {p.reached ? `Target reached · cycle ${p.cycleNo}` : `${p.remaining} to go`}
                 </div>
               </div>
 
@@ -113,6 +122,7 @@ export default function AdminMoqProductsPage() {
       {draft && (
         <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-0 md:items-center md:p-6" onClick={close}>
           <form onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}
+            aria-label={draft.id ? 'Edit MOQ product' : 'Add MOQ product'}
             className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-t-2xl bg-white p-5 md:rounded-2xl">
             <h2 className="mb-4 font-display text-[18px] font-bold text-brand-navy">
               {draft.id ? 'Edit MOQ product' : 'Add MOQ product'}
@@ -123,6 +133,20 @@ export default function AdminMoqProductsPage() {
                 <span className={label}>Name</span>
                 <input required minLength={2} className={field} value={draft.name} onChange={set('name')} />
               </label>
+
+              {/* The MOQ leads, directly under the identity of the thing. It is
+                  what the shelf is for: the number buyers are working towards,
+                  not a quantity anyone has on a shelf. */}
+              <label className="block rounded-[12px] bg-[#f5f8f3] p-3">
+                <span className={label}>MOQ — units buyers must reach</span>
+                <input type="number" min={1} step="1" required
+                  className={`${field} text-[16px] font-bold`}
+                  value={draft.moq} onChange={set('moq')} />
+                <span className="mt-1 block text-[12px] text-ink-muted">
+                  Orders add up towards this. Reaching it — or going past it — is what lets the buy go ahead.
+                </span>
+              </label>
+
               <label className="block">
                 <span className={label}>Spec</span>
                 <input className={field} value={draft.spec} onChange={set('spec')} placeholder="e.g. 1500mg" />
@@ -132,22 +156,11 @@ export default function AdminMoqProductsPage() {
                 <textarea rows={3} className={field} value={draft.description} onChange={set('description')} />
               </label>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <label className="block">
                   <span className={label}>Price ₱</span>
                   <input type="number" min={0} step="0.01" required className={field} value={draft.pricePhp} onChange={set('pricePhp')} />
                 </label>
-                <label className="block">
-                  <span className={label}>Stock</span>
-                  <input type="number" min={0} step="1" className={field} value={draft.stock} onChange={set('stock')} />
-                </label>
-                <label className="block">
-                  <span className={label}>Min order qty</span>
-                  <input type="number" min={1} step="1" className={field} value={draft.minOrderQty} onChange={set('minOrderQty')} />
-                </label>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
                 <label className="block">
                   <span className={label}>Packing fee ₱</span>
                   <input type="number" min={0} step="1" className={field} value={draft.packingFeePhp} onChange={set('packingFeePhp')} placeholder="default" />

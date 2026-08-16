@@ -34,8 +34,9 @@ const AdminMoqProductsPage = (await import('./page')).default;
 const product = (o: Partial<MoqProduct> = {}): MoqProduct => ({
   id: 'm1', name: 'FUAN GTT1500', spec: '1500mg', description: 'Bulk peptide.',
   imageUrl: null, imageEmoji: '🧪', pricePhp: '4500.00', priceUsd: null,
-  stock: 40, minOrderQty: 5, packingFeePhp: null, arrivalGroup: 'white_powder',
-  isActive: true, sortOrder: 1, inStock: true,
+  minOrderQty: 1, packingFeePhp: null, arrivalGroup: 'white_powder',
+  isActive: true, sortOrder: 1,
+  moq: 500, committed: 120, cycleNo: 1, remaining: 380, progress: 0.24, reached: false,
   ...o,
 });
 
@@ -65,14 +66,29 @@ describe('shelf listing', () => {
     expect(screen.getByText(/no moq products yet/i)).toBeInTheDocument();
   });
 
-  it('lists each product with its price, stock and minimum order quantity', () => {
-    shelf = { data: [product({ pricePhp: '4500.00', stock: 40, minOrderQty: 5 })], isLoading: false };
+  it('lists each product with its price and how far its buy has got', () => {
+    shelf = { data: [product({ pricePhp: '4500.00', moq: 500, committed: 120, remaining: 380 })], isLoading: false };
     render(<AdminMoqProductsPage />);
 
     expect(screen.getByText('FUAN GTT1500')).toBeInTheDocument();
     expect(screen.getByText(/4,500/)).toBeInTheDocument();
-    expect(screen.getByText('40')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('120 / 500')).toBeInTheDocument();
+    expect(screen.getByText(/380 to go/i)).toBeInTheDocument();
+  });
+
+  it('says so when a buy has reached its target', () => {
+    shelf = { data: [product({ moq: 500, committed: 500, remaining: 0, reached: true })], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    expect(screen.getByText(/target reached/i)).toBeInTheDocument();
+  });
+
+  // Stock was never real on this shelf - nothing is on hand.
+  it('offers no stock field anywhere on the shelf', () => {
+    shelf = { data: [product()], isLoading: false };
+    render(<AdminMoqProductsPage />);
+
+    expect(screen.queryByText(/stock/i)).not.toBeInTheDocument();
   });
 
   it('marks an archived product so the admin can tell it is off the shelf', () => {
@@ -104,10 +120,8 @@ describe('adding a product', () => {
     await userEvent.type(screen.getByLabelText(/description/i), 'Salt blend.');
     await userEvent.clear(screen.getByLabelText(/price/i));
     await userEvent.type(screen.getByLabelText(/price/i), '5200');
-    await userEvent.clear(screen.getByLabelText(/^stock$/i));
-    await userEvent.type(screen.getByLabelText(/^stock$/i), '25');
-    await userEvent.clear(screen.getByLabelText(/min order qty/i));
-    await userEvent.type(screen.getByLabelText(/min order qty/i), '5');
+    await userEvent.clear(screen.getByLabelText(/units buyers must reach/i));
+    await userEvent.type(screen.getByLabelText(/units buyers must reach/i), '500');
 
     await submitForm();
 
@@ -117,8 +131,20 @@ describe('adding a product', () => {
     expect(body.get('spec')).toBe('TR30 + CGL5');
     expect(body.get('description')).toBe('Salt blend.');
     expect(body.get('pricePhp')).toBe('5200');
-    expect(body.get('stock')).toBe('25');
-    expect(body.get('minOrderQty')).toBe('5');
+    expect(body.get('moq')).toBe('500');
+    expect(body.has('stock')).toBe(false);
+  });
+
+  // Field order is the point of this change: the MOQ is the goal of the page, so
+  // it comes before every other term rather than sitting third in a row of
+  // numbers. Tab order is DOM order, so this is what the admin actually meets.
+  it('leads the form with the MOQ, straight after the name', async () => {
+    render(<AdminMoqProductsPage />);
+    await openAddForm();
+
+    const inputs = [...screen.getByRole('form').querySelectorAll('input')];
+    expect(inputs.indexOf(screen.getByLabelText(/^name$/i))).toBe(0);
+    expect(inputs.indexOf(screen.getByLabelText(/units buyers must reach/i))).toBe(1);
   });
 
   it('creates rather than updates — no id is sent', async () => {
@@ -153,7 +179,7 @@ describe('adding a product', () => {
     expect(savedBody().get('packingFeePhp')).toBe('450');
   });
 
-  it('defaults a new product to visible with a minimum order quantity of 1', async () => {
+  it('defaults a new product to visible with a target of 1', async () => {
     render(<AdminMoqProductsPage />);
     await openAddForm();
     await userEvent.type(screen.getByLabelText(/^name$/i), 'New Product');
@@ -161,7 +187,7 @@ describe('adding a product', () => {
 
     await waitFor(() => expect(saveMutate).toHaveBeenCalled());
     expect(savedBody().get('isActive')).toBe('true');
-    expect(savedBody().get('minOrderQty')).toBe('1');
+    expect(savedBody().get('moq')).toBe('1');
   });
 
   it('attaches a chosen image to the upload', async () => {
@@ -222,15 +248,14 @@ describe('adding a product', () => {
 
 describe('editing a product', () => {
   it('prefills the form from the product being edited', async () => {
-    shelf = { data: [product({ name: 'FUAN GTT1500', pricePhp: '4500.00', stock: 40, minOrderQty: 5 })], isLoading: false };
+    shelf = { data: [product({ name: 'FUAN GTT1500', pricePhp: '4500.00', moq: 500 })], isLoading: false };
     render(<AdminMoqProductsPage />);
 
     await userEvent.click(screen.getByRole('button', { name: /edit/i }));
 
     expect(screen.getByRole('heading', { name: /edit moq product/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/^name$/i)).toHaveValue('FUAN GTT1500');
-    expect(screen.getByLabelText(/^stock$/i)).toHaveValue(40);
-    expect(screen.getByLabelText(/min order qty/i)).toHaveValue(5);
+    expect(screen.getByLabelText(/units buyers must reach/i)).toHaveValue(500);
   });
 
   it('updates the existing product rather than creating a new one', async () => {

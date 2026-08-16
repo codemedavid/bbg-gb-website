@@ -9,11 +9,13 @@ import type { MoqProduct } from '@/lib/types';
 export type MoqDraft = {
   id?: string;
   name: string;
+  // The target every buyer together must reach. The headline term of this shelf,
+  // and the only quantity the admin sets — there is no stock to type in, because
+  // none of it is on hand.
+  moq: string;
   spec: string;
   description: string;
   pricePhp: string;
-  stock: string;
-  minOrderQty: string;
   packingFeePhp: string;
   imageEmoji: string;
   sortOrder: string;
@@ -21,7 +23,7 @@ export type MoqDraft = {
 };
 
 export const emptyMoqDraft: MoqDraft = {
-  name: '', spec: '', description: '', pricePhp: '0', stock: '0', minOrderQty: '1',
+  name: '', moq: '1', spec: '', description: '', pricePhp: '0',
   packingFeePhp: '', imageEmoji: '📦', sortOrder: '0', isActive: true,
 };
 
@@ -29,11 +31,10 @@ export const emptyMoqDraft: MoqDraft = {
 export const moqDraftFrom = (p: MoqProduct): MoqDraft => ({
   id: p.id,
   name: p.name,
+  moq: String(p.moq),
   spec: p.spec,
   description: p.description ?? '',
   pricePhp: p.pricePhp,
-  stock: String(p.stock),
-  minOrderQty: String(p.minOrderQty),
   packingFeePhp: p.packingFeePhp ?? '',
   imageEmoji: p.imageEmoji ?? '📦',
   sortOrder: String(p.sortOrder),
@@ -48,8 +49,7 @@ export function moqProductFormData(draft: MoqDraft, image: File | null): FormDat
   body.set('spec', draft.spec);
   body.set('description', draft.description);
   body.set('pricePhp', draft.pricePhp || '0');
-  body.set('stock', draft.stock || '0');
-  body.set('minOrderQty', draft.minOrderQty || '1');
+  body.set('moq', draft.moq || '1');
   // Blank means "use the global MOQ packing fee", so the field is omitted
   // entirely. Sending '0' would price the packing fee as genuinely free.
   if (draft.packingFeePhp !== '') body.set('packingFeePhp', draft.packingFeePhp);

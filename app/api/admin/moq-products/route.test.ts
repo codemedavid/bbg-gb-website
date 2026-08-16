@@ -60,9 +60,9 @@ beforeEach(async () => {
 });
 
 describe('POST /api/admin/moq-products', () => {
-  it('creates an MOQ product with its price, stock and minimum order quantity', async () => {
+  it('creates an MOQ product with its price and the target buyers must reach', async () => {
     const res = await ADMIN_CREATE(productForm({
-      name: 'FUAN GTT1500', spec: '1500mg', pricePhp: '4500', stock: '20', minOrderQty: '5',
+      name: 'FUAN GTT1500', spec: '1500mg', pricePhp: '4500', moq: '500',
       description: 'Bulk research peptide.',
     }));
     const body = await res.json();
@@ -70,8 +70,14 @@ describe('POST /api/admin/moq-products', () => {
     expect(res.status).toBe(201);
     expect(body.data.name).toBe('FUAN GTT1500');
     expect(Number(body.data.pricePhp)).toBe(4500);
-    expect(body.data.stock).toBe(20);
-    expect(body.data.minOrderQty).toBe(5);
+    expect(body.data.moq).toBe(500);
+    expect(body.data.committed).toBe(0);
+    expect(body.data.reached).toBe(false);
+  });
+
+  it('rejects a target below 1 — a buy nobody can reach is not a buy', async () => {
+    const res = await ADMIN_CREATE(productForm({ name: 'Bad Target', spec: 'x', pricePhp: '10', moq: '0' }));
+    expect(res.status).toBe(400);
   });
 
   it('stores an uploaded image and returns a usable URL', async () => {
@@ -146,18 +152,18 @@ describe('GET /api/admin/moq-products', () => {
 
 describe('PATCH /api/admin/moq-products/:id', () => {
   it('updates the fields the admin changed and leaves the rest alone', async () => {
-    const p = await makeMoqProduct({ name: 'Old Name', pricePhp: 4500, stock: 10 });
+    const p = await makeMoqProduct({ name: 'Old Name', pricePhp: 4500, moq: 500 });
 
     const req = new Request('http://localhost/x', {
       method: 'PATCH',
-      body: (() => { const f = new FormData(); f.set('name', 'New Name'); f.set('stock', '99'); return f; })(),
+      body: (() => { const f = new FormData(); f.set('name', 'New Name'); f.set('moq', '900'); return f; })(),
     });
     const res = await ADMIN_PATCH(req, ctx(p.id));
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body.data.name).toBe('New Name');
-    expect(body.data.stock).toBe(99);
+    expect(body.data.moq).toBe(900);
     expect(Number(body.data.pricePhp)).toBe(4500);
   });
 
