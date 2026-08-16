@@ -1,5 +1,6 @@
 import { signedUrl } from '@/lib/storage';
 import { BUCKETS } from '@/lib/env';
+import { moqProductStatus } from '@/lib/moq-product-cycle';
 
 export type MoqProductRow = {
   id: string;
@@ -10,7 +11,9 @@ export type MoqProductRow = {
   imageEmoji: string | null;
   pricePhp: string;
   priceUsd: string | null;
-  stock: number;
+  moq: number;
+  committed: number;
+  cycleNo: number;
   minOrderQty: number;
   packingFeePhp: string | null;
   arrivalGroup: 'white_powder' | 'salt_liquid';
@@ -31,14 +34,16 @@ export async function serializeMoqProduct(p: MoqProductRow) {
     imageEmoji: p.imageEmoji,
     pricePhp: p.pricePhp,
     priceUsd: p.priceUsd,
-    stock: p.stock,
+    cycleNo: p.cycleNo,
     minOrderQty: p.minOrderQty,
     packingFeePhp: p.packingFeePhp,
     arrivalGroup: p.arrivalGroup,
     isActive: p.isActive,
     sortOrder: p.sortOrder,
-    // Derived so every surface agrees on what "buyable" means: in stock and
-    // holding at least one full minimum order.
-    inStock: p.stock > 0 && p.stock >= p.minOrderQty,
+    // Progress towards the target, derived in one place so the storefront card,
+    // the admin shelf and the API can never disagree about how full a buy is.
+    // Availability is not part of it: a listed item is always buyable — the
+    // whole point is that a short target is a reason to order, not a blocker.
+    ...moqProductStatus(p.committed, p.moq),
   };
 }

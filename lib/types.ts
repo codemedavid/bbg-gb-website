@@ -47,11 +47,15 @@ export type MoqProduct = {
   id: string; name: string; spec: string; description: string | null;
   imageUrl: string | null; imageEmoji: string | null;
   pricePhp: string; priceUsd: string | null;
-  stock: number; minOrderQty: number; packingFeePhp: string | null;
+  minOrderQty: number; packingFeePhp: string | null;
   arrivalGroup: 'white_powder' | 'salt_liquid';
   isActive: boolean; sortOrder: number;
-  // Derived server-side: in stock AND holding at least one whole minimum order.
-  inStock: boolean;
+  // The aggregate buy: `moq` units are what every buyer together must reach,
+  // `committed` is where this round has got to, and `cycleNo` says which round
+  // that is. The rest is derived server-side by moqProductStatus so no surface
+  // has to recompute a percentage.
+  moq: number; committed: number; cycleNo: number;
+  remaining: number; progress: number; reached: boolean;
 };
 
 // A product inside a campaign, with the group buy terms the admin set for it

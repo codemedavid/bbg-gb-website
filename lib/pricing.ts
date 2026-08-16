@@ -208,25 +208,24 @@ export function validateGroupBuyCommit(qty: number): { ok: boolean; message?: st
 // ---------------------------------------------------------------------------
 // MOQ shelf
 //
-// An MOQ product is stocked like on-hand goods but sold in bulk: each carries an
-// admin-set minimum order quantity a customer must meet or exceed. Stock is the
-// ceiling, exactly as it is on-hand — the server remains the authoritative gate.
+// An MOQ product is an aggregate buy, not stock: nothing is on hand, so there is
+// no ceiling to bump into and a quantity beyond the shelf target is welcome —
+// it fills the target faster. What is still checked here is the per-ORDER floor,
+// which is 1 unless an admin raised it (see lib/moq-product-cycle.ts for the
+// target itself).
 // ---------------------------------------------------------------------------
 export const MOQ_MIN_ORDER_QTY = 1; // fallback when a product sets no minimum
 
 export function validateMoqQty(
   qty: number,
   minOrderQty: number = MOQ_MIN_ORDER_QTY,
-  stock: number = Infinity,
 ): { ok: boolean; message?: string } {
   if (!Number.isInteger(qty) || qty < 1) {
     return { ok: false, message: 'Quantity must be a whole number of at least 1.' };
   }
-  if (stock <= 0) return { ok: false, message: 'Out of stock.' };
   if (qty < minOrderQty) {
     return { ok: false, message: `Minimum order for this item is ${minOrderQty}.` };
   }
-  if (qty > stock) return { ok: false, message: `Only ${stock} left in stock.` };
   return { ok: true };
 }
 

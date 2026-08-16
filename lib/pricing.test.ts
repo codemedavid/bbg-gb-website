@@ -324,30 +324,30 @@ describe('MOQ mode pricing', () => {
 });
 
 describe('validateMoqQty', () => {
-  it('accepts a quantity at the product minimum', () => {
-    expect(validateMoqQty(5, 5, 100)).toEqual({ ok: true });
+  it('accepts a quantity at the per-order minimum', () => {
+    expect(validateMoqQty(5, 5)).toEqual({ ok: true });
   });
 
-  it('rejects a quantity below the minimum order quantity', () => {
-    const r = validateMoqQty(4, 5, 100);
+  it('rejects a quantity below the per-order minimum', () => {
+    const r = validateMoqQty(4, 5);
     expect(r.ok).toBe(false);
     expect(r.message).toContain('5');
   });
 
   it('rejects a fractional quantity', () => {
-    expect(validateMoqQty(5.5, 1, 100).ok).toBe(false);
+    expect(validateMoqQty(5.5, 1).ok).toBe(false);
   });
 
-  it('rejects a quantity beyond available stock', () => {
-    const r = validateMoqQty(20, 1, 12);
-    expect(r.ok).toBe(false);
-    expect(r.message).toContain('12');
+  // The shelf holds nothing, so there is no ceiling to bump into. A buyer who
+  // wants 900 units of a 500-unit target fills it single-handed and overshoots
+  // — which is the point of the page, not an error.
+  it('accepts a quantity far beyond the shelf target — there is no stock to run out of', () => {
+    expect(validateMoqQty(900, 1)).toEqual({ ok: true });
   });
 
-  it('rejects any purchase when the product is out of stock', () => {
-    const r = validateMoqQty(1, 1, 0);
-    expect(r.ok).toBe(false);
-    expect(r.message).toMatch(/out of stock/i);
+  it('defaults the minimum to 1 when the product sets none', () => {
+    expect(validateMoqQty(1)).toEqual({ ok: true });
+    expect(validateMoqQty(0).ok).toBe(false);
   });
 });
 
