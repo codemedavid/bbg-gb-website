@@ -55,17 +55,21 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
         }
       }
 
-      // MOQ units go back on the shelf. Unlike a campaign commitment this is
-      // real inventory that checkout deducted, so skipping it silently loses
-      // stock — nothing errors, the shelf just under-sells from then on. The
-      // product is updated by id without an isActive filter: an archived
-      // product's units still physically exist and must still come back.
+      // MOQ commitments come back off the counter. Skipping this leaves the
+      // target reading closer than it is, and a buy goes to the supplier on the
+      // strength of orders that were refunded — nothing errors, the number is
+      // just wrong in the expensive direction. Updated by id without an
+      // isActive filter: an archived product's counter was still moved.
+      //
+      // GREATEST(...,0) because the counter is a live figure, not a ledger: an
+      // admin who reset a cycle between the order and its cancellation would
+      // otherwise drive it negative and make the next round read as pre-filled.
       const moqLines = await tx.select().from(orderItems)
         .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'moq_product')));
       for (const line of moqLines) {
         if (line.moqProductId) {
           await tx.update(moqProducts)
-            .set({ stock: sql`${moqProducts.stock} + ${line.qty}` })
+            .set({ committed: sql`GREATEST(${moqProducts.committed} - ${line.qty}, 0)` })
             .where(eq(moqProducts.id, line.moqProductId));
         }
       }

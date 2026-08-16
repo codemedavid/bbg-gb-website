@@ -63,6 +63,8 @@ type Priced = PriceableItem & {
   groupBuyId?: string;
   moqCampaignId?: string;
   moqProductId?: string;
+  // Which cycle of the MOQ shelf item this line joined; MOQ lines only.
+  moqCycleNo?: number;
 };
 
 export const POST = handler(async (req: Request) => {
@@ -211,26 +213,24 @@ export const POST = handler(async (req: Request) => {
           .where(and(eq(moqProducts.id, it.refId), eq(moqProducts.isActive, true)));
         if (!m) throw new ApiError(400, `MOQ product not available: ${it.refId}`);
 
-        // Re-check the admin-set minimum here: the client enforces it for the
-        // sake of the UI, but only the server decides what may be bought.
-        const check = validateMoqQty(it.qty, m.minOrderQty, m.stock);
+        // Re-check the admin-set per-order minimum here: the client enforces it
+        // for the sake of the UI, but only the server decides what may be
+        // bought. There is no ceiling to check — the shelf holds nothing, and a
+        // quantity past the target fills the buy rather than overselling it.
+        const check = validateMoqQty(it.qty, m.minOrderQty);
         if (!check.ok) throw new ApiError(400, `${m.name}: ${check.message}`);
 
-        // Guard lives in the WHERE clause so two concurrent checkouts cannot
-        // both pass a stale stock read and oversell the shelf.
-        const [drawn] = await tx.update(moqProducts)
-          .set({ stock: sql`${moqProducts.stock} - ${it.qty}` })
+        // The counter climbs in SQL rather than from a value read a moment ago,
+        // so two customers committing at the same instant both land instead of
+        // one silently overwriting the other's units.
+        const [claimed] = await tx.update(moqProducts)
+          .set({ committed: sql`${moqProducts.committed} + ${it.qty}` })
           .where(and(
             eq(moqProducts.id, m.id),
             eq(moqProducts.isActive, true),
-            sql`${moqProducts.stock} >= ${it.qty}`,
           ))
-          .returning({ stock: moqProducts.stock });
-        if (!drawn) {
-          const [fresh] = await tx.select({ stock: moqProducts.stock })
-            .from(moqProducts).where(eq(moqProducts.id, m.id));
-          throw new ApiError(400, `Only ${Math.max(fresh?.stock ?? 0, 0)} left in stock for ${m.name}.`);
-        }
+          .returning({ cycleNo: moqProducts.cycleNo });
+        if (!claimed) throw new ApiError(400, `MOQ product not available: ${m.name}`);
 
         priced.push({
           kind: 'moq_product',
@@ -240,8 +240,12 @@ export const POST = handler(async (req: Request) => {
           // Per-listing packing fee wins over the global MOQ default.
           packingFeePhp: m.packingFeePhp != null ? Number(m.packingFeePhp) : packingFees.moq,
           nameSnapshot: m.spec ? `${m.name} ${m.spec}` : m.name,
-          specSnapshot: `MOQ · min ${m.minOrderQty}`,
+          specSnapshot: `MOQ · target ${m.moq}`,
           moqProductId: m.id,
+          // Read back from the claim, not from `m`: the row was re-read under
+          // the update, so this is the cycle the units actually landed in even
+          // if an admin closed the previous one mid-checkout.
+          moqCycleNo: claimed.cycleNo,
         });
       } else if (it.kind === 'moq_campaign') {
         const [c] = await tx.select().from(moqCampaigns).where(eq(moqCampaigns.id, it.refId));
@@ -468,6 +472,7 @@ export const POST = handler(async (req: Request) => {
       await tx.insert(orderItems).values(lines.map((p) => ({
         orderId: order.id, kind: p.kind, productId: p.productId ?? null, groupBuyId: p.groupBuyId ?? null,
         moqCampaignId: p.moqCampaignId ?? null, moqProductId: p.moqProductId ?? null,
+        moqCycleNo: p.moqCycleNo ?? null,
         nameSnapshot: p.nameSnapshot, specSnapshot: p.specSnapshot,
         unitPricePhp: String(p.unitPricePhp), unitPriceUsd: p.unitPriceUsd != null ? String(p.unitPriceUsd) : null,
         qty: p.qty, lineTotalPhp: String(round2(p.unitPricePhp * p.qty)),

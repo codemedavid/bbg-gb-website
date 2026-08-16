@@ -94,13 +94,12 @@ export async function applyOrderItemEdit(
           }).where(eq(products.id, old.productId)).returning({ id: products.id });
       if (!changed) throw new ApiError(409, `Not enough stock to increase ${old.nameSnapshot}.`);
     } else if (old.moqProductId) {
-      const amount = Math.abs(delta);
-      const [changed] = delta > 0
-        ? await tx.update(moqProducts).set({ stock: sql`${moqProducts.stock} - ${amount}` })
-            .where(and(eq(moqProducts.id, old.moqProductId), sql`${moqProducts.stock} >= ${amount}`)).returning({ id: moqProducts.id })
-        : await tx.update(moqProducts).set({ stock: sql`${moqProducts.stock} + ${amount}` })
-            .where(eq(moqProducts.id, old.moqProductId)).returning({ id: moqProducts.id });
-      if (!changed) throw new ApiError(409, `Not enough stock to increase ${old.nameSnapshot}.`);
+      // The MOQ shelf has no ceiling to run out of, so editing a line just moves
+      // the shared counter by the delta in either direction. Floored at zero so
+      // an edit made after a cycle reset cannot leave the next round negative.
+      await tx.update(moqProducts)
+        .set({ committed: sql`GREATEST(${moqProducts.committed} + ${delta}, 0)` })
+        .where(eq(moqProducts.id, old.moqProductId));
     } else if (old.moqCampaignId) {
       const [changed] = await tx.update(moqCampaigns)
         .set({ committed: sql`${moqCampaigns.committed} + ${delta}` })

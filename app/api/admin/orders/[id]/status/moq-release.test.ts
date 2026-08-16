@@ -1,10 +1,10 @@
-// Cancelling an MOQ order must return its units to the shelf.
+// Cancelling an MOQ order must release its commitment.
 //
-// MOQ products hold finite stock, drawn down inside the checkout transaction.
-// The cancellation path already releases group-buy campaign commitments, but it
-// was never taught about MOQ lines — so an admin cancelling an MOQ order left
-// the units deducted forever. Nothing errors; the stock is simply gone, and the
-// shelf under-sells from then on.
+// An MOQ order commits units towards the shelf's target inside the checkout
+// transaction. Cancelling it has to take them back off, or the target reads as
+// closer than it is — a buy that never had the demand goes to the supplier on
+// the strength of orders that were refunded. Nothing errors; the number is just
+// wrong, in the direction that costs money.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 
@@ -55,9 +55,9 @@ const asAdmin = async () => {
   session.current = { sub: admin.id, role: 'admin', email: admin.email };
 };
 
-async function stockOf(id: string): Promise<number> {
+async function committedOf(id: string): Promise<number> {
   const [row] = await (await getDb()).select().from(moqProducts).where(eq(moqProducts.id, id));
-  return row.stock;
+  return row.committed;
 }
 
 beforeEach(async () => {
@@ -65,42 +65,56 @@ beforeEach(async () => {
   await resetDb();
 });
 
-describe('cancelling an MOQ order restocks the shelf', () => {
-  it('returns the purchased units to stock', async () => {
-    const p = await makeMoqProduct({ stock: 50, minOrderQty: 1 });
+describe('cancelling an MOQ order releases its commitment', () => {
+  it('takes the cancelled units back off the counter', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
     const orderId = await buyAsCustomer(p.id, 8);
-    expect(await stockOf(p.id)).toBe(42);
+    expect(await committedOf(p.id)).toBe(8);
 
     await asAdmin();
     await PATCH(statusReq('cancelled'), ctx(orderId));
 
-    expect(await stockOf(p.id)).toBe(50);
+    expect(await committedOf(p.id)).toBe(0);
   });
 
-  it('does not double-restock when an order is cancelled twice', async () => {
-    const p = await makeMoqProduct({ stock: 50, minOrderQty: 1 });
+  it('does not release twice when an order is cancelled twice', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 100 });
     const orderId = await buyAsCustomer(p.id, 8);
 
     await asAdmin();
     await PATCH(statusReq('cancelled'), ctx(orderId));
     await PATCH(statusReq('cancelled'), ctx(orderId));
 
-    expect(await stockOf(p.id)).toBe(50);
+    expect(await committedOf(p.id)).toBe(100);
   });
 
-  it('leaves stock alone for a status change that is not a cancellation', async () => {
-    const p = await makeMoqProduct({ stock: 50, minOrderQty: 1 });
+  // A counter can never go below zero, whatever an admin does to an old order.
+  it('never drives the counter negative', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
+    const orderId = await buyAsCustomer(p.id, 8);
+
+    const db = await getDb();
+    await db.update(moqProducts).set({ committed: 3 }).where(eq(moqProducts.id, p.id));
+
+    await asAdmin();
+    await PATCH(statusReq('cancelled'), ctx(orderId));
+
+    expect(await committedOf(p.id)).toBe(0);
+  });
+
+  it('leaves the counter alone for a status change that is not a cancellation', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
     const orderId = await buyAsCustomer(p.id, 8);
 
     await asAdmin();
     await PATCH(statusReq('payment_confirmed'), ctx(orderId));
 
-    expect(await stockOf(p.id)).toBe(42);
+    expect(await committedOf(p.id)).toBe(8);
   });
 
-  it('restocks every MOQ line on a multi-product order', async () => {
-    const a = await makeMoqProduct({ name: 'A', stock: 30, minOrderQty: 1 });
-    const b = await makeMoqProduct({ name: 'B', stock: 20, minOrderQty: 1 });
+  it('releases every MOQ line on a multi-product order', async () => {
+    const a = await makeMoqProduct({ name: 'A', moq: 300, committed: 0 });
+    const b = await makeMoqProduct({ name: 'B', moq: 200, committed: 0 });
 
     const user = await makeUser({ role: 'customer' });
     session.current = { sub: user.id, role: 'customer', email: user.email };
@@ -109,18 +123,18 @@ describe('cancelling an MOQ order restocks the shelf', () => {
       { kind: 'moq_product', refId: b.id, qty: 3 },
     ]));
     const orderId = (await res.json()).data.order.id as string;
-    expect(await stockOf(a.id)).toBe(25);
-    expect(await stockOf(b.id)).toBe(17);
+    expect(await committedOf(a.id)).toBe(5);
+    expect(await committedOf(b.id)).toBe(3);
 
     await asAdmin();
     await PATCH(statusReq('cancelled'), ctx(orderId));
 
-    expect(await stockOf(a.id)).toBe(30);
-    expect(await stockOf(b.id)).toBe(20);
+    expect(await committedOf(a.id)).toBe(0);
+    expect(await committedOf(b.id)).toBe(0);
   });
 
-  it('restocks an archived product too — the units still exist', async () => {
-    const p = await makeMoqProduct({ stock: 50, minOrderQty: 1 });
+  it('releases an archived product too — the commitment was still real', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 0 });
     const orderId = await buyAsCustomer(p.id, 8);
 
     const db = await getDb();
@@ -129,6 +143,6 @@ describe('cancelling an MOQ order restocks the shelf', () => {
     await asAdmin();
     await PATCH(statusReq('cancelled'), ctx(orderId));
 
-    expect(await stockOf(p.id)).toBe(50);
+    expect(await committedOf(p.id)).toBe(0);
   });
 });
