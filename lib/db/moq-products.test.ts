@@ -14,28 +14,37 @@ import { resetDb, makeMoqProduct } from '@/lib/test/harness';
 beforeEach(resetDb);
 
 describe('moq_products table', () => {
-  it('stores an MOQ product with its price, stock and minimum order quantity', async () => {
+  it('stores an MOQ product with its price and the target buyers must reach', async () => {
     const db = await getDb();
     const [row] = await db.insert(moqProducts).values({
-      name: 'FUAN GTT1500', spec: '1500mg', pricePhp: '4500', stock: 20, minOrderQty: 5,
+      name: 'FUAN GTT1500', spec: '1500mg', pricePhp: '4500', moq: 500,
       description: 'Bulk research peptide.',
     }).returning();
 
     expect(row.name).toBe('FUAN GTT1500');
     expect(Number(row.pricePhp)).toBe(4500);
-    expect(row.stock).toBe(20);
-    expect(row.minOrderQty).toBe(5);
+    expect(row.moq).toBe(500);
     expect(row.isActive).toBe(true);
   });
 
-  it('defaults a new product to a minimum order quantity of 1 and zero stock', async () => {
+  it('starts a new product at nothing committed, on cycle 1', async () => {
     const db = await getDb();
     const [row] = await db.insert(moqProducts).values({
       name: 'TR20 + RT20 Blends', spec: 'blend', pricePhp: '0',
     }).returning();
 
-    expect(row.minOrderQty).toBe(1);
-    expect(row.stock).toBe(0);
+    expect(row.moq).toBe(1);
+    expect(row.committed).toBe(0);
+    expect(row.cycleNo).toBe(1);
+  });
+
+  it('counts commitments up towards the target rather than down from stock', async () => {
+    const p = await makeMoqProduct({ moq: 500, committed: 120 });
+    const db = await getDb();
+    const [row] = await db.select().from(moqProducts).where(eq(moqProducts.id, p.id));
+
+    expect(row.committed).toBe(120);
+    expect(row.moq).toBe(500);
   });
 
   it('keeps an uploaded image key alongside the emoji fallback', async () => {

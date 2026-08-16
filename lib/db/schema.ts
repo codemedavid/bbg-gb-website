@@ -46,7 +46,32 @@ export const users = pgTable('users', {
   address: text('address'),
   role: roleEnum('role').notNull().default('customer'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Stamped on every successful sign-in. Sessions here are stateless JWTs — the
+  // token is issued and forgotten — so nothing else on the server records that
+  // an account was ever used, and Admin → Accounts could otherwise only show
+  // sign-up dates. Nullable on purpose: an account that has never signed in must
+  // read as "Never", which a zero date or a defaultNow() would quietly turn into
+  // activity that never happened.
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
 });
+
+// ---- Password reset tokens ---------------------------------------------
+// A forgotten password is proved by receiving mail at the account's own address,
+// so the token in that mail IS the credential. Only its SHA-256 hash is stored,
+// for the same reason `users.password_hash` is: a leaked dump of this table must
+// not hand anyone a working reset link.
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  // Stamped the moment the token is spent. Single use: a link that still works
+  // after the password changed is a second key left under the mat.
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userIdx: index('password_reset_tokens_user_idx').on(t.userId),
+}));
 
 // ---- Categories --------------------------------------------------------
 export const categories = pgTable('categories', {
@@ -220,8 +245,24 @@ export const moqProducts = pgTable('moq_products', {
   imageEmoji: varchar('image_emoji', { length: 8 }).default('📦'),
   pricePhp: numeric('price_php', { precision: 12, scale: 2 }).notNull(),
   priceUsd: numeric('price_usd', { precision: 12, scale: 2 }),
+  // Retained, unread. The shelf used to be modelled as on-hand inventory and
+  // this column was its ceiling; nothing reads it since the shelf became an
+  // aggregate buy. Dropping a column on a live database is its own deliberate
+  // migration, not a passenger on a feature.
   stock: integer('stock').notNull().default(0),
-  // Minimum units a customer must order — the "MOQ" this page is named for.
+  // The MOQ this page is named for: the units ALL buyers together must reach
+  // before the cycle fills. Not a per-customer figure — see minOrderQty.
+  moq: integer('moq').notNull().default(1),
+  // Units committed towards `moq` in the current cycle. Moves up as orders are
+  // placed and back down when one is cancelled, always under a guarded UPDATE.
+  committed: integer('committed').notNull().default(0),
+  // Which round of this buy is accumulating. Bumped when an admin closes a
+  // filled cycle; order lines snapshot it so a past order's outcome does not
+  // flip when the counter resets to zero.
+  cycleNo: integer('cycle_no').notNull().default(1),
+  // A per-customer floor, kept from the on-hand era: the fewest units one order
+  // may contain. The headline number is `moq`; this is 1 unless an admin has a
+  // reason to raise it.
   minOrderQty: integer('min_order_qty').notNull().default(1),
   // Per-listing packing fee override; falls back to the global packing_fee_moq.
   packingFeePhp: numeric('packing_fee_php', { precision: 12, scale: 2 }),
@@ -422,6 +463,10 @@ export const orderItems = pgTable('order_items', {
   groupBuyId: uuid('group_buy_id').references(() => groupBuys.id),
   moqCampaignId: uuid('moq_campaign_id').references(() => moqCampaigns.id),
   moqProductId: uuid('moq_product_id').references(() => moqProducts.id),
+  // Which cycle of the MOQ product this line joined. Null for every other kind.
+  // Snapshotted so a line placed in a filled cycle keeps reading "Processing"
+  // after the shelf's counter resets for the next round.
+  moqCycleNo: integer('moq_cycle_no'),
   nameSnapshot: varchar('name_snapshot', { length: 200 }).notNull(),
   specSnapshot: varchar('spec_snapshot', { length: 120 }),
   unitPricePhp: numeric('unit_price_php', { precision: 12, scale: 2 }).notNull(),

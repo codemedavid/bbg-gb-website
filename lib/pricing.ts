@@ -23,7 +23,7 @@
 //   kahati    -> Hatian   (kapag hatian)
 //   group_buy -> Pasabay  (pag pasabay)
 //   moq       -> MOQ shelf (its own page; bulk minimum per product)
-export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300, moq: 300 } as const;
+export const PACKING_FEE_PHP = { solo: 200, kahati: 150, group_buy: 300, moq: 200 } as const;
 export type PackingMode = keyof typeof PACKING_FEE_PHP;
 export type PackingFees = Record<PackingMode, number>;
 

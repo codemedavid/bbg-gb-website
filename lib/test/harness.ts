@@ -15,7 +15,8 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const TABLES = [
   'order_status_history', 'order_items', 'order_payment_proofs', 'orders',
   'settlement_payment_proofs', 'settlements',
-  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories', 'users',
+  'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories',
+  'password_reset_tokens', 'users',
   'settings',
 ];
 
@@ -184,25 +185,31 @@ export async function makeMoqCampaign(
 
 export async function makeMoqProduct(
   overrides: Partial<{
-    name: string; spec: string; pricePhp: number; priceUsd: number | null; stock: number;
+    name: string; spec: string; pricePhp: number; priceUsd: number | null;
+    moq: number; committed: number; cycleNo: number;
     minOrderQty: number; packingFeePhp: number | null; imageKey: string | null;
     isActive: boolean; sortOrder: number;
   }> = {},
-): Promise<{ id: string; name: string; pricePhp: number; stock: number; minOrderQty: number }> {
+): Promise<{
+  id: string; name: string; pricePhp: number;
+  moq: number; committed: number; cycleNo: number; minOrderQty: number;
+}> {
   const db = await getDb();
   const pricePhp = overrides.pricePhp ?? 4500;
-  const stock = overrides.stock ?? 50;
+  const moq = overrides.moq ?? 10;
+  const committed = overrides.committed ?? 0;
+  const cycleNo = overrides.cycleNo ?? 1;
   const minOrderQty = overrides.minOrderQty ?? 1;
   const name = overrides.name ?? 'Test MOQ Product';
   const [row] = await db.insert(moqProducts).values({
     name, spec: overrides.spec ?? '1500mg', pricePhp: String(pricePhp),
     priceUsd: overrides.priceUsd != null ? String(overrides.priceUsd) : null,
-    stock, minOrderQty,
+    moq, committed, cycleNo, minOrderQty,
     packingFeePhp: overrides.packingFeePhp != null ? String(overrides.packingFeePhp) : null,
     imageKey: overrides.imageKey ?? null,
     isActive: overrides.isActive ?? true, sortOrder: overrides.sortOrder ?? 0,
   }).returning();
-  return { id: row.id, name, pricePhp, stock, minOrderQty };
+  return { id: row.id, name, pricePhp, moq, committed, cycleNo, minOrderQty };
 }
 
 export const SHIPPING = { shipName: 'Ana Cruz', shipPhone: '09171234567', shipAddress: '123 Mabini St, Manila' } as const;

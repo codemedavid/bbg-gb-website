@@ -290,7 +290,7 @@ describe('MOQ mode pricing', () => {
   const moqItem = (price: number, qty = 1): PriceableItem => ({ kind: 'moq_product', unitPricePhp: price, qty });
 
   it('exposes a dedicated MOQ packing-fee default', () => {
-    expect(PACKING_FEE_PHP.moq).toBe(300);
+    expect(PACKING_FEE_PHP.moq).toBe(200);
   });
 
   it('charges the MOQ fee for an MOQ-only cart', () => {
