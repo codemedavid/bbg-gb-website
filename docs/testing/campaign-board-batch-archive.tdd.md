@@ -57,6 +57,8 @@ batches sit behind a `Past batches (N)` toggle (`aria-expanded` /
   board still rendered one flat card per batch and offered no toggle.
 - **GREEN** — same command: `Tests 18 passed (18)`
 - Type check: `npx tsc --noEmit --pretty false` — clean.
+- Full suite: `npx vitest run` — `Test Files 204 passed (204) · Tests 2142
+  passed (2142)`, so nothing else on the board regressed.
 
 ## Test specification
 
