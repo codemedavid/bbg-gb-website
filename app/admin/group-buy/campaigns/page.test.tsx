@@ -135,6 +135,24 @@ describe('lifecycle actions stay on the list', () => {
     expect(screen.queryByRole('button', { name: /approve retatrutide 30mg/i })).not.toBeInTheDocument();
   });
 
+  // Archived batches keep every action they had on the flat board — the archive
+  // is a place to look, not a read-only shelf.
+  it('cancels an archived batch once its history is open', async () => {
+    feed = {
+      data: [
+        campaign({ id: 'live', batchNo: 2, status: 'open' }),
+        campaign({ id: 'old', batchNo: 1, status: 'completed' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+    await userEvent.click(screen.getByRole('button', { name: /past batches/i }));
+    await userEvent.click(within(card('old')).getByRole('button', { name: /cancel/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /^cancel campaign$/i }));
+
+    await waitFor(() => expect(actionMutate).toHaveBeenCalledWith({ id: 'old', action: 'cancel' }));
+  });
+
   it('deletes only after the warning is confirmed', async () => {
     feed = { data: [campaign({ id: 'c1' })], isLoading: false };
     render(<AdminCampaignsPage />);
@@ -142,5 +160,93 @@ describe('lifecycle actions stay on the list', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^delete campaign$/i }));
 
     await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('c1'));
+  });
+});
+
+// The board had grown to one card per batch — most of them finished — so it is
+// grouped into one entry per group buy: the live batch up front, the batches
+// before it archived behind a toggle the admin can still open.
+describe('archiving finished batches by series', () => {
+  const series = (o: Partial<MoqCampaign>) => campaign({ seriesId: 's1', ...o });
+
+  it('shows only the live batch of a series up front', () => {
+    feed = {
+      data: [
+        series({ id: 'old', batchNo: 1, status: 'completed' }),
+        series({ id: 'live', batchNo: 2, status: 'open' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+
+    expect(card('live')).toBeInTheDocument();
+    expect(screen.queryByTestId('campaign-old')).not.toBeInTheDocument();
+  });
+
+  it('names how many batches the archive holds', () => {
+    feed = {
+      data: [
+        series({ id: 'b1', batchNo: 1, status: 'completed' }),
+        series({ id: 'b2', batchNo: 2, status: 'completed' }),
+        series({ id: 'b3', batchNo: 3, status: 'open' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+
+    expect(screen.getByRole('button', { name: /past batches \(2\)/i })).toBeInTheDocument();
+  });
+
+  it('reveals the archived batches newest first when opened', async () => {
+    feed = {
+      data: [
+        series({ id: 'b1', batchNo: 1, status: 'completed' }),
+        series({ id: 'b2', batchNo: 2, status: 'completed' }),
+        series({ id: 'b3', batchNo: 3, status: 'open' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+    await userEvent.click(screen.getByRole('button', { name: /past batches/i }));
+
+    const archived = screen.getAllByTestId(/^campaign-b[12]$/);
+    expect(archived.map((el) => el.dataset.testid)).toEqual(['campaign-b2', 'campaign-b1']);
+  });
+
+  it('offers no archive toggle for a series on its first batch', () => {
+    feed = { data: [campaign({ id: 'only', batchNo: 1 })], isLoading: false };
+    render(<AdminCampaignsPage />);
+    expect(screen.queryByRole('button', { name: /past batches/i })).not.toBeInTheDocument();
+  });
+
+  // A group buy that ended still has participants and totals to read, so it
+  // keeps its place on the board rather than being archived out of existence.
+  it('keeps a finished series on the board, fronted by its last batch', () => {
+    feed = {
+      data: [
+        series({ id: 'b1', batchNo: 1, status: 'completed' }),
+        series({ id: 'b2', batchNo: 2, status: 'cancelled' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+    expect(card('b2')).toBeInTheDocument();
+  });
+
+  it("opens one series' history without opening another's", async () => {
+    feed = {
+      data: [
+        campaign({ id: 'a-old', name: 'Alfa', seriesId: 'sa', batchNo: 1, status: 'completed' }),
+        campaign({ id: 'a-live', name: 'Alfa', seriesId: 'sa', batchNo: 2, status: 'open' }),
+        campaign({ id: 'b-old', name: 'Bravo', seriesId: 'sb', batchNo: 1, status: 'completed' }),
+        campaign({ id: 'b-live', name: 'Bravo', seriesId: 'sb', batchNo: 2, status: 'open' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+    await userEvent.click(screen.getAllByRole('button', { name: /past batches/i })[0]);
+
+    expect(card('a-old')).toBeInTheDocument();
+    expect(screen.queryByTestId('campaign-b-old')).not.toBeInTheDocument();
   });
 });
