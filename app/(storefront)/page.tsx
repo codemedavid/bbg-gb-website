@@ -52,6 +52,19 @@ export default function HomePage() {
           </div>
           <div className="text-[18px] font-bold text-brand-green">→</div>
         </button>
+
+        {/* Two calculators, two different questions. The emoji and the first
+            word of each label are what tell them apart at a glance, so they
+            deliberately do not both open with "calculator". */}
+        <button onClick={() => router.push('/order-calc')}
+          className="mt-2.5 flex w-full items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-[#a9c88f] bg-white p-3.5 text-left">
+          <div className="text-2xl">🧾</div>
+          <div className="flex-1">
+            <div className="text-[14px] font-bold text-ink">Order calculator</div>
+            <div className="text-[12px] text-ink-muted">Magkano lahat? Build your order total here.</div>
+          </div>
+          <div className="text-[18px] font-bold text-brand-green">→</div>
+        </button>
       </div>
       {joining && <JoinSheet g={joining} onClose={() => setJoining(null)} />}
     </>
