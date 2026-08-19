@@ -61,8 +61,10 @@ export const moqCampaignSchema = moqCampaignFields.refine(coherentWindow, window
 export const moqCampaignPatchSchema = moqCampaignFields.partial().refine(coherentWindow, windowError);
 
 export const campaignActionSchema = z.object({
-  action: z.enum(['approve', 'extend', 'cancel']),
-  // extend carries a new deadline; approve/cancel ignore it.
+  // 'roll' ends the batch and opens its successor in the same series — the
+  // admin's way of starting the next batch before this one fills.
+  action: z.enum(['approve', 'extend', 'cancel', 'roll']),
+  // extend carries a new deadline; the others ignore it.
   deadline: z.string().datetime().nullable().optional(),
 });
 

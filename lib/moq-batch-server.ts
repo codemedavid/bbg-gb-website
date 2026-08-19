@@ -12,7 +12,7 @@
 // promise the same under concurrency.
 import { and, asc, desc, eq, isNotNull, lte, sql } from 'drizzle-orm';
 import { getDb, moqCampaigns } from '@/lib/db';
-import { MOQ_BATCH_MAX_KITS, batchCapacity, isBatchFull, nextBatchDeadline } from './group-buy';
+import { MOQ_BATCH_MAX_KITS, batchCapacity, canRollBatch, isBatchFull, nextBatchDeadline } from './group-buy';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 type BatchRow = typeof moqCampaigns.$inferSelect;
@@ -81,17 +81,83 @@ export async function findOpenBatch(db: Db, seriesId: string): Promise<BatchRow 
   return row ?? null;
 }
 
-// Complete a filled batch and open its successor. The flip is guarded on
-// 'open', so of two callers racing the same fill exactly one seals the batch
-// and creates the successor; the loser gets null and re-reads the series.
-// Returns both rows so a commitment that overflowed can continue straight into
-// the batch it just opened.
-export async function completeFullBatch(db: Db, batch: BatchRow): Promise<BatchRollover | null> {
-  const [sealed] = await db.update(moqCampaigns).set({ status: 'completed' })
+// Close a running batch under `status` and open its successor.
+//
+// The flip is guarded on 'open', so of two callers racing the same batch
+// exactly one seals it and creates the successor; the loser gets null and
+// re-reads the series. Returns both rows so a commitment that overflowed can
+// continue straight into the batch it just opened.
+async function sealAndSucceed(
+  db: Db,
+  batch: BatchRow,
+  status: 'completed' | 'approved',
+): Promise<BatchRollover | null> {
+  const [sealed] = await db.update(moqCampaigns).set({ status })
     .where(and(eq(moqCampaigns.id, batch.id), eq(moqCampaigns.status, 'open')))
     .returning();
   if (!sealed) return null;
   return { sealed, opened: await openSuccessor(db, sealed) };
+}
+
+// Complete a filled batch and open its successor — the rollover a fill performs
+// on its own, the moment the last kit lands.
+export async function completeFullBatch(db: Db, batch: BatchRow): Promise<BatchRollover | null> {
+  return sealAndSucceed(db, batch, 'completed');
+}
+
+// End a running batch early and open its successor — the same rollover, asked
+// for by an admin instead of triggered by a fill.
+//
+// Approving a batch closes it and leaves the series with nothing open, so the
+// next batch had to be hand-created — and a hand-created campaign is batch #1 of
+// a NEW series, which is what splits one group buy into two entries on the
+// board. Rolling keeps the successor inside the series, so the batches before it
+// archive under the same card.
+//
+// Sealed as 'approved', not 'completed': the batch did not reach its cap, it was
+// ended deliberately, and 'approved' is precisely "proceeding without having
+// filled". Returns null if the batch was not open — nothing is written, and no
+// second successor is minted.
+export async function rollBatch(db: Db, batch: BatchRow): Promise<BatchRollover | null> {
+  if (!canRollBatch(batch.status)) return null;
+  return sealAndSucceed(db, batch, 'approved');
+}
+
+export type CycleRollover = {
+  /** Every batch that was ended, with the successor opened for it. */
+  rolled: BatchRollover[];
+  /** Running batches nobody had joined, left open rather than rolled. */
+  skippedEmpty: number;
+};
+
+// Start a new cycle across the whole board: end every running batch that has
+// commitments and open its successor.
+//
+// A batch with nothing committed is deliberately left alone. It is not running
+// in any sense a customer would recognise — it is merely listed — so sealing it
+// as 'approved' would record a supplier order nobody placed, and its successor
+// would be an identical empty row. The count of those comes back in the result
+// rather than being swallowed, so the caller can say what it did and did not do.
+//
+// Sequential, not concurrent: each roll is two writes against the same table and
+// the batch count is in the tens, so the simple loop is fast enough and keeps
+// the unique (series_id, batch_no) index from arbitrating writes it does not
+// need to. A batch another request seals first simply returns null and is
+// skipped — the cycle is safe to re-run.
+export async function rollOpenBatches(db: Db, now: Date = new Date()): Promise<CycleRollover> {
+  await openDueBatches(db, now);
+  const running = await db.select().from(moqCampaigns)
+    .where(eq(moqCampaigns.status, 'open'))
+    .orderBy(asc(moqCampaigns.createdAt));
+
+  const rolled: BatchRollover[] = [];
+  let skippedEmpty = 0;
+  for (const batch of running) {
+    if (batch.committed <= 0) { skippedEmpty += 1; continue; }
+    const result = await rollBatch(db, batch);
+    if (result) rolled.push(result);
+  }
+  return { rolled, skippedEmpty };
 }
 
 // Open the batch that follows a completed one. Successors inherit the terms

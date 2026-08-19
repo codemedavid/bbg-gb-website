@@ -8,13 +8,29 @@
 import { MOQ_BATCH_MAX_KITS, batchCapacity, groupBuyMoqStatus } from './pricing';
 
 export type MoqCampaignStatus = 'scheduled' | 'open' | 'approved' | 'completed' | 'cancelled';
-export type MoqCampaignAction = 'approve' | 'extend' | 'cancel';
+export type MoqCampaignAction = 'approve' | 'extend' | 'cancel' | 'roll';
 
 const ACTION_RESULT: Record<MoqCampaignAction, MoqCampaignStatus> = {
   approve: 'approved',
   cancel: 'cancelled',
   extend: 'open', // deadline change is handled by the caller; status stays open
+  // A rolled batch ends exactly as an approved one does — it ran, it closed, it
+  // proceeds. What sets `roll` apart is not its status but the successor that
+  // opens with it, and that is a write, so it belongs to the caller
+  // (moq-batch-server rollBatch) rather than to this state machine.
+  roll: 'approved',
 };
+
+/**
+ * Whether a batch can be ended in favour of a fresh successor.
+ *
+ * Only a running batch can: an approved or cancelled one has already ended, and
+ * a completed one opened its successor the moment it filled — rolling that
+ * would mint a second successor and split the series in two.
+ */
+export function canRollBatch(status: MoqCampaignStatus): boolean {
+  return status === 'open';
+}
 
 export function applyCampaignAction(
   current: MoqCampaignStatus,
