@@ -61,7 +61,7 @@ describe('ending one batch', () => {
     await userEvent.click(within(card('c1')).getByRole('button', { name: /end batch #1 of Retatrutide 30mg/i }));
 
     // Confirmed first: it closes a batch customers are committed to.
-    await userEvent.click(await screen.findByRole('button', { name: /end batch/i }));
+    await userEvent.click(await screen.findByRole('button', { name: 'End batch & start next' }));
 
     await waitFor(() => expect(actionMutate).toHaveBeenCalledWith({ id: 'c1', action: 'roll' }));
   });
@@ -101,7 +101,7 @@ describe('starting a new cycle', () => {
     render(<AdminCampaignsPage />);
 
     await userEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
-    await userEvent.click(await screen.findByRole('button', { name: /^end .* start/i }));
+    await userEvent.click(await screen.findByRole('button', { name: 'End all & start next' }));
 
     await waitFor(() => expect(cycleMutate).toHaveBeenCalled());
   });

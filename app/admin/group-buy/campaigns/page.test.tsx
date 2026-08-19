@@ -23,12 +23,14 @@ let feed: { data: MoqCampaign[]; isLoading: boolean } = { data: [], isLoading: f
 const deleteMutate = vi.fn();
 const actionMutate = vi.fn();
 const actionMutateAsync = vi.fn();
+const cycleMutate = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
   useCampaigns: () => feed,
   useMutate: () => ({
     deleteCampaign: { mutate: deleteMutate, isPending: false },
     campaignAction: { mutate: actionMutate, mutateAsync: actionMutateAsync, isPending: false },
+    startCycle: { mutate: cycleMutate, isPending: false },
   }),
 }));
 
@@ -52,6 +54,7 @@ beforeEach(() => {
   deleteMutate.mockReset();
   actionMutate.mockReset();
   actionMutateAsync.mockReset().mockResolvedValue(undefined);
+  cycleMutate.mockReset();
 });
 
 describe('the list', () => {

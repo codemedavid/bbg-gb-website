@@ -21,10 +21,10 @@ import type { MoqCampaign } from '@/lib/types';
 export default function AdminCampaignsPage() {
   const router = useRouter();
   const { data: campaigns = [], isLoading } = useCampaigns();
-  const { deleteCampaign, campaignAction } = useMutate();
+  const { deleteCampaign, campaignAction, startCycle } = useMutate();
   const confirm = useConfirm();
   const [extending, setExtending] = useState<MoqCampaign | null>(null);
-  const busy = campaignAction.isPending || deleteCampaign.isPending;
+  const busy = campaignAction.isPending || deleteCampaign.isPending || startCycle.isPending;
 
   const handleCancel = async (c: MoqCampaign) => {
     const ok = await confirm({
@@ -34,6 +34,30 @@ export default function AdminCampaignsPage() {
       cancelLabel: 'Keep campaign',
     });
     if (ok) campaignAction.mutate({ id: c.id, action: 'cancel' });
+  };
+
+  // Ending one batch. Confirmed, because customers are committed to it — but
+  // deliberately not worded as a warning: the commitments travel with the batch
+  // that took them, and the successor opens in the same breath.
+  const handleRoll = async (c: MoqCampaign) => {
+    const ok = await confirm({
+      title: `End batch #${c.batchNo} of "${c.name}"?`,
+      message: `It closes with ${c.committed} kit${c.committed === 1 ? '' : 's'} and batch #${c.batchNo + 1} opens straight away, taking new commitments. Customer orders are not changed — settle those on the orders screen.`,
+      confirmLabel: 'End batch & start next',
+      cancelLabel: 'Keep it running',
+    });
+    if (ok) campaignAction.mutate({ id: c.id, action: 'roll' });
+  };
+
+  // Ending every running batch at once — the start of a new trading cycle.
+  const handleStartCycle = async () => {
+    const ok = await confirm({
+      title: `Start a new cycle across ${running.length} batch${running.length === 1 ? '' : 'es'}?`,
+      message: 'Every batch with commitments closes and its next batch opens in its place. Batches nobody has joined stay open. Customer orders are not changed.',
+      confirmLabel: 'End all & start next',
+      cancelLabel: 'Keep the board as it is',
+    });
+    if (ok) startCycle.mutate();
   };
 
   const handleDelete = async (c: MoqCampaign) => {
@@ -49,12 +73,16 @@ export default function AdminCampaignsPage() {
     edit: (c) => router.push(`/admin/group-buy/campaigns/${c.id}`),
     participants: (c) => router.push(`/admin/group-buy/campaigns/${c.id}/participants`),
     approve: (c) => campaignAction.mutate({ id: c.id, action: 'approve' }),
+    roll: handleRoll,
     extend: (c) => setExtending(c),
     cancel: handleCancel,
     remove: handleDelete,
   };
 
   const groups = groupBySeries(campaigns);
+  // Nothing running means nothing to end, so the cycle control stays off the
+  // board rather than sitting there as a no-op.
+  const running = campaigns.filter((c) => c.status === 'open');
 
   return (
     <div className="flex flex-col gap-4 pb-10">
@@ -69,9 +97,20 @@ export default function AdminCampaignsPage() {
           <h1 className="m-0 font-display text-[24px] font-bold">Campaigns</h1>
           <p className="mt-1 text-[13px] text-ink-muted">Group buys with a minimum order quantity. Approve, extend, or cancel — finished batches keep their history under each card.</p>
         </div>
-        <button className={btnPrimary} onClick={() => router.push('/admin/group-buy/campaigns/new')}>
-          + Create Campaign
-        </button>
+        <div className="flex flex-none items-center gap-2">
+          {running.length > 0 && (
+            <button
+              onClick={handleStartCycle}
+              disabled={busy}
+              className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-brand-blue transition-colors hover:border-brand-blue disabled:opacity-50"
+            >
+              Start new cycle
+            </button>
+          )}
+          <button className={btnPrimary} onClick={() => router.push('/admin/group-buy/campaigns/new')}>
+            + Create Campaign
+          </button>
+        </div>
       </div>
 
       {isLoading ? (

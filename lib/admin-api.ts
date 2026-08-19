@@ -129,6 +129,8 @@ export function useMutate() {
     closeMoqCycle: useMutation({ mutationFn: (id: string) => apiSend(`/admin/moq-products/${id}/cycle`, 'POST'), onSuccess: invalidate, onError: toastError('Could not close the MOQ round.') }),
     saveCampaign: useMutation({ mutationFn: (c: CampaignPayload) => c.id ? apiSend(`/campaigns/${c.id}`, 'PATCH', c) : apiSend('/campaigns', 'POST', c), onSuccess: invalidate }),
     deleteCampaign: useMutation({ mutationFn: (id: string) => apiSend(`/campaigns/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete campaign.') }),
-    campaignAction: useMutation({ mutationFn: (v: { id: string; action: 'approve' | 'extend' | 'cancel'; deadline?: string | null }) => apiSend(`/campaigns/${v.id}/action`, 'POST', v), onSuccess: invalidate, onError: toastError('Could not update campaign.') }),
+    campaignAction: useMutation({ mutationFn: (v: { id: string; action: 'approve' | 'extend' | 'cancel' | 'roll'; deadline?: string | null }) => apiSend(`/campaigns/${v.id}/action`, 'POST', v), onSuccess: invalidate, onError: toastError('Could not update campaign.') }),
+    // Ends every running batch on the board and opens each one's successor.
+    startCycle: useMutation({ mutationFn: () => apiSend('/campaigns/cycle', 'POST'), onSuccess: invalidate, onError: toastError('Could not start a new cycle.') }),
   };
 }

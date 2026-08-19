@@ -29,6 +29,8 @@ export type CampaignActions = {
   edit: (c: MoqCampaign) => void;
   participants: (c: MoqCampaign) => void;
   approve: (c: MoqCampaign) => void;
+  /** End this batch and open the next one in the same series. */
+  roll: (c: MoqCampaign) => void;
   extend: (c: MoqCampaign) => void;
   cancel: (c: MoqCampaign) => void;
   remove: (c: MoqCampaign) => void;
@@ -70,6 +72,11 @@ export function CampaignCard({ c, busy, actions, muted = false }: Props) {
         {c.status === 'open' && <>
           <button onClick={() => actions.approve(c)}
             aria-label={`Approve ${c.name}`} className={`${cardAction} text-brand-greendark`} disabled={busy}>Approve</button>
+          {/* Approve closes this batch and stops there; this closes it AND
+              opens the next one, so the series carries on under the same card. */}
+          <button onClick={() => actions.roll(c)}
+            aria-label={`End batch #${c.batchNo} of ${c.name} and start the next`}
+            className={`${cardAction} text-brand-blue`} disabled={busy}>End &amp; start next</button>
           <button onClick={() => actions.extend(c)}
             aria-label={`Extend ${c.name}`} className={`${cardAction} text-ink-body`} disabled={busy}>Extend</button>
         </>}

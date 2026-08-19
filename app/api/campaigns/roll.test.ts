@@ -98,7 +98,7 @@ describe('POST /api/campaigns/cycle', () => {
     const joined = await makeMoqCampaign({ committed: 3 });
     const empty = await makeMoqCampaign({ committed: 0 });
 
-    const res = await CYCLE(jsonReq({}));
+    const res = await CYCLE();
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -112,7 +112,7 @@ describe('POST /api/campaigns/cycle', () => {
     await signIn('customer');
     const batch = await makeMoqCampaign({ committed: 3 });
 
-    const res = await CYCLE(jsonReq({}));
+    const res = await CYCLE();
 
     expect(res.status).toBe(403);
     expect(await seriesRows(batch.seriesId)).toHaveLength(1);
