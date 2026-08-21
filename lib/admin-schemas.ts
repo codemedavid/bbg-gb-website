@@ -16,6 +16,9 @@ export const productSchema = z.object({
   isOnHand: z.boolean().optional(),
   onHandKitPhp: z.number().nonnegative().nullable().optional(),
   onHandPiecePhp: z.number().nonnegative().nullable().optional(),
+  // Bulk rate for ten vials. Nullable like the other two: absent is "no
+  // bundle rate", never free.
+  onHandTenVialPhp: z.number().nonnegative().nullable().optional(),
   stock: z.number().int().nonnegative().optional(),
   // Vials per supplier kit, used by the weekly report's per-product rollup.
   // Positive, because it is a divisor: a 0 would make every kit count Infinity.

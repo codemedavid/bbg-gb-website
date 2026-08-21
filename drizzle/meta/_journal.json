@@ -183,6 +183,13 @@
       "when": 1785423269654,
       "tag": "0025_moq_product_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785423270654,
+      "tag": "0026_product_on_hand_ten_vial",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,10 @@ const CHANNEL_HINT =
   'On-Hand sells ready stock from the shop. Group Buy pools whole kits in a campaign batch. '
   + 'Kahati splits one kit between buyers, so leave it off for anything not sold per vial.';
 
+// The bundle the shop quotes on the shelf. Ten vials happens to be a kit's
+// worth, but the two are priced independently — this is a rate, not a kit.
+const ON_HAND_BUNDLE_VIALS = 10;
+
 const blank = (): Partial<Product> => ({
   name: '', spec: '', pricePhp: '0', arrivalGroup: 'white_powder', isOnHand: false,
   stock: 0, imageEmoji: '💧', isActive: true,
@@ -59,6 +63,7 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         pricePhp: Number(f.pricePhp) as any, priceUsd: (f.priceUsd != null ? Number(f.priceUsd) : null) as any,
         isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
         onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
+        onHandTenVialPhp: (f.onHandTenVialPhp != null ? Number(f.onHandTenVialPhp) : null) as any,
         stock: f.stock, kitSize: f.kitSize, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
         // Sent whether or not the product is currently offered this way:
         // isGroupBuy is the switch, and keeping the figures means an admin who
@@ -136,10 +141,22 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
       </fieldset>
 
       {f.isOnHand && (
-        <div className="mt-2 grid grid-cols-2 gap-3">
-          <Labeled label="On-hand price / kit ₱"><input className={field} type="number" value={(f.onHandKitPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandKitPhp: num(e.target.value) as any })} /></Labeled>
-          <Labeled label="On-hand price / piece ₱"><input className={field} type="number" value={(f.onHandPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandPiecePhp: num(e.target.value) as any })} /></Labeled>
-        </div>
+        <>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <Labeled label="On-hand price / kit ₱"><input className={field} type="number" value={(f.onHandKitPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandKitPhp: num(e.target.value) as any })} /></Labeled>
+            <Labeled label="On-hand price / piece ₱"><input className={field} type="number" value={(f.onHandPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandPiecePhp: num(e.target.value) as any })} /></Labeled>
+            {/* The bulk rate for ten vials, stated rather than inferred: the two
+                prices above only ever implied it, and the shop quotes ten at a
+                rate of its own. Blank means the product has no bundle rate —
+                never ₱0, which would read as ten free vials. */}
+            <Labeled label={`On-hand price / ${ON_HAND_BUNDLE_VIALS} vials ₱`}><input className={field} type="number" min={0} value={(f.onHandTenVialPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandTenVialPhp: num(e.target.value) as any })} /></Labeled>
+          </div>
+          {f.onHandTenVialPhp != null && Number(f.onHandTenVialPhp) > 0 && (
+            <p className="mt-1.5 text-[12px] leading-snug text-ink-muted">
+              {php(Number(f.onHandTenVialPhp) / ON_HAND_BUNDLE_VIALS)} per vial across the {ON_HAND_BUNDLE_VIALS}.
+            </p>
+          )}
+        </>
       )}
       {/* Shared terms for both board channels — the figures every campaign or
           hatian carrying this product starts from. Shown when either board

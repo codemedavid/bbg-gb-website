@@ -94,6 +94,12 @@ export const products = pgTable('products', {
   isOnHand: boolean('is_on_hand').notNull().default(false),
   onHandKitPhp: numeric('on_hand_kit_php', { precision: 12, scale: 2 }),
   onHandPiecePhp: numeric('on_hand_piece_php', { precision: 12, scale: 2 }),
+  // The shelf's bulk rate: what ten vials cost bought together. Its own figure,
+  // not derived from the two above — a kit is what the supplier ships and a
+  // piece is one vial, while this is the rate the shop quotes for ten. Null
+  // means the product states no bundle rate, which is different from ₱0: that
+  // would be ten free vials.
+  onHandTenVialPhp: numeric('on_hand_ten_vial_php', { precision: 12, scale: 2 }),
   stock: integer('stock').notNull().default(0),
   // Vials per supplier kit, used by the weekly report to turn "270 vials" into
   // "27 kits" — the unit the batch order is actually placed in. Peptides ship

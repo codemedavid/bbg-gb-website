@@ -1,0 +1,11 @@
+--- The on-hand shelf gets a bulk rate of its own.
+---
+--- Until now a product could state two shelf prices: one kit and one piece.
+--- Ten vials — the quantity customers actually ask for — had no price of its
+--- own, so it was whatever those two happened to imply, and an admin quoting a
+--- bundle rate had nowhere to type it.
+---
+--- Nullable and with no default: absent means "this product states no bundle
+--- rate", which is a different thing from ₱0. A zero here would read as ten
+--- free vials, the same distinction on_hand_kit_php already makes.
+ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "on_hand_ten_vial_php" numeric(12, 2);

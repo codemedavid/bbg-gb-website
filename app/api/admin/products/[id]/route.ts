@@ -8,7 +8,7 @@ import { productSchema, numToStr } from '@/lib/admin-schemas';
 // the same reason the on-hand ones do — a raw number reaches the driver as an
 // integer and loses the centavos.
 const MONEY = [
-  'pricePhp', 'priceUsd', 'onHandKitPhp', 'onHandPiecePhp',
+  'pricePhp', 'priceUsd', 'onHandKitPhp', 'onHandPiecePhp', 'onHandTenVialPhp',
   'gbPricePerKitPhp', 'gbPricePerPiecePhp',
 ];
 

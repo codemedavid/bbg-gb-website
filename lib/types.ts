@@ -5,6 +5,10 @@ export type Product = {
   pricePhp: string; priceUsd: string | null; categoryId: string | null;
   categorySlug: string | null; categoryName: string | null;
   isOnHand: boolean; onHandKitPhp: string | null; onHandPiecePhp: string | null;
+  // Bulk rate for ten vials on the shelf; null when the product states none.
+  // Optional for the same reason the group buy terms below are: the public
+  // catalog feeds select a narrower column list, and this one is admin-surface.
+  onHandTenVialPhp?: string | null;
   stock: number;
   /** Vials per supplier kit; drives the weekly report's Kits column. */
   kitSize: number;

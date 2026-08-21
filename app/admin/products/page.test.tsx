@@ -260,3 +260,74 @@ describe('AdminProductsPage — Sales Channels', () => {
     expect(screen.getByLabelText('Kahati')).not.toBeChecked();
   });
 });
+
+// The on-hand shelf's bulk tier.
+//
+// "On-hand price / kit" and "/ piece" are the only two figures the shelf could
+// state, so the price of ten vials was whatever those two happened to imply.
+// The client sells ten at a rate of its own — a bundle, not a kit and not ten
+// pieces — and had nowhere to type it.
+describe('AdminProductsPage — on-hand ten-vial price', () => {
+  const openNewProduct = async () => {
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /new product/i }));
+    await screen.findByText('New product');
+  };
+
+  beforeEach(() => { saveMutate.mockResolvedValue({}); });
+
+  it('appears with the other on-hand prices once the shelf carries the product', async () => {
+    await openNewProduct();
+
+    // Hidden with the rest of the on-hand block: a product not sold from stock
+    // has no shelf price of any kind.
+    expect(screen.queryByLabelText(/on-hand price \/ 10 vials/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('On-Hand'));
+
+    expect(screen.getByLabelText(/on-hand price \/ 10 vials/i)).toBeInTheDocument();
+  });
+
+  it('sends the ten-vial price under the name the database uses', async () => {
+    await openNewProduct();
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Retatrutide' } });
+    fireEvent.click(screen.getByLabelText('On-Hand'));
+    fireEvent.change(screen.getByLabelText(/on-hand price \/ 10 vials/i), { target: { value: '7000' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(saveMutate).toHaveBeenCalled());
+    expect(saveMutate.mock.calls[0][0]).toMatchObject({ onHandTenVialPhp: 7000 });
+  });
+
+  it('loads the saved ten-vial price when the product is edited again', async () => {
+    catalog.rows = [{
+      id: 'p1', name: 'Retatrutide', spec: '10mg', pricePhp: '3200', stock: 5,
+      isActive: true, isOnHand: true, onHandKitPhp: '7200', onHandPiecePhp: '750',
+      onHandTenVialPhp: '7000',
+    }];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    await screen.findByText('Edit product');
+
+    expect(screen.getByLabelText(/on-hand price \/ 10 vials/i)).toHaveValue(7000);
+  });
+
+  it('clears a blanked ten-vial price rather than sending it as zero', async () => {
+    catalog.rows = [{
+      id: 'p1', name: 'Retatrutide', spec: '10mg', pricePhp: '3200', stock: 5,
+      isActive: true, isOnHand: true, onHandTenVialPhp: '7000',
+    }];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    await screen.findByText('Edit product');
+
+    fireEvent.change(screen.getByLabelText(/on-hand price \/ 10 vials/i), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    // Null is "this product states no bundle rate". A zero would read as ten
+    // free vials — the same distinction onHandKitPhp already makes.
+    await waitFor(() => expect(saveMutate).toHaveBeenCalled());
+    expect(saveMutate.mock.calls[0][0].onHandTenVialPhp).toBeNull();
+  });
+});
