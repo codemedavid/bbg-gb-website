@@ -12,6 +12,8 @@
 // connection is a different problem, and sending an operator to run migrations
 // over it would waste the outage.
 
+import { PGLITE_LOCKED } from './pglite-lock';
+
 /** Postgres SQLSTATEs for a column/table the query named but the database lacks. */
 const DRIFT_CODES = new Set(['42703', '42P01']);
 
@@ -27,7 +29,13 @@ const codeOf = (err: unknown): string | null =>
  * not schema drift and the caller should fall back to its generic response.
  */
 export function describeDbProblem(err: unknown): string | null {
-  if (!DRIFT_CODES.has(codeOf(err) ?? '')) return null;
+  const code = codeOf(err);
+
+  // The single-writer guard already wrote its message for a developer; it needs
+  // carrying, not rephrasing.
+  if (code === PGLITE_LOCKED && err instanceof Error) return err.message;
+
+  if (!DRIFT_CODES.has(code ?? '')) return null;
 
   // Postgres already words this well ("column \"is_kahati\" does not exist"),
   // and it is the only place the identifier appears — the driver does not break

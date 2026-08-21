@@ -18,6 +18,10 @@ async function init(): Promise<DB> {
     _db = drizzle(client, { schema }) as unknown as DB;
   } else {
     // Dev fallback: embedded Postgres (PGlite), persisted at env.pglitePath.
+    // Claim it first: PGlite is single-writer, and a second dev server sharing
+    // the directory diverges silently rather than failing.
+    const { claimPgliteLock } = await import('./pglite-lock');
+    claimPgliteLock(env.pglitePath);
     const { drizzle } = await import('drizzle-orm/pglite');
     const { PGlite } = await import('@electric-sql/pglite');
     const client = new PGlite(env.pglitePath);

@@ -11,6 +11,7 @@
 // misconfigured storage driver reach the admin as an anonymous 500.
 import { describe, it, expect } from 'vitest';
 import { describeDbProblem } from './db-error';
+import { PGLITE_LOCKED } from './pglite-lock';
 
 /** The shape postgres-js and PGlite both throw: an Error carrying a SQLSTATE. */
 const pgError = (code: string, message: string) => Object.assign(new Error(message), { code });
@@ -65,5 +66,17 @@ describe('describeDbProblem', () => {
     expect(describeDbProblem(null)).toBeNull();
     expect(describeDbProblem(undefined)).toBeNull();
     expect(describeDbProblem('42703')).toBeNull();
+  });
+
+  // The single-writer guard (./pglite-lock) throws a message already written
+  // for the developer. Without this it lands in the catch-all and comes back as
+  // "Something went wrong." — the exact dead end the guard exists to remove.
+  it('passes the PGlite single-writer refusal through verbatim', () => {
+    const err = Object.assign(
+      new Error('Another process (PID 66239) already has this PGlite database open.'),
+      { code: PGLITE_LOCKED },
+    );
+
+    expect(describeDbProblem(err)).toContain('66239');
   });
 });
