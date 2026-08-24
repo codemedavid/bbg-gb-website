@@ -18,3 +18,8 @@ uploads/
 coverage/
 .pglite-qa/
 .pglite-gbqa/
+
+# Generated business reports (batch product totals, refund sheets). Output, not
+# source: they bloat history, go stale against their own date ranges, and carry
+# supplier pricing that has no reason to sit in the repo.
+*.xlsx
