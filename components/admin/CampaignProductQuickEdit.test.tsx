@@ -15,7 +15,7 @@ import { draftFor, entryFrom, validateDraft } from './CampaignProductQuickEdit';
 import type { IncludedProduct, Product } from '@/lib/types';
 
 const product = (overrides: Partial<Product> = {}): Product => ({
-  id: 'p1', code: 'RETA', name: 'Retatrutide', spec: '10mg',
+  id: 'p1', code: 'RETA', supplierCode: null, name: 'Retatrutide', spec: '10mg',
   pricePhp: '3200', priceUsd: null,
   categoryId: null, categorySlug: null, categoryName: null,
   isOnHand: false, onHandKitPhp: null, onHandPiecePhp: null,

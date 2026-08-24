@@ -15,7 +15,7 @@ export const POST = handler(async (req: Request) => {
   const b = productSchema.parse(await req.json());
   const db = await getDb();
   const [row] = await db.insert(products).values({
-    code: b.code, name: b.name, spec: b.spec ?? '', categoryId: b.categoryId ?? null,
+    code: b.code, supplierCode: b.supplierCode ?? null, name: b.name, spec: b.spec ?? '', categoryId: b.categoryId ?? null,
     pricePhp: String(b.pricePhp), priceUsd: numToStr(b.priceUsd),
     isOnHand: b.isOnHand ?? false, onHandKitPhp: numToStr(b.onHandKitPhp), onHandPiecePhp: numToStr(b.onHandPiecePhp),
     onHandTenVialPhp: numToStr(b.onHandTenVialPhp),

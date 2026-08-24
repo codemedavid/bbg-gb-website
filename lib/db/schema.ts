@@ -85,6 +85,13 @@ export const categories = pgTable('categories', {
 export const products = pgTable('products', {
   id: uuid('id').primaryKey().defaultRandom(),
   code: varchar('code', { length: 40 }),            // CAT/Code from price list
+  // What the SUPPLIER calls this product, which is not what we call it: their
+  // BPC10 is our BPC157, their NAD500 our NJ500. Recorded because the sheets
+  // that come back from a batch — above all the refund sheet, which names SKUs
+  // and amounts but no customers — can only be joined to our orders through it.
+  // Nullable: absent means "not mapped yet", and the refund export falls back
+  // to matching on the per-vial price and labels that row as a guess.
+  supplierCode: varchar('supplier_code', { length: 40 }),
   name: varchar('name', { length: 160 }).notNull(),
   spec: varchar('spec', { length: 120 }).notNull(), // e.g. "15mg vial"
   categoryId: uuid('category_id').references(() => categories.id),

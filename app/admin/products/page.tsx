@@ -60,6 +60,10 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
       await saveProduct.mutateAsync({
         id: f.id,
         name: f.name, spec: f.spec, categoryId: f.categoryId ?? null,
+        code: f.code || undefined,
+        // Empty clears the mapping rather than saving "", so the refund export
+        // reads it as unmapped and falls back instead of matching on a blank.
+        supplierCode: f.supplierCode?.trim() || null,
         pricePhp: Number(f.pricePhp) as any, priceUsd: (f.priceUsd != null ? Number(f.priceUsd) : null) as any,
         isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
         onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
@@ -86,6 +90,20 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
       <div className="grid grid-cols-2 gap-3">
         <Labeled label="Name"><input className={field} value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} /></Labeled>
         <Labeled label="Spec (e.g. 15mg vial)"><input className={field} value={f.spec || ''} onChange={(e) => setF({ ...f, spec: e.target.value })} /></Labeled>
+        <Labeled label="Our code (e.g. BPC157)">
+          <input className={field} value={f.code || ''} onChange={(e) => setF({ ...f, code: e.target.value })} />
+        </Labeled>
+        {/* The supplier's vocabulary is not ours — their BPC10 is our BPC157.
+            Filling this in is what lets a batch's refund sheet be matched to
+            real buyers exactly instead of by a per-vial price guess. */}
+        <Labeled label="Supplier code (e.g. BPC10)">
+          <input
+            className={field}
+            placeholder="as written on the supplier's sheet"
+            value={f.supplierCode || ''}
+            onChange={(e) => setF({ ...f, supplierCode: e.target.value })}
+          />
+        </Labeled>
         <Labeled label="Category">
           <select className={field} value={f.categoryId || ''} onChange={(e) => setF({ ...f, categoryId: e.target.value || null })}>
             <option value="">—</option>

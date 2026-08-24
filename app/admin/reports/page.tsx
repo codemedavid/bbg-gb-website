@@ -10,6 +10,7 @@ import { buildPackingList, openPackingListPrint } from '@/lib/report/packing-lis
 import { REPORT_SEGMENTS, SEGMENT_LABEL, SEGMENT_SHORT_LABEL, type ReportSegment } from '@/lib/report/segment';
 import type { SegmentedWeeklyReport, WeeklyReport } from '@/lib/report/build';
 import { SegmentReport } from './SegmentReport';
+import { RefundExport } from './RefundExport';
 
 // Reports hub: pick any inclusive calendar range and read On-Hand, Group Buy,
 // and Kahati independently. Each segment has its own rollups and workbook,
@@ -87,6 +88,12 @@ export default function AdminReportsPage() {
             onPrintPackingList={printPackingList}
           />
         ))}
+
+      {/* Sits under the segment reports because it answers the question that
+          comes after them: the batch was ordered, it arrived short, now who is
+          owed money. Shares the same date window — a refund belongs to one
+          batch, and that batch is the range already chosen above. */}
+      <RefundExport from={from} to={to} />
     </div>
   );
 }

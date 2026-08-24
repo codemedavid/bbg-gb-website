@@ -16,7 +16,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const product = (spec: string, piece: number, over: Partial<Product> = {}): Product => ({
-  id: `p-${spec}`, code: null, name: 'Tirzepatide', spec,
+  id: `p-${spec}`, code: null, supplierCode: null, name: 'Tirzepatide', spec,
   pricePhp: String(piece), priceUsd: null, categoryId: 'c1',
   categorySlug: 'glp-1', categoryName: 'GLP-1',
   isOnHand: true, onHandKitPhp: String(piece * 8), onHandPiecePhp: String(piece),

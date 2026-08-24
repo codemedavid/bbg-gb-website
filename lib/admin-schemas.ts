@@ -4,6 +4,9 @@ import { scheduleWindowErrorFromIso } from './campaign-schedule';
 
 export const productSchema = z.object({
   code: z.string().max(40).optional(),
+  // What the supplier calls this product. Nullable so a mapping can be
+  // cleared, and the refund export says so when it had to guess instead.
+  supplierCode: z.string().max(40).nullable().optional(),
   name: z.string().min(2).max(160),
   // Optional, matching the MOQ shelf (moqProductSchema): many real items
   // (aesthetics "per piece", botulinum toxins) carry no spec beyond the name,

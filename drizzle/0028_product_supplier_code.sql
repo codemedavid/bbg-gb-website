@@ -1,0 +1,14 @@
+--- Products learn the code the SUPPLIER calls them by.
+---
+--- `products.code` is our own price-list code. The supplier keeps a different
+--- vocabulary — their BPC10 is our BPC157, their NAD500 our NJ500, their MTC10
+--- our MS10 — and nothing recorded the correspondence. That mattered the first
+--- time a batch arrived short: the refund sheet names SKUs in the supplier's
+--- codes and carries no customer column, so working out who to pay back meant
+--- matching 27 rows by hand against the order sheet.
+---
+--- Nullable, and absent for every existing row. The refund export falls back to
+--- matching on the per-vial price when a product has no supplier code, and says
+--- in the output that it guessed — so this column makes the join exact as it
+--- gets filled in, rather than being a precondition for the feature working.
+ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "supplier_code" varchar(40);

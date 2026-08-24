@@ -1,7 +1,7 @@
 export type Category = { id: string; name: string; slug: string; sortOrder: number };
 
 export type Product = {
-  id: string; code: string | null; name: string; spec: string;
+  id: string; code: string | null; supplierCode: string | null; name: string; spec: string;
   pricePhp: string; priceUsd: string | null; categoryId: string | null;
   categorySlug: string | null; categoryName: string | null;
   isOnHand: boolean; onHandKitPhp: string | null; onHandPiecePhp: string | null;

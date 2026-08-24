@@ -36,7 +36,7 @@ vi.mock('@/lib/queries', () => ({
 const SearchPage = (await import('./page')).default;
 
 const product = (o: Partial<Product> = {}): Product => ({
-  id: 'p1', code: null, name: 'Retatrutide', spec: '20mg vial',
+  id: 'p1', code: null, supplierCode: null, name: 'Retatrutide', spec: '20mg vial',
   pricePhp: '1200.00', priceUsd: null, categoryId: null, categorySlug: null,
   categoryName: 'GLP-1', isOnHand: true, onHandKitPhp: '10000.00',
   onHandPiecePhp: '1200.00', stock: 12, kitSize: 10,
