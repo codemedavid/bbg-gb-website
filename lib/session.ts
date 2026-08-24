@@ -1,4 +1,5 @@
 import 'server-only';
+import { ApiError } from './api-error';
 import { cookies } from 'next/headers';
 import { verifyToken, COOKIE_NAME, type JwtPayload } from './auth';
 
@@ -26,6 +27,7 @@ export async function requireAdmin(): Promise<JwtPayload> {
   return s;
 }
 
-export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
-}
+// Defined in lib/api-error so modules that must not pull in 'server-only' can
+// still throw one; re-exported here because most of the app imports it from
+// this module.
+export { ApiError } from './api-error';

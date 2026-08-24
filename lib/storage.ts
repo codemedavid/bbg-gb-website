@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env, BUCKETS } from './env';
 import { describeDriverProblem } from './storage-driver';
-import { ApiError } from './session';
+import { ApiError } from './api-error';
 import { uploadToImageKit, imagekitUrl, provisionImageKitFolders } from './imagekit';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
