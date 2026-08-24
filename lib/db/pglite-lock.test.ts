@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describeLockConflict, claimPgliteLock, LOCK_FILE } from './pglite-lock';
+import { describeLockConflict, claimPgliteLock, recordPgliteOwner, LOCK_FILE } from './pglite-lock';
 
 describe('describeLockConflict', () => {
   const ownPid = 4242;
@@ -93,5 +93,41 @@ describe('claimPgliteLock', () => {
     // instance — locking those against each other would deadlock the suite.
     expect(() => claimPgliteLock('memory://')).not.toThrow();
     expect(existsSync(join('memory://', LOCK_FILE))).toBe(false);
+  });
+});
+
+describe('recordPgliteOwner — the first run', () => {
+  it('records the owner of a directory PGlite has just created', () => {
+    // Arrange — the state a fresh worktree is in the instant PGlite finishes
+    // initialising: the directory now exists, and claimPgliteLock could not have
+    // written anything into it because it did not exist when claim ran.
+    const dir = mkdtempSync(join(tmpdir(), 'pglite-first-run-'));
+    // Act
+    recordPgliteOwner(dir);
+    // Assert — the next server now has an owner to be refused by.
+    expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(String(process.pid));
+  });
+
+  it('leaves a second server locked out of a first-run directory', () => {
+    // The whole point: before this, server A created ./.pglite with no lock in
+    // it and server B was waved straight through to diverge silently.
+    const dir = mkdtempSync(join(tmpdir(), 'pglite-first-run-'));
+    recordPgliteOwner(dir);
+    // A different, live process — this test's own parent is guaranteed to exist.
+    writeFileSync(join(dir, LOCK_FILE), String(process.ppid));
+
+    expect(() => claimPgliteLock(dir)).toThrow(/already has this PGlite database open/);
+  });
+
+  it('does nothing for an in-memory database', () => {
+    expect(() => recordPgliteOwner('memory://')).not.toThrow();
+  });
+
+  it('does nothing when the directory still does not exist', () => {
+    // PGlite failed to create it. Refusing to start over the lock file would be
+    // a worse failure than the divergence the lock guards against.
+    const missing = join(tmpdir(), 'pglite-never-created-xyz');
+    expect(() => recordPgliteOwner(missing)).not.toThrow();
+    expect(existsSync(join(missing, LOCK_FILE))).toBe(false);
   });
 });

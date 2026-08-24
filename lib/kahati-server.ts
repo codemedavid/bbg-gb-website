@@ -19,6 +19,8 @@ import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, use
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail } from './email';
+import { cancellationRefundNoticeFor, DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from './kahati-downpayment';
+import { getKahatiDownpaymentPolicy } from './settings';
 import { captureEvent } from './posthog';
 
 // A transaction handle exposes the same query surface as the root database, so
@@ -188,10 +190,24 @@ async function flipToCancelled(db: Db, id: string, guard: SQL | undefined): Prom
 // database work is settled — never notify about a cancellation that then
 // fails to persist.
 export async function notifyKahatiCancellations(notices: CancellationNotice[]): Promise<void> {
+  // Nothing was cancelled, so there is nobody to tell and no policy to read.
+  if (notices.length === 0) return;
+  // What the customer is told happens to their deposit now, in the past tense
+  // this email needs. Read once for the whole batch: every notice in it is
+  // governed by the same policy, and re-reading per notice would let a
+  // mid-sweep edit send two different answers for one cancellation.
+  //
+  // A failed read falls back rather than throwing. The cancellations are
+  // already committed by the time this runs, so letting one settings query take
+  // the whole batch down turns "your hatian was cancelled" into silence for
+  // every customer in it — a worse outcome than the default wording, which is
+  // also the wording this email carried before the policy was configurable.
+  const policy = await getKahatiDownpaymentPolicy().catch(() => DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
+  const refundNotice = cancellationRefundNoticeFor(policy);
   for (const notice of notices) {
     await sendEmail({
       to: notice.email,
-      ...kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS }),
+      ...kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS, refundNotice }),
       kind: 'kahati_cancelled',
     });
     // Distinct from order_cancelled: this one carries the refund amount and the

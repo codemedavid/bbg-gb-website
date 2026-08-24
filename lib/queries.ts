@@ -2,12 +2,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
+import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY, type KahatiDownpaymentPolicy } from './kahati-downpayment';
 import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
     queryKey: ['packing-fees'],
     queryFn: () => apiGet<{ packingFees: PackingFees }>('/settings').then((d) => d.packingFees),
+    staleTime: 5 * 60 * 1000,
+  });
+
+// The hatian deposit rule, so the cart and the checkout quote the same figure
+// the server will charge. Same endpoint and cache window as the packing fees —
+// the two are read together everywhere they are read at all.
+//
+// A response from a deploy that predates the setting carries no policy; falling
+// back to the packing-fee rule keeps the quote correct for that deploy rather
+// than rendering a blank "due now".
+export const useKahatiDownpaymentPolicy = () =>
+  useQuery({
+    queryKey: ['kahati-downpayment-policy'],
+    queryFn: () => apiGet<{ kahatiDownpayment?: KahatiDownpaymentPolicy }>('/settings')
+      .then((d) => d.kahatiDownpayment ?? DEFAULT_KAHATI_DOWNPAYMENT_POLICY),
     staleTime: 5 * 60 * 1000,
   });
 

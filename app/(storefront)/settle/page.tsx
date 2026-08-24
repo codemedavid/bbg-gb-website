@@ -21,7 +21,11 @@ export default function SettlePage() {
   const qc = useQueryClient();
   const { user, loading } = useAuth();
   const { data: preview, isLoading } = useSettlementPreview(!!user);
-  const { data: methods = [] } = usePaymentMethods();
+  // Full-payment methods only. This screen collects the BALANCE of kits that
+  // have already completed, and a downpayment QR is often locked to the deposit
+  // amount — offering one here would reject the very payment it was picked for.
+  const { data: allMethods = [] } = usePaymentMethods();
+  const methods = allMethods.filter((m) => m.purpose !== 'kahati_downpayment');
   const toast = useToast((s) => s.show);
 
   const [methodId, setMethodId] = useState('');

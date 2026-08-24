@@ -1,3 +1,4 @@
+import type { PaymentPurpose } from './payment-purpose';
 export type Category = { id: string; name: string; slug: string; sortOrder: number };
 
 export type Product = {
@@ -103,11 +104,18 @@ export type CampaignPayload = {
 
 export type PaymentMethod = {
   id: string; label: string; accountName: string; accountNumber: string;
-  qrUrl: string | null; isActive: boolean; sortOrder: number;
+  qrUrl: string | null;
+  // What this method collects: a full payment, or a hatian downpayment. The two
+  // are separate QR images on purpose — see lib/payment-purpose.ts.
+  purpose: PaymentPurpose;
+  // Free-text instructions rendered under the QR at checkout, or null.
+  instructions: string | null;
+  isActive: boolean; sortOrder: number;
 };
 
 // Shape returned by the public /payment-methods endpoint (active methods only).
-export type CheckoutPaymentMethod = Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl'>;
+export type CheckoutPaymentMethod =
+  Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl' | 'purpose' | 'instructions'>;
 
 /**
  * One uploaded proof of payment. An order may carry up to five

@@ -16,7 +16,10 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/useAuth', () => ({ useAuth: () => ({ user: null, loading: false }) }));
 
 let boardState: { data: GroupBuy[] } = { data: [] };
-vi.mock('@/lib/queries', () => ({ useGroupBuys: () => boardState }));
+vi.mock('@/lib/queries', () => ({
+  // undefined -> the page falls back to the default (packing-fee) policy for its
+  // "how it works" steps, which is what these tests were written against.
+  useKahatiDownpaymentPolicy: () => ({ data: undefined, isSuccess: true }), useGroupBuys: () => boardState }));
 
 const KahatiPage = (await import('./page')).default;
 

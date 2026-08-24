@@ -5,8 +5,12 @@ import { eq, inArray } from 'drizzle-orm';
 import { getDb, settings } from '@/lib/db';
 import { PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
 import { cycleAt, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
+import {
+  KAHATI_DOWNPAYMENT_KEYS, parseKahatiDownpaymentPolicy, serializeKahatiDownpaymentPolicy,
+  type KahatiDownpaymentPolicy,
+} from '@/lib/kahati-downpayment';
 
-export type { PackingFees, Cycle, ScheduleRecurrence };
+export type { PackingFees, Cycle, ScheduleRecurrence, KahatiDownpaymentPolicy };
 
 const KEY: Record<PackingMode, string> = {
   solo: 'packing_fee_solo',
@@ -199,6 +203,63 @@ export async function getCurrentCycle(now: Date = new Date()): Promise<Cycle | n
 /** Whether both boards are live right now. */
 export async function isGroupBuyOpenNow(now: Date = new Date()): Promise<boolean> {
   return (await getCurrentCycle(now)) !== null;
+}
+
+// ---- The hatian downpayment policy -----------------------------------------
+//
+// What a customer is asked to send at checkout to hold a place in a kit that has
+// not filled yet. One global policy rather than a figure per payment method: the
+// amount owed cannot depend on which QR the customer tapped.
+//
+// See lib/kahati-downpayment.ts for the rules the figure is computed with.
+
+export async function getKahatiDownpaymentPolicy(): Promise<KahatiDownpaymentPolicy> {
+  const db = await getDb();
+  const rows = await db.select().from(settings)
+    .where(inArray(settings.key, Object.values(KAHATI_DOWNPAYMENT_KEYS)));
+  return parseKahatiDownpaymentPolicy(Object.fromEntries(rows.map((r) => [r.key, r.value])));
+}
+
+/**
+ * Stores the policy and returns it as stored.
+ *
+ * Validated at this boundary rather than in the form, so every caller gets the
+ * same refusals. The checks exist because each rejected value produces a
+ * checkout that asks for a figure no one meant:
+ *   - a percentage outside 0-100 quotes more than the order is worth (or less
+ *     than nothing) on every hatian commitment;
+ *   - a negative flat amount would credit the customer;
+ *   - a ₱0 / 0% deposit is the packing-fee rule spelled out confusingly, and an
+ *     admin who picks it means to collect SOMETHING. Refusing it is how they
+ *     find out they left the field blank, rather than finding out from a
+ *     customer who paid nothing.
+ */
+export async function setKahatiDownpaymentPolicy(p: KahatiDownpaymentPolicy): Promise<KahatiDownpaymentPolicy> {
+  if (p.mode === 'percent') {
+    if (!Number.isFinite(p.percent) || p.percent <= 0 || p.percent > 100) {
+      throw new Error('Downpayment percent must be more than zero and at most 100.');
+    }
+  }
+  if (p.mode === 'fixed') {
+    if (!Number.isFinite(p.amountPhp) || p.amountPhp < 0) {
+      throw new Error('The downpayment amount must be zero or more.');
+    }
+    if (p.amountPhp === 0) {
+      throw new Error('A fixed downpayment must be more than zero — pick the packing-fee rule to collect only the fee.');
+    }
+  }
+  const values = serializeKahatiDownpaymentPolicy(p);
+  const db = await getDb();
+  // One transaction: a policy written halfway would pair a new mode with the old
+  // amount, and quote a downpayment nobody configured.
+  await db.transaction(async (tx) => {
+    for (const [key, value] of Object.entries(values)) {
+      await tx.insert(settings)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } });
+    }
+  });
+  return getKahatiDownpaymentPolicy();
 }
 
 // Upserts only the provided modes; returns the full resolved fee set.

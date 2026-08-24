@@ -31,17 +31,27 @@ type FeeTotals = { week: number; month: number; all: number };
 // charge on orders; deferred Hatian checkouts keep one charge on settlements.
 // An order linked to an active settlement must not contribute its legacy fee as
 // well, otherwise the dashboard would count the same parcel twice.
+// The boundaries are bound as ISO strings with an explicit cast, never as Date
+// objects. A Date handed to drizzle's comparison helpers (gte, lt) is mapped
+// through the column it is compared against; one interpolated into a raw `sql`
+// template has no column to be mapped through, and postgres-js — the driver
+// behind every real deployment — then fails at Bind time with "The 'string'
+// argument must be of type string ... Received an instance of Date". pglite
+// accepts it, so this only ever surfaced in production. See analytics.test.ts.
+export const feeColumns = <TCreated, TFee>(
+  createdAt: TCreated, fee: TFee, weekStart: Date, monthStart: Date,
+) => ({
+  week: sql<number>`coalesce(sum(case when ${createdAt} >= ${weekStart.toISOString()}::timestamptz then ${fee} else 0 end), 0)::float`,
+  month: sql<number>`coalesce(sum(case when ${createdAt} >= ${monthStart.toISOString()}::timestamptz then ${fee} else 0 end), 0)::float`,
+  all: sql<number>`coalesce(sum(${fee}), 0)::float`,
+});
+
 export async function packingFeeTotals(): Promise<FeeTotals> {
   const db = await getDb();
   const weekStart = daysAgo(7);
   const monthStart = daysAgo(30);
-  const feeColumns = <TCreated, TFee>(createdAt: TCreated, fee: TFee) => ({
-    week: sql<number>`coalesce(sum(case when ${createdAt} >= ${weekStart} then ${fee} else 0 end), 0)::float`,
-    month: sql<number>`coalesce(sum(case when ${createdAt} >= ${monthStart} then ${fee} else 0 end), 0)::float`,
-    all: sql<number>`coalesce(sum(${fee}), 0)::float`,
-  });
 
-  const [orderFees] = await db.select(feeColumns(orders.createdAt, orders.packingFeePhp))
+  const [orderFees] = await db.select(feeColumns(orders.createdAt, orders.packingFeePhp, weekStart, monthStart))
     .from(orders)
     .leftJoin(settlements, eq(orders.settlementId, settlements.id))
     .where(and(
@@ -49,7 +59,7 @@ export async function packingFeeTotals(): Promise<FeeTotals> {
       or(isNull(orders.settlementId), eq(settlements.status, 'cancelled')),
     ));
 
-  const [settlementFees] = await db.select(feeColumns(settlements.createdAt, settlements.packingFeePhp))
+  const [settlementFees] = await db.select(feeColumns(settlements.createdAt, settlements.packingFeePhp, weekStart, monthStart))
     .from(settlements)
     .where(ne(settlements.status, 'cancelled'));
 

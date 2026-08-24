@@ -72,6 +72,38 @@ describe('PATCH /api/admin/settings', () => {
     expect((await after.json()).data.packingFees.solo).toBe(250);
   });
 
+  it('saves a kahati downpayment policy and reads it back', async () => {
+    await signIn('admin');
+    const res = await PATCH(patchReq({
+      kahatiDownpayment: { mode: 'fixed', amountPhp: 500, percent: 0, refundable: false, policyNote: 'Non-refundable.' },
+    }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.kahatiDownpayment).toEqual({
+      mode: 'fixed', amountPhp: 500, percent: 0, refundable: false, policyNote: 'Non-refundable.',
+    });
+  });
+
+  it('rejects a zero fixed downpayment as a 400 the form can render', async () => {
+    // Not a 500. The admin has to be told what to type instead, and a generic
+    // "Something went wrong" tells them only that the save failed.
+    await signIn('admin');
+    const res = await PATCH(patchReq({
+      kahatiDownpayment: { mode: 'fixed', amountPhp: 0, percent: 0, refundable: true, policyNote: null },
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/more than zero/i);
+  });
+
+  it('rejects a zero percent downpayment as a 400', async () => {
+    await signIn('admin');
+    const res = await PATCH(patchReq({
+      kahatiDownpayment: { mode: 'percent', amountPhp: 0, percent: 0, refundable: true, policyNote: null },
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/percent/i);
+  });
+
   it('rejects a negative fee', async () => {
     await signIn('admin');
     const res = await PATCH(patchReq({ packingFees: { solo: -5 } }));

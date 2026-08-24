@@ -23,6 +23,9 @@ vi.mock('@/lib/useAuth', () => ({
 // the page in the "already committed, nothing to pay" state.
 const kahatiCommitments: { current: unknown } = { current: undefined };
 vi.mock('@/lib/queries', () => ({
+  // undefined -> useOrderTotals falls back to the default (packing-fee) policy,
+  // which is the behaviour these tests were written against.
+  useKahatiDownpaymentPolicy: () => ({ data: undefined, isSuccess: true }),
   usePaymentMethods: () => ({
     data: [{ id: 'pm1', label: 'GCash', accountName: 'BBG', accountNumber: '0917', qrUrl: null }],
   }),

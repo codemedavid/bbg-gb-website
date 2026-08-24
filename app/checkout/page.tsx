@@ -12,7 +12,9 @@ import { useKahatiCommitments, usePaymentMethods } from '@/lib/queries';
 import { KahatiCommitmentsCard } from '@/components/KahatiCommitmentsCard';
 import { CheckoutItemsCard } from '@/components/CheckoutItemsCard';
 import { ProofUploader } from '@/components/ProofUploader';
+import { PaymentMethodPicker } from '@/components/PaymentMethodPicker';
 import { php } from '@/lib/format';
+import { refundNoticeFor } from '@/lib/kahati-downpayment';
 import { friendlyCheckoutError, staleCheckoutLine } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
@@ -30,21 +32,68 @@ export default function CheckoutPage() {
   // server rule that decides what is actually charged.
   const { data: kahatiHeld } = useKahatiCommitments();
   const paidThisCycle = !!kahatiHeld?.paidThisCycle;
+  // A hatian pays a deposit now; the goods are settled once its kit completes.
+  const { hasKahati, dueNow, downpayment, downpaymentPolicy, downpaymentIsDeposit, downpaymentPolicyLoaded } =
+    useOrderTotals(paidThisCycle);
+
   // A cart of nothing but hatian lines with the cycle fee already paid owes
   // nothing at all: no fee, and so no payment method, no proof, nothing to
   // review. Any on-hand or MOQ line alongside it is still paid for now.
-  const confirmOnly = paidThisCycle && items.length > 0 && items.every((i) => i.kind === 'group_buy');
+  //
+  // Gated on the policy as well, and it has to be: a configured DEPOSIT is not a
+  // per-cycle parcel charge, so the server keeps charging it on the second kit
+  // (see the same rule in POST /api/orders). A screen that offered confirm-only
+  // here would hide the payment card and the proof uploader from a checkout the
+  // server then rejects for having no proof — a dead end the customer cannot
+  // get out of.
+  //
+  // `downpaymentPolicyLoaded` is part of the condition because a FAILED settings
+  // request looks exactly like "no deposit configured": both leave the fallback
+  // packing-fee policy in hand. Skipping payment on that reading would hide the
+  // payment card and the proof uploader from a checkout the server still charges
+  // a deposit for — the same dead end, reached by a dropped request instead of a
+  // missing gate.
+  const confirmOnly = downpaymentPolicyLoaded && !downpaymentIsDeposit
+    && paidThisCycle && items.length > 0 && items.every((i) => i.kind === 'group_buy');
 
-  // A hatian pays only the packing fee now; the goods are settled after it ends.
-  const { hasKahati, dueNow } = useOrderTotals(paidThisCycle);
-  const amountDueNow = dueNow;
+  // …and the other reading of an unknown policy is no better. "Ask for payment"
+  // cannot be acted on either, because the amount to ask for is the very thing
+  // the policy decides: under the fallback, a settled cycle computes ₱0, so the
+  // payment card — gated on an amount — never renders, while the proof uploader
+  // does. The customer is left with an "upload proof of payment" box quoting no
+  // amount, no account and no QR to make a proof against, and a Place button
+  // that only unlocks once they attach an unrelated file.
+  //
+  // Neither reading is safe, so the screen commits to neither: while the policy
+  // is unknown it says so and holds the order. Brief on a normal first paint,
+  // and honest on a request that never lands.
+  const awaitingDownpaymentPolicy = hasKahati && !downpaymentPolicyLoaded;
   const toast = useToast((s) => s.show);
   const { data: methods = [] } = usePaymentMethods();
+
+  // The two obligations, split by what each method is FOR. A hatian kit that has
+  // not filled yet collects a deposit against a QR of its own — often one that
+  // encodes the exact amount — so the full-payment QR must not be reachable from
+  // that screen at all. Filtering the list is what guarantees it: there is no
+  // full-payment row to tap, not merely a rule saying do not tap it.
+  const downpaymentMethods = methods.filter((m) => m.purpose === 'kahati_downpayment');
+  const fullMethods = methods.filter((m) => m.purpose !== 'kahati_downpayment');
+
+  // Whether this checkout is collecting a deposit rather than a full payment.
+  // False under the historical packing-fee rule, which is a fee and pays through
+  // the ordinary methods exactly as it always has.
+  const collectingDownpayment = hasKahati && downpaymentIsDeposit && downpayment > 0;
+  // Everything that is not a hatian line is still paid in full today.
+  const fullAmountDue = Math.max(0, dueNow - (collectingDownpayment ? downpayment : 0));
+  const needsFullPayment = !confirmOnly && fullAmountDue > 0;
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [methodId, setMethodId] = useState('');
+  // A separate selection, because the two lists are separate: a customer may pay
+  // the deposit by GCash and the on-hand items by bank transfer.
+  const [downpaymentMethodId, setDownpaymentMethodId] = useState('');
   const [courier, setCourier] = useState<string>(DEFAULT_COURIER);
   // Several proofs, because a bank transfer cap turns one payment into two or
   // three. ProofUploader owns the previews and the remove buttons.
@@ -59,12 +108,26 @@ export default function CheckoutPage() {
     if (user) { setName(user.name); setPhone(user.phone || ''); setAddress(user.address || ''); }
   }, [user]);
 
-  // Default to the first method once loaded; keep valid if the list changes.
+  // Default to the first method of each kind once loaded; keep valid if the list
+  // changes. Kept apart so a downpayment method can never end up selected as the
+  // full-payment one, or the other way round.
   useEffect(() => {
-    if (methods.length && !methods.some((m) => m.id === methodId)) setMethodId(methods[0].id);
-  }, [methods, methodId]);
+    if (fullMethods.length && !fullMethods.some((m) => m.id === methodId)) setMethodId(fullMethods[0].id);
+  }, [fullMethods, methodId]);
+  useEffect(() => {
+    if (downpaymentMethods.length && !downpaymentMethods.some((m) => m.id === downpaymentMethodId)) {
+      setDownpaymentMethodId(downpaymentMethods[0].id);
+    }
+  }, [downpaymentMethods, downpaymentMethodId]);
 
-  const selectedMethod = methods.find((m) => m.id === methodId) ?? null;
+  const selectedMethod = fullMethods.find((m) => m.id === methodId) ?? null;
+  const selectedDownpaymentMethod = downpaymentMethods.find((m) => m.id === downpaymentMethodId) ?? null;
+
+  // A configured deposit with no QR to pay it into is the one state this screen
+  // must refuse. Falling back to the full-payment QR would invite exactly the
+  // full payment on an unfilled kit that this whole feature exists to prevent,
+  // so checkout blocks and says so instead.
+  const downpaymentUnavailable = collectingDownpayment && downpaymentMethods.length === 0;
 
   useEffect(() => { if (!loading && !user) router.replace('/login'); }, [loading, user, router]);
 
@@ -80,7 +143,12 @@ export default function CheckoutPage() {
       // Written in the cart, carried through here, saved onto every order this
       // checkout creates.
       if (note.trim()) fd.append('note', note.trim());
-      if (selectedMethod && !confirmOnly) fd.append('paymentMethod', selectedMethod.label);
+      if (selectedMethod && needsFullPayment) fd.append('paymentMethod', selectedMethod.label);
+      // Stamped onto the hatian orders this cart splits into, so the admin
+      // reviewing the proof knows which account the deposit was sent to.
+      if (selectedDownpaymentMethod && collectingDownpayment) {
+        fd.append('downpaymentMethod', selectedDownpaymentMethod.label);
+      }
       fd.append('courier', courier);
       // Appended under one repeated field name; the route reads getAll('proof').
       for (const proof of proofs) fd.append('proof', proof);
@@ -138,8 +206,15 @@ export default function CheckoutPage() {
   // otherwise the customer gets an "empty cart" flash on the way to the receipt.
   const cartEmpty = items.length === 0 && !submitting;
 
-  const methodChosen = confirmOnly || methods.length === 0 || !!selectedMethod;
-  const canPlace = (proofs.length > 0 || confirmOnly) && items.length > 0 && !!name && !!phone && !!address && methodChosen;
+  // Every obligation this checkout carries must have a method behind it.
+  const methodChosen = confirmOnly
+    || ((!needsFullPayment || fullMethods.length === 0 || !!selectedMethod)
+      && (!collectingDownpayment || !!selectedDownpaymentMethod));
+  const canPlace = (proofs.length > 0 || confirmOnly) && items.length > 0
+    && !!name && !!phone && !!address && methodChosen && !downpaymentUnavailable
+    // Placing under an unknown deposit rule would submit against a figure the
+    // screen never quoted.
+    && !awaitingDownpaymentPolicy;
 
   return (
     <OverlayShell>
@@ -177,59 +252,76 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* A commitment that owes nothing has no payment to choose, prove or
+        {/* Nothing on this screen can be quoted until the deposit rule is
+            known, so nothing is: no card, no QR, no proof box. */}
+        {awaitingDownpaymentPolicy ? (
+          <div role="status" className="rounded-[14px] bg-white p-4 text-[13px] leading-relaxed text-ink-body shadow-card">
+            Getting the latest Kahati payment details… Please wait a moment before
+            sending anything — the amount and the account to send it to depend on this.
+          </div>
+        ) : /* A commitment that owes nothing has no payment to choose, prove or
             review. What the customer needs instead is what they already hold —
-            the running total this join is being added to. */}
-        {confirmOnly ? (
+            the running total this join is being added to. */
+        confirmOnly ? (
           <KahatiCommitmentsCard summary={kahatiHeld!.summary} />
         ) : (
-        <div className="rounded-[14px] bg-white p-4 shadow-card">
-          <div className="mb-3 text-[13px] leading-relaxed text-ink-body">
-            Choose a payment method, send your payment, then upload a screenshot of your proof of payment. Paid in several
-            transfers? Attach one screenshot per transfer. We&apos;ll confirm your order once we receive it.
-          </div>
-
-          {methods.length === 0 ? (
-            <div className="rounded-[10px] bg-surface-mist px-3.5 py-3 text-[13px] text-ink-muted">
-              No payment methods are available right now. Please contact us to complete your payment.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {methods.map((m) => {
-                const active = m.id === methodId;
-                return (
-                  <button key={m.id} type="button" onClick={() => setMethodId(m.id)}
-                    className={`flex w-full items-center gap-3 rounded-[12px] border-[1.5px] px-4 py-3.5 text-left transition-colors ${active ? 'border-brand-green bg-[#f2f8ec]' : 'border-line bg-white hover:border-[#a9c88f]'}`}>
-                    <span className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] ${active ? 'border-brand-green' : 'border-line'}`}>
-                      {active && <span className="h-2.5 w-2.5 rounded-full bg-brand-green" />}
-                    </span>
-                    <span className="text-[15px] font-bold text-ink">{m.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {selectedMethod && (
-            <div className="mt-3 rounded-[12px] border border-line-soft bg-[#fbfdf9] p-4">
-              <div className="text-[12px] text-ink-muted">Account name</div>
-              <div className="mb-3 text-[16px] font-bold text-ink">{selectedMethod.accountName}</div>
-              <div className="text-[12px] text-ink-muted">Account / number</div>
-              <div className="text-[16px] font-bold text-ink">{selectedMethod.accountNumber}</div>
-              <div className="mt-1 text-[12px] text-ink-muted">
-                {hasKahati && amountDueNow > 0 ? 'Packing fee due now' : 'Amount'}: <strong className="font-display text-ink-body">{php(amountDueNow)}</strong>
+        <>
+        {/* The hatian deposit gets a card of its own, above the full-payment one
+            and visually distinct from it. The kit is still filling, so the ONLY
+            QR reachable here is the downpayment QR — the full-payment list is a
+            different card for a different, non-hatian obligation. */}
+        {collectingDownpayment && (
+          <section aria-labelledby="downpayment-heading" className="rounded-[14px] border-[1.5px] border-brand-green bg-white p-4 shadow-card">
+            <h2 id="downpayment-heading" className="m-0 flex items-center gap-2 font-display text-[16px] font-bold text-brand-greendark">
+              🔒 Downpayment Only
+            </h2>
+            <p className="mb-3 mt-1.5 text-[13px] leading-relaxed text-ink-body">
+              Your Kahati kit is still waiting for other buyers. Please pay <strong>only the required
+              downpayment of {php(downpayment)}</strong> using the QR code below — huwag munang bayaran ang buong
+              order. We will request the remaining balance once the kit is complete and confirmed.
+            </p>
+            <p className="mb-3 rounded-[10px] bg-[#f2f8ec] px-3 py-2 text-[12px] leading-relaxed text-brand-greendark">
+              {refundNoticeFor(downpaymentPolicy)}
+            </p>
+            {downpaymentUnavailable ? (
+              <div role="alert" className="rounded-[10px] bg-[#fdeaea] px-3.5 py-3 text-[13px] text-[#a33]">
+                The Kahati downpayment QR is not set up yet, so we cannot take a downpayment right now.
+                Please message us before paying anything — do not send the full order amount.
               </div>
-              {selectedMethod.qrUrl && (
-                <div className="mt-3 flex justify-center">
-                  <img src={selectedMethod.qrUrl} alt={`${selectedMethod.label} QR code`} className="max-h-[260px] max-w-full rounded-xl" />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            ) : (
+              <PaymentMethodPicker
+                methods={downpaymentMethods}
+                selectedId={downpaymentMethodId}
+                onSelect={setDownpaymentMethodId}
+                amount={downpayment}
+                amountLabel="Send exactly this amount"
+                emptyNotice="No Kahati downpayment method is available right now. Please contact us before paying."
+              />
+            )}
+          </section>
         )}
 
-        {!confirmOnly && (
+        {needsFullPayment && (
+        <div className="rounded-[14px] bg-white p-4 shadow-card">
+          <div className="mb-3 text-[13px] leading-relaxed text-ink-body">
+            {collectingDownpayment
+              ? 'The rest of your cart is paid in full today. Choose a payment method for it, then upload your proof below.'
+              : 'Choose a payment method, send your payment, then upload a screenshot of your proof of payment. Paid in several transfers? Attach one screenshot per transfer. We\u2019ll confirm your order once we receive it.'}
+          </div>
+          <PaymentMethodPicker
+            methods={fullMethods}
+            selectedId={methodId}
+            onSelect={setMethodId}
+            amount={fullAmountDue}
+            amountLabel={hasKahati && !collectingDownpayment ? 'Packing fee due now' : 'Amount to send'}
+            emptyNotice="No payment methods are available right now. Please contact us to complete your payment."
+          />
+        </div>
+        )}
+        </>
+        )}
+
+        {!confirmOnly && !awaitingDownpaymentPolicy && (
         <div className="rounded-[14px] bg-white p-4 shadow-card">
           <ProofUploader files={proofs} onChange={setProofs} />
         </div>

@@ -143,7 +143,7 @@ export const useCart = create<CartState>()(
 //
 // `fees` is the admin-editable set fetched at display time; a per-listing fee on
 // a line still wins over its mode default.
-const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_campaign: 'group_buy', moq_product: 'moq' } as const;
+export const CART_KIND_MODE = { product: 'solo', group_buy: 'kahati', moq_campaign: 'group_buy', moq_product: 'moq' } as const;
 
 // How the cart presents each mode. The labels are the customer-facing names of
 // the systems — "Kahati" and "Group Buy" are what the tabs say, so the cart

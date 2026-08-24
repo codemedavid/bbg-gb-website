@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { getDb, orders, orderPaymentProofs } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireAdmin, ApiError } from '@/lib/session';
-import { reconcileProofs } from '@/lib/proof-reconciliation';
+import { reconcileOrderProofs } from '@/lib/proof-reconciliation';
 
 // Both nullable, because clearing a figure typed by mistake has to be possible
 // — an admin who cannot unset a wrong ₱2,000 will invent a compensating one.
@@ -34,7 +34,13 @@ export const PATCH = handler(async (req: Request, ctx: Ctx) => {
   const body = patchSchema.parse(await req.json());
   const db = await getDb();
 
-  const [order] = await db.select({ totalPhp: orders.totalPhp }).from(orders).where(eq(orders.id, id));
+  // The downpayment and settlement come along because a hatian commitment is
+  // reconciled against its DEPOSIT while its kit is still filling, not against
+  // the order total it will eventually owe (lib/proof-reconciliation.ts).
+  const [order] = await db.select({
+    totalPhp: orders.totalPhp, buyType: orders.buyType,
+    downpaymentPhp: orders.downpaymentPhp, settlementId: orders.settlementId,
+  }).from(orders).where(eq(orders.id, id));
   if (!order) throw new ApiError(404, 'Order not found.');
 
   // Matched on BOTH ids. Keying on the proof alone would let a mistyped order
@@ -58,6 +64,6 @@ export const PATCH = handler(async (req: Request, ctx: Ctx) => {
     proofs: proofs.map((p) => ({
       id: p.id, sortOrder: p.sortOrder, amountPhp: p.amountPhp, reference: p.reference,
     })),
-    reconciliation: reconcileProofs(proofs, order.totalPhp),
+    reconciliation: reconcileOrderProofs(proofs, order),
   });
 });

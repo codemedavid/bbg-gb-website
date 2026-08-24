@@ -3,6 +3,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { env } from './env';
 import { getDb, emailLog } from './db';
+import { collectedAmountLabel } from './kahati-downpayment';
 
 let transport: Transporter | null = null;
 function getTransport(): Transporter | null {
@@ -77,8 +78,12 @@ export function orderPlacedEmail(o: {
   subtotal?: number; packingFee?: number;
   items?: { name: string; qty: number; unitPrice: number; lineTotal: number }[];
 }) {
+  // Named for what it actually was. A commitment that paid only the cycle's
+  // packing fee says so; one that paid a configured deposit says "Downpayment",
+  // because a receipt calling a ₱500 deposit a "packing fee" is a receipt the
+  // customer will query.
   const downpaymentLine = o.downpayment && o.downpayment > 0
-    ? `<p>Packing fee received: <strong>${php(o.downpayment)}</strong> · Balance after the kahati ends: <strong>${php(o.total - o.downpayment)}</strong></p>`
+    ? `<p>${collectedAmountLabel(o.downpayment, o.packingFee ?? 0).replace(' paid', ' received')}: <strong>${php(o.downpayment)}</strong> · Balance after the kahati ends: <strong>${php(o.total - o.downpayment)}</strong></p>`
     : '';
   const receipt = o.items?.length ? `
     <div style="margin:16px 0;padding:12px;background:#fff;border-radius:8px">
@@ -181,9 +186,16 @@ export function orderStatusEmail(o: { name: string; orderNo: string; status: str
 export function kahatiCancelledEmail(o: {
   name: string; orderNo: string; kahatiName: string; claimedSlots: number; minVials: number;
   downpayment: number;
+  // What the configured downpayment policy says happens now, phrased for a
+  // cancellation that has already happened (lib/kahati-downpayment.ts
+  // cancellationRefundNoticeFor — NOT refundNoticeFor, whose sentences are
+  // written for the screens before the customer commits and read as false
+  // here). Optional so a caller that has not read the policy still sends the
+  // historical refund promise rather than nothing.
+  refundNotice?: string | null;
 }) {
   const refundLine = o.downpayment > 0
-    ? `<p>Your <strong>${php(o.downpayment)}</strong> downpayment will be refunded to the account you paid from. Please allow 1-3 banking days.</p>`
+    ? `<p>Your <strong>${php(o.downpayment)}</strong> downpayment: ${escapeHtml(o.refundNotice ?? 'will be refunded to the account you paid from. Please allow 1-3 banking days.')}</p>`
     : '<p>No payment was collected for this order, so there is nothing to refund.</p>';
   return {
     subject: `Order ${o.orderNo} cancelled - "${o.kahatiName}" did not reach ${o.minVials} vials`,

@@ -5,11 +5,20 @@ import { php } from '@/lib/format';
 import { KAHATI_MIN_VIABLE_VIALS, isKahatiViable } from '@/lib/kahati';
 import { useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
+import { useKahatiDownpaymentPolicy } from '@/lib/queries';
+import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY, refundNoticeFor } from '@/lib/kahati-downpayment';
 
 export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) {
   const [qty, setQty] = useState(Math.max(g.minVials, 1));
   const add = useCart((s) => s.add);
   const toast = useToast((s) => s.show);
+  // What happens to the money if this hatian never fills. Configurable, and
+  // this sheet is where the customer commits it — a hard-coded refund promise
+  // here contradicts the checkout card and the cancellation email the moment an
+  // admin switches the refund off. The default is refundable, which is what
+  // this sheet has always said, so an unanswered request changes nothing.
+  const { data: policy } = useKahatiDownpaymentPolicy();
+  const refundNotice = refundNoticeFor(policy ?? DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
 
   // Only the per-person minimum bounds a commitment. The 10-vial cap is the
   // counter's, not the customer's: checkout fills this counter, seals it, opens
@@ -50,7 +59,7 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
           isKahatiViable(g.claimedSlots) ? 'bg-[#f2f8ec] text-brand-greendark' : 'bg-warn-softbg text-[#6b5a24]'}`}>
           {isKahatiViable(g.claimedSlots)
             ? `✓ This hatian already passed the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum, so it is pushing through.`
-            : `Needs ${KAHATI_MIN_VIABLE_VIALS - g.claimedSlots} more vial(s) to reach the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum. If it falls short by the deadline the hatian is cancelled and your downpayment is refunded.`}
+            : `Needs ${KAHATI_MIN_VIABLE_VIALS - g.claimedSlots} more vial(s) to reach the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum. If it falls short by the deadline the hatian is cancelled. ${refundNotice}`}
         </div>
         <div className="mb-4 flex items-center justify-between rounded-[14px] bg-surface-mist px-4 py-3.5">
           <div>

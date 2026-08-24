@@ -15,8 +15,10 @@ import { chargeCycleFeeOnce, hasPaidPackingFeeThisCycle } from '@/lib/packing-cy
 import { canCommit } from '@/lib/group-buy';
 import { BatchAllocationError, allocateCommitment, resolveOpenBatch, seriesOf } from '@/lib/moq-batch-server';
 import { splitCartIntoOrders } from '@/lib/order-modes';
-import { getCurrentCycle, getPackingFees } from '@/lib/settings';
+import { getCurrentCycle, getKahatiDownpaymentPolicy, getPackingFees } from '@/lib/settings';
 import { cycleKeyOf } from '@/lib/schedule-recurrence';
+import { isDownpaymentWaivableByCycle, kahatiDownpaymentDue } from '@/lib/kahati-downpayment';
+import type { PaymentPurpose } from '@/lib/payment-purpose';
 import { requireCommitmentsOpen } from '@/lib/schedule-gate';
 import { validateAndStoreProofs } from '@/lib/proof';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
@@ -38,6 +40,10 @@ const checkoutSchema = z.object({
   shipPhone: z.string().min(7).max(40),
   shipAddress: z.string().min(5).max(500),
   paymentMethod: z.string().min(1).max(40).optional(),
+  // The method the hatian DEPOSIT was sent to. Separate from paymentMethod
+  // because a mixed cart pays two obligations to two accounts, and the admin
+  // reviewing a deposit proof needs to know which account it should have landed in.
+  downpaymentMethod: z.string().min(1).max(40).optional(),
   // Free-text instructions the customer added in the cart. Bounded rather than
   // truncated: silently storing half a note reads as a complete instruction to
   // whoever packs the parcel, and nobody can tell afterwards that it was cut.
@@ -76,6 +82,7 @@ export const POST = handler(async (req: Request) => {
     shipPhone: form.get('shipPhone'),
     shipAddress: form.get('shipAddress'),
     paymentMethod: form.get('paymentMethod') ?? undefined,
+    downpaymentMethod: form.get('downpaymentMethod') ?? undefined,
     courier: form.get('courier') ?? undefined,
     idempotencyKey: form.get('idempotencyKey') ?? undefined,
     note: form.get('note') ?? undefined,
@@ -111,6 +118,17 @@ export const POST = handler(async (req: Request) => {
   const cycle = await getCurrentCycle();
   const cycleKey = cycle ? cycleKeyOf(cycle) : null;
 
+  // What a hatian commitment collects today. Read once for the whole checkout,
+  // for the same reason the cycle is: every order this cart splits into has to
+  // be quoted against one policy, not against whatever the setting said by the
+  // time the second one was written.
+  const downpaymentPolicy = await getKahatiDownpaymentPolicy();
+  // A real deposit secures a specific kit, so the cycle's "already paid" waiver
+  // does not apply to it — see lib/kahati-downpayment.ts. Only the historical
+  // packing-fee rule is waivable, which is what keeps the confirm-only path
+  // exactly as it was for anyone who has not configured a downpayment.
+  const downpaymentWaivable = isDownpaymentWaivableByCycle(downpaymentPolicy);
+
   // Has this customer already paid to have this cycle's parcel packed? Read
   // before the transaction opens: it must reflect the orders that existed
   // BEFORE this checkout, never the one being placed.
@@ -121,7 +139,8 @@ export const POST = handler(async (req: Request) => {
   // nothing at all now, so there is no payment to prove. Any other cart — an
   // on-hand item alongside it, or the cycle's first commitment — is paid for at
   // checkout and must carry its proof.
-  const knownConfirmOnly = knownPaidThisCycle && body.items.every((i) => i.kind === 'group_buy');
+  const knownConfirmOnly = downpaymentWaivable
+    && knownPaidThisCycle && body.items.every((i) => i.kind === 'group_buy');
 
   // Every proof the customer attached — up to five, because a bank transfer cap
   // means one order is often paid across several transfers. Stored before the
@@ -148,14 +167,24 @@ export const POST = handler(async (req: Request) => {
     const paidThisCycle = containsCycleItems && hasPaidPackingFeeThisCycle(
       await listCyclePayments(tx, session.sub, cycleKey),
     );
-    const confirmOnly = paidThisCycle && body.items.every((i) => i.kind === 'group_buy');
+    const confirmOnly = downpaymentWaivable
+      && paidThisCycle && body.items.every((i) => i.kind === 'group_buy');
 
-    // Reject a payment method the customer could not actually have chosen.
-    if (body.paymentMethod) {
+    // Reject a payment method the customer could not actually have chosen — and
+    // check the PURPOSE, not just the label. A full-payment method offered for a
+    // hatian deposit is precisely the mix-up the separate QR exists to prevent,
+    // so a client that sends one is refused rather than trusted.
+    const requireMethod = async (label: string, purpose: PaymentPurpose): Promise<void> => {
       const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
-        .where(and(eq(paymentMethods.label, body.paymentMethod), eq(paymentMethods.isActive, true)));
+        .where(and(
+          eq(paymentMethods.label, label),
+          eq(paymentMethods.isActive, true),
+          eq(paymentMethods.purpose, purpose),
+        ));
       if (!m) throw new ApiError(400, 'Selected payment method is not available.');
-    }
+    };
+    if (body.paymentMethod) await requireMethod(body.paymentMethod, 'full');
+    if (body.downpaymentMethod) await requireMethod(body.downpaymentMethod, 'kahati_downpayment');
 
     // Re-price server-side; never trust client prices.
     const priced: Priced[] = [];
@@ -431,11 +460,18 @@ export const POST = handler(async (req: Request) => {
       // shared sequence, so the two boards can never issue the same number.
       const orderNo = await nextOrderNo(tx, buyType);
 
-      // A hatian pays only the packing fee now — the goods are settled once the
-      // hatian ends — so what is due today IS the fee, added on top of the
-      // products rather than taken out of them. Zero when the cycle's fee is
-      // already paid, and zero for every other mode, which pays in full.
-      const downpayment = buyType === 'kahati' ? totals.packingFee : 0;
+      // A hatian pays a DEPOSIT now — the goods are settled once the kit
+      // completes — so what is due today is whatever the configured policy says,
+      // added on top of the products rather than taken out of them. The order
+      // total is unaffected; the deposit is subtracted only from what is left to
+      // collect (lib/settlement.ts orderBalance).
+      //
+      // Zero for every other mode, which pays in full, and zero on a kahati
+      // commitment whose cycle fee is already covered under the packing-fee rule
+      // — the only rule the cycle can waive.
+      const downpayment = buyType === 'kahati'
+        ? kahatiDownpaymentDue(downpaymentPolicy, { subtotal: totals.subtotal, packingFee: totals.packingFee })
+        : 0;
 
       // Nothing was paid and no proof exists, so there is nothing for an admin
       // to verify — parking it in 'proof_review' would queue a review that can
@@ -447,7 +483,19 @@ export const POST = handler(async (req: Request) => {
         subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
         totalPhp: String(totals.total), downpaymentPhp: String(downpayment), totalUsd: String(totalUsd),
         shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
-        paymentMethod: body.paymentMethod ?? null,
+        // A hatian order records the account its DEPOSIT went to; every other
+        // mode records the one its full payment went to. One column, because a
+        // given order only ever has one payment outstanding at a time.
+        //
+        // The fallback to paymentMethod is for the packing-fee rule, where the
+        // fee IS paid through the ordinary methods. It deliberately does not
+        // apply once a real deposit is due: a client that sent only a
+        // full-payment label would otherwise stamp the deposit with the wrong
+        // account and send whoever verifies it to the wrong statement. Null says
+        // "not recorded", which is true, rather than something false.
+        paymentMethod: buyType === 'kahati'
+          ? (body.downpaymentMethod ?? (downpayment > 0 && !downpaymentWaivable ? null : body.paymentMethod ?? null))
+          : body.paymentMethod ?? null,
         // Same chosen shipping method on every split order the cart produces.
         courier: body.courier ?? DEFAULT_COURIER,
         // The customer's note goes on EVERY order the cart splits into. One note

@@ -92,12 +92,12 @@ export default function AdminCampaignsPage() {
         { label: 'Campaigns' },
       ]} />
 
-      <div className="flex items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="m-0 font-display text-[24px] font-bold">Campaigns</h1>
           <p className="mt-1 text-[13px] text-ink-muted">Group buys with a minimum order quantity. Approve, extend, or cancel — finished batches keep their history under each card.</p>
         </div>
-        <div className="flex flex-none items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-none">
           {running.length > 0 && (
             <button
               onClick={handleStartCycle}
@@ -122,7 +122,10 @@ export default function AdminCampaignsPage() {
           <div className="text-[13px] text-ink-muted">Create one to open a group buy batch.</div>
         </div>
       ) : (
-        <div className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-3">
+        // Breakpoints are one step up from the usual md/lg pair because the
+        // admin sidebar eats 14rem before the board gets any width: three
+        // columns at 1024px leave a card too narrow for two buttons abreast.
+        <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {groups.map((g) => (
             <SeriesGroup key={g.seriesId} group={g} busy={busy} actions={actions} />
           ))}

@@ -18,9 +18,18 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   const qr = form.get('qr');
   const newQrKey = qr instanceof File && qr.size > 0 ? await validateAndStoreImage(qr, BUCKETS.qr) : undefined;
 
+  // purpose and instructions are only written when the request actually carried
+  // them, which is the distinction parseMethodForm goes to the trouble of
+  // drawing: an absent field is "leave it alone", an empty one is "clear it".
+  // Collapsing an absent purpose to the default would DEMOTE an existing
+  // downpayment QR to a full-payment one on any PATCH that omitted the field —
+  // which both blocks hatian checkout and puts that QR in the list customers tap
+  // for full payments.
   const [row] = await db.update(paymentMethods).set({
     label: b.label, accountName: b.accountName, accountNumber: b.accountNumber,
     isActive: b.isActive ?? true, sortOrder: b.sortOrder ?? 0,
+    ...(b.purpose !== undefined ? { purpose: b.purpose } : {}),
+    ...(b.instructions !== undefined ? { instructions: b.instructions } : {}),
     ...(newQrKey !== undefined ? { qrKey: newQrKey } : {}),
   }).where(eq(paymentMethods.id, id)).returning();
   if (!row) throw new ApiError(404, 'Payment method not found.');

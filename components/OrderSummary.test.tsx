@@ -10,6 +10,9 @@ import { useCart, type CartItem } from '@/lib/store/cart';
 
 const paidThisCycle: { current: boolean } = { current: false };
 vi.mock('@/lib/queries', () => ({
+  // undefined -> useOrderTotals falls back to the default (packing-fee) policy,
+  // which is the behaviour these tests were written against.
+  useKahatiDownpaymentPolicy: () => ({ data: undefined, isSuccess: true }),
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300, moq: 300 } }),
   useCyclePackingFeePaid: () => ({ data: paidThisCycle.current }),
 }));

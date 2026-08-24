@@ -6,15 +6,24 @@ import { paymentMethodSchema } from '@/lib/admin-schemas';
 import { validateAndStoreImage } from '@/lib/uploads';
 import { serializePaymentMethod } from '@/lib/payment-methods';
 import { BUCKETS } from '@/lib/env';
+import { DEFAULT_PAYMENT_PURPOSE } from '@/lib/payment-purpose';
 
 // Parses the multipart text fields (QR file is handled separately).
 export function parseMethodForm(form: FormData) {
   const isActive = form.get('isActive');
   const sortOrder = form.get('sortOrder');
+  const purpose = form.get('purpose');
+  const instructions = form.get('instructions');
   return paymentMethodSchema.parse({
     label: form.get('label'),
     accountName: form.get('accountName'),
     accountNumber: form.get('accountNumber'),
+    // Absent means 'full', which is what every method was before the hatian
+    // downpayment QR existed — an older client that does not send the field
+    // must not be able to create a downpayment method by accident.
+    purpose: purpose == null || purpose === '' ? undefined : String(purpose),
+    // An empty string is a deliberate clear, distinct from an absent field.
+    instructions: instructions == null ? undefined : String(instructions).trim() || null,
     isActive: isActive == null ? undefined : isActive === 'true',
     sortOrder: sortOrder == null || sortOrder === '' ? undefined : Number(sortOrder),
   });
@@ -37,7 +46,8 @@ export const POST = handler(async (req: Request) => {
   const db = await getDb();
   const [row] = await db.insert(paymentMethods).values({
     label: b.label, accountName: b.accountName, accountNumber: b.accountNumber,
-    qrKey, isActive: b.isActive ?? true, sortOrder: b.sortOrder ?? 0,
+    qrKey, purpose: b.purpose ?? DEFAULT_PAYMENT_PURPOSE, instructions: b.instructions ?? null,
+    isActive: b.isActive ?? true, sortOrder: b.sortOrder ?? 0,
   }).returning();
   return ok(await serializePaymentMethod(row), 201);
 });

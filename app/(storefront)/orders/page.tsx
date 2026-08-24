@@ -7,6 +7,7 @@ import { OrderStatusTrail } from '@/components/OrderStatusTrail';
 import { useOrders, useSettlementPreview } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { php, shortDate } from '@/lib/format';
+import { collectedAmountLabel } from '@/lib/kahati-downpayment';
 import { STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
 import { useToast } from '@/lib/store/toast';
 import type { Order } from '@/lib/types';
@@ -74,7 +75,9 @@ function OrderCard({ order }: { order: Order }) {
             )}
             {downpayment > 0 && (
               <>
-                <div className="mt-0.5 flex justify-between font-bold text-brand-greendark"><span>Packing fee paid</span><span>{php(downpayment)}</span></div>
+                <div className="mt-0.5 flex justify-between font-bold text-brand-greendark">
+                  <span>{collectedAmountLabel(downpayment, Number(order.packingFeePhp ?? 0))}</span><span>{php(downpayment)}</span>
+                </div>
                 {balance > 0 && <div className="mt-0.5 flex justify-between"><span>Balance (due after the kahati ends)</span><span>{php(balance)}</span></div>}
               </>
             )}

@@ -4,17 +4,23 @@ import { SectionHeader } from '@/components/headers';
 import { BoardControls } from '@/components/BoardControls';
 import { GroupBuyCard } from '@/components/GroupBuyCard';
 import { JoinSheet } from '@/components/JoinSheet';
-import { useGroupBuys } from '@/lib/queries';
+import { useGroupBuys, useKahatiDownpaymentPolicy } from '@/lib/queries';
+import {
+  DEFAULT_KAHATI_DOWNPAYMENT_POLICY, describeKahatiDownpayment, refundNoticeFor,
+  type KahatiDownpaymentPolicy,
+} from '@/lib/kahati-downpayment';
 import { KAHATI_MIN_VIABLE_VIALS } from '@/lib/kahati';
 import { filterAndSortBoard, type BoardSort } from '@/lib/board-filter';
 import type { GroupBuy } from '@/lib/types';
 
-const STEPS = [
+// The refund half of step 3 comes from the configured policy: the board must
+// not keep promising a refund an admin has turned into a forfeited deposit.
+const stepsFor = (policy: KahatiDownpaymentPolicy): string[] => [
   'Commit at least 1 vial — each hatian fills one kit (10 vials).',
-  'Pay the downpayment & upload your proof to secure your order.',
-  `A hatian pushes through once it reaches ${KAHATI_MIN_VIABLE_VIALS} vials — "Good to Go". Under ${KAHATI_MIN_VIABLE_VIALS} by the deadline and it is cancelled, with your downpayment refunded.`,
+  `Pay the downpayment (${describeKahatiDownpayment(policy)}) & upload your proof to secure your order. Huwag munang bayaran ang buong order.`,
+  `A hatian pushes through once it reaches ${KAHATI_MIN_VIABLE_VIALS} vials — "Good to Go". Under ${KAHATI_MIN_VIABLE_VIALS} by the deadline and it is cancelled. ${refundNoticeFor(policy)}`,
   'Hit 10 vials and the hatian locks early — a fresh one opens automatically.',
-  'Once the hatian is complete, settle the balance — then we split, repack & ship direct to you. ₱150 packing fee, local shipping included.',
+  'Once the hatian is complete, settle the balance — your downpayment is deducted from the total. Then we split, repack & ship direct to you.',
 ];
 
 // A counter's name is seeded as "<product> <spec>" (lib/kahati-seed.ts), so the
@@ -24,6 +30,8 @@ const searchFields = (g: GroupBuy): (string | null | undefined)[] => [g.name, g.
 
 export default function KahatiPage() {
   const { data: gbs = [] } = useGroupBuys();
+  const { data: policy } = useKahatiDownpaymentPolicy();
+  const steps = stepsFor(policy ?? DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
   const [joining, setJoining] = useState<GroupBuy | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<BoardSort>('default');
@@ -46,7 +54,7 @@ export default function KahatiPage() {
           <div className="rounded-[14px] bg-white px-4 py-3.5 shadow-card">
             <div className="mb-2.5 text-[13px] font-bold text-ink">How it works</div>
             <div className="flex flex-col gap-2 text-[12.5px] leading-snug text-ink-body">
-              {STEPS.map((t, i) => (
+              {steps.map((t, i) => (
                 <div key={i} className="flex gap-2.5">
                   <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[#e8f5db] text-[11px] font-bold text-brand-greendark">{i + 1}</span>
                   {t}

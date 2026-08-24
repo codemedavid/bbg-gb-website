@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
 
@@ -33,10 +33,12 @@ describe('AdminPaymentMethodsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /new method/i }));
     await screen.findByText('New payment method');
 
-    const textInputs = Array.from(document.querySelectorAll('input')).filter((i) => i.type !== 'file' && i.type !== 'checkbox' && i.type !== 'number');
-    fireEvent.change(textInputs[0], { target: { value: 'GCash' } });        // Label
-    fireEvent.change(textInputs[1], { target: { value: 'BBG Peptides' } }); // Account name
-    fireEvent.change(textInputs[2], { target: { value: '09171234567' } });  // Account number
+    // By caption rather than by position: the form grew a purpose picker whose
+    // radios sit ahead of these fields, and an index-based lookup silently
+    // started filling the wrong control.
+    fireEvent.change(screen.getByLabelText(/^Label/), { target: { value: 'GCash' } });
+    fireEvent.change(screen.getByLabelText(/^Account name/), { target: { value: 'BBG Peptides' } });
+    fireEvent.change(screen.getByLabelText(/^Account \/ number/), { target: { value: '09171234567' } });
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File([Buffer.from('qr')], 'qr.png', { type: 'image/png' });
@@ -45,7 +47,10 @@ describe('AdminPaymentMethodsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/uploads are not configured/i);
+    // Scoped to the form: the page also carries the downpayment-policy card,
+    // which raises its own alert when its settings fetch fails.
+    const dialog = screen.getByRole('dialog');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/uploads are not configured/i);
     expect(saveMutate).toHaveBeenCalledTimes(1);
   });
 });

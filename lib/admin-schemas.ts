@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { KAHATI_MAX_VIALS } from './pricing';
 import { scheduleWindowErrorFromIso } from './campaign-schedule';
+import { PAYMENT_PURPOSES } from './payment-purpose';
 
 export const productSchema = z.object({
   code: z.string().max(40).optional(),
@@ -103,6 +104,12 @@ export const paymentMethodSchema = z.object({
   label: z.string().min(2).max(40),
   accountName: z.string().min(2).max(120),
   accountNumber: z.string().min(2).max(60),
+  // What the method collects. Absent means 'full' — the only kind that existed
+  // before the hatian downpayment QR, and the safe reading of an older client
+  // that does not send the field.
+  purpose: z.enum(PAYMENT_PURPOSES).optional(),
+  // Shown under the QR at checkout. Empty string clears it.
+  instructions: z.string().max(500).nullable().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
 });

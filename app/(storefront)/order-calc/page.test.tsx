@@ -21,6 +21,9 @@ const products = [
 ];
 
 vi.mock('@/lib/queries', () => ({
+  // undefined -> useOrderTotals falls back to the default (packing-fee) policy,
+  // which is the behaviour these tests were written against.
+  useKahatiDownpaymentPolicy: () => ({ data: undefined, isSuccess: true }),
   useProducts: () => ({ data: products, isLoading: false }),
   usePackingFees: () => ({ data: { solo: 200, kahati: 150, group_buy: 300, moq: 200 } }),
   useMoqPageEnabled: () => ({ data: false }),

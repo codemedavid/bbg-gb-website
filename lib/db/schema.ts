@@ -305,6 +305,16 @@ export const paymentMethods = pgTable('payment_methods', {
   accountName: varchar('account_name', { length: 120 }).notNull(),
   accountNumber: varchar('account_number', { length: 60 }).notNull(),
   qrKey: text('qr_key'),                                       // storage key of QR image
+  // What this method collects. 'full' is every method that existed before the
+  // hatian downpayment did, and the default for every new one; 'kahati_downpayment'
+  // marks the separate QR a customer pays a deposit to while the kit is still
+  // filling. Kept as data rather than as a rule the checkout remembers: the
+  // downpayment screen selects on this column, so a full-payment QR cannot
+  // appear on it by omission. See lib/payment-purpose.ts.
+  purpose: varchar('purpose', { length: 30 }).notNull().default('full'),
+  // Free-text instructions shown under the QR ("send the exact amount", a
+  // reference format, a cut-off time). Nullable: most methods need none.
+  instructions: text('instructions'),
   isActive: boolean('is_active').notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

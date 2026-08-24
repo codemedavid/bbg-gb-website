@@ -22,7 +22,11 @@ const STATUS_STYLE: Record<MoqCampaign['status'], string> = {
   cancelled: 'bg-line text-ink-body',
 };
 
-const cardAction = 'flex-1 rounded-[9px] border border-line py-1.5 text-[13px] font-semibold transition-colors hover:border-brand-blue disabled:opacity-50 disabled:hover:border-line';
+// grow + a real minimum, never `flex-1`: a zero basis can shrink past its
+// label forever, so six actions stayed jammed on one row and shredded
+// "End & start next" into a column of letters inside a three-up card. With a
+// floor to overflow against, the row wraps instead of squeezing.
+const cardAction = 'min-w-[7.5rem] grow whitespace-nowrap rounded-[9px] border border-line px-2 py-1.5 text-[13px] font-semibold transition-colors hover:border-brand-blue disabled:opacity-50 disabled:hover:border-line';
 
 /** What the board can do to a batch. The page owns every one of them. */
 export type CampaignActions = {
@@ -52,7 +56,7 @@ export function CampaignCard({ c, busy, actions, muted = false }: Props) {
       className={`rounded-[16px] p-4 ${muted ? 'bg-[#fafaf8] shadow-none ring-1 ring-line' : 'bg-white shadow-card'}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="font-bold text-ink">{c.name} <span className="text-ink-muted">· Batch #{c.batchNo}</span></div>
+        <div className="min-w-0 break-words font-bold text-ink">{c.name} <span className="text-ink-muted">· Batch #{c.batchNo}</span></div>
         <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold ${STATUS_STYLE[c.status]}`}>{c.status}</span>
       </div>
       <div className="mt-1 text-[12px] text-ink-muted">{php(c.pricePerKitPhp)}/kit · {OUTCOME_LABEL[c.outcome]}</div>
@@ -88,7 +92,7 @@ export function CampaignCard({ c, busy, actions, muted = false }: Props) {
             aria-label={`Cancel ${c.name}`} className={`${cardAction} text-warn-fg`} disabled={busy}>Cancel</button>
         )}
         <button onClick={() => actions.remove(c)} aria-label={`Delete ${c.name}`}
-          className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b] transition-colors hover:border-[#b23b3b] disabled:opacity-50" disabled={busy}>✕</button>
+          className="shrink-0 rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-[#b23b3b] transition-colors hover:border-[#b23b3b] disabled:opacity-50" disabled={busy}>✕</button>
       </div>
     </article>
   );

@@ -1,12 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { GroupBuy } from '@/lib/types';
+import type { KahatiDownpaymentPolicy } from '@/lib/kahati-downpayment';
+import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from '@/lib/kahati-downpayment';
 import { useCart, maxQtyFor } from '@/lib/store/cart';
 import { JoinSheet } from './JoinSheet';
 
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
+}));
+
+// The refund terms are configurable (lib/kahati-downpayment.ts), and this sheet
+// is where the customer actually commits the money they are being told about.
+const policy: { current: KahatiDownpaymentPolicy | undefined } = { current: undefined };
+vi.mock('@/lib/queries', () => ({
+  useKahatiDownpaymentPolicy: () => ({ data: policy.current, isSuccess: policy.current !== undefined }),
 }));
 
 const gb: GroupBuy = {
@@ -16,6 +25,7 @@ const gb: GroupBuy = {
 
 beforeEach(() => {
   push.mockReset();
+  policy.current = undefined;
   useCart.getState().clear();
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:preview');
 });
@@ -110,5 +120,48 @@ describe('JoinSheet (Kahati commit)', () => {
 
     expect(useCart.getState().items).toHaveLength(0);
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+// An admin who turns the refund off gets a storefront that contradicts itself
+// unless every surface reads the same setting: the checkout card and the
+// cancellation email already do, and this sheet is the one the customer reads
+// at the moment they commit the money.
+describe('the refund terms on the commit sheet', () => {
+  const short = () => ({ ...gb, claimedSlots: 2, remaining: 8 } as GroupBuy);
+
+  it('promises the refund while the policy is refundable', () => {
+    policy.current = { ...DEFAULT_KAHATI_DOWNPAYMENT_POLICY, refundable: true };
+
+    render(<JoinSheet g={short()} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/downpayment is refunded|refunded in full/i)).toBeInTheDocument();
+  });
+
+  it('does not promise a refund the admin has switched off', () => {
+    policy.current = { ...DEFAULT_KAHATI_DOWNPAYMENT_POLICY, refundable: false };
+
+    render(<JoinSheet g={short()} onClose={vi.fn()} />);
+
+    expect(screen.queryByText(/downpayment is refunded/i)).toBeNull();
+    expect(screen.getByText(/non-refundable/i)).toBeInTheDocument();
+  });
+
+  it('states the admin own wording where they wrote some', () => {
+    // Embedded in the shortfall sentence rather than standing alone: this
+    // surface explains the cancellation first, then what follows from it.
+    policy.current = { ...DEFAULT_KAHATI_DOWNPAYMENT_POLICY, policyNote: 'Deposits roll over to your next hatian.' };
+
+    render(<JoinSheet g={short()} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/Deposits roll over to your next hatian\./)).toBeInTheDocument();
+  });
+
+  it('keeps the historical refund promise while the policy has not loaded', () => {
+    // The default policy is refundable, which is what this sheet has always
+    // said. An unanswered request must not silently withdraw the promise.
+    render(<JoinSheet g={short()} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/refunded/i)).toBeInTheDocument();
   });
 });

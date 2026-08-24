@@ -83,7 +83,13 @@ export function claimPgliteLock(pglitePath: string): void {
   // Every test file gets its own memory:// instance; locking those against each
   // other would deadlock the suite.
   if (!pglitePath || pglitePath.startsWith('memory:')) return;
-  if (!existsSync(pglitePath)) return; // First run — PGlite creates the directory itself.
+  // First run: the directory does not exist yet, and it CANNOT be created here.
+  // PGlite refuses to initialise into a directory that already holds a file, so
+  // pre-creating one to drop a lock into makes every fresh worktree fail to
+  // start. The claim is completed by recordPgliteOwner once PGlite has made the
+  // directory itself — without which the very first server would leave no lock
+  // behind and the second would be waved straight through.
+  if (!existsSync(pglitePath)) return;
 
   const lockPath = join(pglitePath, LOCK_FILE);
   // Read once: a second read could see a different owner and report liveness
@@ -97,4 +103,34 @@ export function claimPgliteLock(pglitePath: string): void {
   if (problem) throw Object.assign(new Error(problem), { code: PGLITE_LOCKED });
 
   writeFileSync(lockPath, String(process.pid));
+}
+
+/**
+ * Writes this process into the lock once PGlite has created the directory.
+ *
+ * The other half of claimPgliteLock, and the half that covers the FIRST run.
+ * claimPgliteLock cannot write a lock into a directory that does not exist yet,
+ * so a fresh worktree's first server used to record no owner at all — and the
+ * second server, reading no owner, was allowed straight in to diverge silently.
+ * That is the exact failure the guard was written for, so it has to be closed
+ * from the far side of the open.
+ *
+ * Safe to call unconditionally: a no-op for in-memory databases and for a
+ * directory PGlite somehow did not create, and idempotent for a process
+ * re-recording itself. A failed write is swallowed — a read-only or unusual
+ * filesystem must degrade to the old silent-divergence risk rather than refuse
+ * to start the server at all.
+ *
+ * Still advisory. Two servers racing from a genuinely empty directory can both
+ * pass claimPgliteLock before either records anything; the window is the length
+ * of one PGlite init rather than the whole life of the worktree.
+ */
+export function recordPgliteOwner(pglitePath: string): void {
+  if (!pglitePath || pglitePath.startsWith('memory:')) return;
+  if (!existsSync(pglitePath)) return;
+  try {
+    writeFileSync(join(pglitePath, LOCK_FILE), String(process.pid));
+  } catch {
+    // See above: never take the server down over the lock file itself.
+  }
 }

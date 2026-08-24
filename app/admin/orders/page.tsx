@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useAdminOrders, useAdminOrder, useAdminProducts, useMutate } from '@/lib/admin-api';
 import { Modal, field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { php, shortDate } from '@/lib/format';
-import { reconcileProofs } from '@/lib/proof-reconciliation';
+import { reconcileOrderProofs } from '@/lib/proof-reconciliation';
+import { collectedAmountLabel } from '@/lib/kahati-downpayment';
 import { STATUS_FLOW, STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
 import { PACKERS, COURIERS } from '@/lib/report/constants';
 import { WeeklyReportButton } from './WeeklyReportButton';
@@ -222,7 +223,9 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
             const balance = Number(order.totalPhp) - downpayment;
             return (
               <div className="mt-1 rounded-[10px] bg-[#f2f8ec] px-3 py-2 text-[13px]">
-                <div className="flex justify-between font-bold text-brand-greendark"><span>Packing fee paid</span><span>{php(downpayment)}</span></div>
+                <div className="flex justify-between font-bold text-brand-greendark">
+                  <span>{collectedAmountLabel(downpayment, Number(order.packingFeePhp ?? 0))}</span><span>{php(downpayment)}</span>
+                </div>
                 {balance > 0 && <div className="flex justify-between text-ink-body"><span>Balance to collect</span><span>{php(balance)}</span></div>}
               </div>
             );
@@ -247,7 +250,7 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
                     </li>
                   ))}
                 </ul>
-                <ProofReconciliation proofs={gallery} totalPhp={order.totalPhp} />
+                <ProofReconciliation proofs={gallery} order={order} />
               </>
             )
             // A kahati order whose downpayment was waived collected nothing, so
@@ -357,11 +360,14 @@ function ProofCard({ orderId, proof, index }: {
 // should not require the admin to do the sum in their head, and "unrecorded" is
 // kept distinct from "short" — every fresh order has no amounts against it, and
 // showing those as underpaid would make the line worth ignoring.
-function ProofReconciliation({ proofs, totalPhp }: {
+function ProofReconciliation({ proofs, order }: {
   proofs: { amountPhp: string | null }[];
-  totalPhp: string;
+  order: { buyType?: string | null; totalPhp: string; downpaymentPhp?: string | null; settlementId?: string | null };
 }) {
-  const r = reconcileProofs(proofs, totalPhp);
+  // Checked against what is due NOW, which on a hatian commitment is the
+  // downpayment rather than the order total — see reconcileOrderProofs, which
+  // also keeps a transfer shared with a split sibling from reading as a refund.
+  const { target, isDeposit: isDownpayment, ...r } = reconcileOrderProofs(proofs, order);
   if (r.state === 'unrecorded') {
     return (
       <p className="mt-2 text-[12px] text-ink-muted">
@@ -379,7 +385,7 @@ function ProofReconciliation({ proofs, totalPhp }: {
     : `${php(r.outstanding)} short`;
   return (
     <p className={`mt-2 text-[12.5px] font-semibold ${tone}`}>
-      {php(r.recorded)} of {php(totalPhp)} recorded — {verdict}
+      {php(r.recorded)} of {php(target)} {isDownpayment ? 'downpayment ' : ''}recorded — {verdict}
       {r.unrecordedCount > 0 && (
         <span className="block font-normal text-ink-muted">
           {r.unrecordedCount} proof{r.unrecordedCount > 1 ? 's' : ''} still without an amount.

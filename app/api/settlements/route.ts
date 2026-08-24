@@ -98,8 +98,15 @@ export const POST = handler(async (req: Request) => {
   const settle = () => db.transaction(async (tx) => {
     // Reject a payment method the customer could not actually have chosen.
     if (body.paymentMethod) {
+      // Full-payment methods only: a settlement collects the BALANCE of
+      // completed kits, and the hatian downpayment QR is a different account for
+      // a different, already-paid obligation.
       const [m] = await tx.select({ id: paymentMethods.id }).from(paymentMethods)
-        .where(and(eq(paymentMethods.label, body.paymentMethod), eq(paymentMethods.isActive, true)));
+        .where(and(
+          eq(paymentMethods.label, body.paymentMethod),
+          eq(paymentMethods.isActive, true),
+          eq(paymentMethods.purpose, 'full'),
+        ));
       if (!m) throw new ApiError(400, 'Selected payment method is not available.');
     }
 

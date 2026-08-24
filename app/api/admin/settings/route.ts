@@ -2,11 +2,12 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import {
-  getCurrentCycle, getMoqPageEnabled, getPackingFees,
-  getSchedulePausedUntil, getScheduleRecurrence, setMoqPageEnabled,
+  getCurrentCycle, getKahatiDownpaymentPolicy, getMoqPageEnabled, getPackingFees,
+  getSchedulePausedUntil, getScheduleRecurrence, setKahatiDownpaymentPolicy, setMoqPageEnabled,
   setPackingFees, setSchedulePausedUntil, setScheduleRecurrence,
 } from '@/lib/settings';
 import { nextCycle } from '@/lib/schedule-recurrence';
+import { KAHATI_DOWNPAYMENT_MODES } from '@/lib/kahati-downpayment';
 
 const feeSchema = z.number().nonnegative().finite();
 
@@ -37,6 +38,31 @@ const instantSchema = z.string()
   .refine((v) => Number.isFinite(Date.parse(v)), 'must be a valid date and time')
   .nullable();
 
+// The hatian downpayment. Validated here so a bad figure is a 400 the form can
+// show; setKahatiDownpaymentPolicy re-checks the cross-field rules (a fixed
+// policy needs a non-zero amount, a percent one a figure inside 0-100) that a
+// per-field schema cannot express.
+const downpaymentSchema = z.object({
+  mode: z.enum(KAHATI_DOWNPAYMENT_MODES),
+  amountPhp: z.number().nonnegative().finite(),
+  percent: z.number().min(0).max(100).finite(),
+  refundable: z.boolean(),
+  policyNote: z.string().max(500).nullable(),
+})
+  // The cross-field rules a per-field schema cannot express, restated here so
+  // they are refused as a ZodError -> 400 the form renders. Left to
+  // setKahatiDownpaymentPolicy alone they surface as a plain Error, which
+  // handler() answers with a generic 500 — an admin who typed 0 would be told
+  // "Something went wrong" instead of what to type instead.
+  .refine((p) => p.mode !== 'fixed' || p.amountPhp > 0, {
+    message: 'A fixed downpayment must be more than zero — pick the packing-fee rule to collect only the fee.',
+    path: ['amountPhp'],
+  })
+  .refine((p) => p.mode !== 'percent' || (p.percent > 0 && p.percent <= 100), {
+    message: 'Downpayment percent must be more than zero and at most 100.',
+    path: ['percent'],
+  });
+
 const patchSchema = z.object({
   packingFees: z.object({
     solo: feeSchema.optional(),
@@ -47,6 +73,7 @@ const patchSchema = z.object({
   moqPageEnabled: z.boolean().optional(),
   scheduleRecurrence: recurrenceSchema.optional(),
   schedulePausedUntil: instantSchema.optional(),
+  kahatiDownpayment: downpaymentSchema.optional(),
 });
 
 async function currentSettings() {
@@ -54,6 +81,7 @@ async function currentSettings() {
   const now = new Date();
   return {
     packingFees: await getPackingFees(),
+    kahatiDownpayment: await getKahatiDownpaymentPolicy(),
     moqPageEnabled: await getMoqPageEnabled(),
     scheduleRecurrence: recurrence,
     schedulePausedUntil: await getSchedulePausedUntil(),
@@ -73,9 +101,10 @@ export const GET = handler(async () => {
 export const PATCH = handler(async (req: Request) => {
   await requireAdmin();
   const body = await req.json();
-  const { packingFees, moqPageEnabled, scheduleRecurrence } =
+  const { packingFees, moqPageEnabled, scheduleRecurrence, kahatiDownpayment } =
     patchSchema.parse(body);
   if (packingFees) await setPackingFees(packingFees);
+  if (kahatiDownpayment) await setKahatiDownpaymentPolicy(kahatiDownpayment);
   if (moqPageEnabled != null) await setMoqPageEnabled(moqPageEnabled);
   // An all-null recurrence is a real instruction (clear the schedule), so this
   // checks for the key's presence rather than its truthiness.
