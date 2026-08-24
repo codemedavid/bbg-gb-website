@@ -75,6 +75,16 @@ Journey 4 needed no new test: `app/(storefront)/settle/page.tsx` already filters
 `m.purpose !== 'kahati_downpayment'` before rendering the picker, and
 `app/api/admin/payment-methods/purpose.test.ts` covers that separation end to end.
 
+**Whole suite after the refactor** — `npx vitest run`
+
+```
+Test Files  226 passed (226)
+     Tests  2372 passed (2372)
+```
+
+Run because moving `ApiError` touches every module that throws one; nothing
+regressed.
+
 ## Coverage and known gaps
 
 - `scripts/**` is excluded from coverage by `vitest.config.ts`; the runner is a
