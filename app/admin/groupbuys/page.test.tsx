@@ -46,24 +46,32 @@ const commitments: { current: HatianCommitment[] } = {
   ],
 };
 
+// The board the page renders. Mutable so a test can ask what the page does with
+// a board that has nothing running on it.
+const OPEN_HATIAN = {
+  id: 'gb1', name: 'Bioglutide', pricePerKitPhp: '10400', totalSlots: 10,
+  claimedSlots: 5, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder',
+};
+const board: { current: Record<string, unknown>[] } = { current: [OPEN_HATIAN] };
+const startCycleMutate = vi.fn();
+
 vi.mock('@/lib/admin-api', () => ({
-  useAdminGroupBuys: () => ({
-    data: [{
-      id: 'gb1', name: 'Bioglutide', pricePerKitPhp: '10400', totalSlots: 10,
-      claimedSlots: 5, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder',
-    }],
-    isLoading: false,
-  }),
+  useAdminGroupBuys: () => ({ data: board.current, isLoading: false }),
   useAdminGroupBuyCommitments: () => ({ data: commitments.current, isLoading: false }),
   useMutate: () => ({
     saveGroupBuy: { mutateAsync: saveMutate, mutate: vi.fn(), isPending: false },
     deleteGroupBuy: { mutate: vi.fn() },
+    startKahatiCycle: { mutate: startCycleMutate, isPending: false },
   }),
 }));
 
 const Page = (await import('./page')).default;
 
-beforeEach(() => { saveMutate.mockReset(); });
+beforeEach(() => {
+  saveMutate.mockReset();
+  startCycleMutate.mockReset();
+  board.current = [OPEN_HATIAN];
+});
 
 describe('AdminGroupBuysPage', () => {
   it('shows the failure reason in the form when a save is rejected', async () => {
@@ -323,5 +331,54 @@ describe('hatian participants panel', () => {
     expect(screen.getByTestId('summary-confirmed')).toHaveTextContent('1');
     expect(screen.getByTestId('summary-pending')).toHaveTextContent('1');
     expect(screen.getByTestId('summary-participants')).toHaveTextContent('2');
+  });
+});
+
+// Ending a whole trading cycle from the board.
+//
+// The Group Buy campaigns board has had this control for a while; the hatian
+// board had not, so an admin closing out a cycle pressed Close on every card in
+// turn — and Close opens no successor, so each counter left the board instead of
+// reopening empty for the next cycle.
+describe('start new cycle', () => {
+  // Confirmed, not immediate: this ends every counter on the board at once, and
+  // a stray click on the header must not be able to do that.
+  it('ends the cycle once the admin confirms', async () => {
+    render(<Page />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+    await screen.findByText(/end all/i);
+    fireEvent.click(screen.getByRole('button', { name: /end all/i }));
+
+    await vi.waitFor(() => expect(startCycleMutate).toHaveBeenCalledTimes(1));
+  });
+
+  it('leaves the board alone when the admin backs out', async () => {
+    render(<Page />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /keep the board/i }));
+
+    await vi.waitFor(() => expect(screen.queryByText(/end all/i)).not.toBeInTheDocument());
+    expect(startCycleMutate).not.toHaveBeenCalled();
+  });
+
+  // Nothing running means nothing to end, so the control stays off the board
+  // rather than sitting there as a no-op.
+  it('hides the control when no counter is open', () => {
+    board.current = [{ ...OPEN_HATIAN, status: 'closed' }];
+
+    render(<Page />);
+
+    expect(screen.queryByRole('button', { name: /start new cycle/i })).not.toBeInTheDocument();
+  });
+
+  it('says how many counters are about to end', async () => {
+    board.current = [OPEN_HATIAN, { ...OPEN_HATIAN, id: 'gb2', name: 'KLOW 80mg' }];
+
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+
+    expect(await screen.findByText(/2 counters/i)).toBeInTheDocument();
   });
 });
