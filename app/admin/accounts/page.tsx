@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useAdminAccounts } from '@/lib/admin-api';
+import { searchInput } from '@/components/admin-ui';
 import { shortDate } from '@/lib/format';
 import type { AccountRow } from '@/lib/accounts';
 
@@ -72,7 +73,7 @@ export default function AdminAccountsPage() {
           placeholder="Search name or email…"
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
-          className="ml-auto w-full rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] sm:w-64"
+          className={`ml-auto ${searchInput}`}
         />
       </div>
 

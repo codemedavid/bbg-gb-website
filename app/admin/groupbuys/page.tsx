@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useAdminGroupBuys, useAdminGroupBuyCommitments, useMutate } from '@/lib/admin-api';
-import { Modal, field, Labeled, btnPrimary, btnGhost, btnBoardAction } from '@/components/admin-ui';
+import { Modal, field, Labeled, btnPrimary, btnGhost, btnBoardAction, searchInput } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS, kahatiProgressPercent, kahatiClaimedDisplay } from '@/lib/kahati';
@@ -423,7 +423,7 @@ export default function AdminGroupBuysPage() {
             placeholder="Search by name…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] sm:w-72"
+            className={searchInput}
           />
           {/* Said out loud while filtered: the board is the admin's count of how
               many counters exist, and a narrowed view silently contradicts it. */}

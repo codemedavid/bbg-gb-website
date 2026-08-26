@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useAdminProducts, useAdminCategories, useMutate } from '@/lib/admin-api';
-import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { Modal, field, Labeled, btnPrimary, btnGhost, searchInput } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS } from '@/lib/pricing';
@@ -261,7 +261,7 @@ export default function AdminProductsPage() {
           placeholder="Search by name or code…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] sm:w-72"
+          className={searchInput}
         />
       )}
 

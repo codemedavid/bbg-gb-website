@@ -23,6 +23,10 @@ export const field = 'w-full rounded-[9px] border-[1.5px] border-line px-3 py-2 
 export const label = 'mb-1 block text-[12px] font-semibold text-ink-body';
 export const btnPrimary = 'rounded-[10px] bg-brand-green px-4 py-2.5 text-[14px] font-bold text-white active:scale-[.98] disabled:opacity-60';
 export const btnGhost = 'rounded-[10px] border border-line px-4 py-2.5 text-[14px] font-semibold text-ink-body hover:bg-surface-mist';
+// The admin search box. One token so the boxes on the products, hatian and
+// accounts screens stay the same control rather than three lookalikes.
+export const searchInput = 'w-full rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] sm:w-72';
+
 // The board-level action that sits beside the primary button in a page header —
 // "Start new cycle" on both the hatian and the campaigns board. Outlined rather
 // than filled: it is consequential, but it is not the button the header is for.
