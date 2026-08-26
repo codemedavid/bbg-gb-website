@@ -10,9 +10,9 @@ products also".
 |---|---|
 | `cb5bbd3` | RED — hatian board search |
 | `6727c3c` | GREEN — hatian board search |
-| (RED products) | RED — products catalog search |
-| (GREEN products) | GREEN — products catalog search |
-| (refactor) | shared `searchInput` token across all three admin search boxes |
+| `84309ad` | RED — products catalog search |
+| `f9f91cc` | GREEN — products catalog search |
+| `42c5a0d` | refactor — shared `searchInput` token across all three admin search boxes |
 
 Context: the hatian board is the page the sidebar labels **Hatian** and the
 heading calls **Group Buys** (`/admin/groupbuys`) — the kahati board. It gained
