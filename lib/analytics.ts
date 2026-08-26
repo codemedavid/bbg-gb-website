@@ -1,27 +1,36 @@
-// Admin dashboard analytics: weekly/monthly order totals, weekly summary, fast-moving items.
-import { and, desc, eq, gte, isNull, ne, or, sql } from 'drizzle-orm';
+// Admin dashboard analytics: order totals, packing fees, the day-by-day summary
+// and fast-moving items — over the standing week/month/all-time periods, or over
+// a calendar range the admin picked.
+import { and, desc, eq, gte, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import { getDb, orders, orderItems, products, settlements } from './db';
+import { dateRangeBounds } from './report/week';
+import type { StatsRange } from './analytics-range';
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400_000);
 
-export async function orderTotals() {
+/** Half-open UTC instants, as every window in here is expressed. */
+type Window = { start: Date; end: Date };
+
+const notCancelled = ne(orders.status, 'cancelled');
+const placedWithin = (w: Window) => and(gte(orders.createdAt, w.start), lt(orders.createdAt, w.end));
+
+const ORDER_AGGREGATE = {
+  count: sql<number>`count(*)::int`,
+  revenue: sql<number>`coalesce(sum(${orders.totalPhp}), 0)::float`,
+};
+
+async function ordersWhere(where: SQL | undefined): Promise<{ count: number; revenue: number }> {
   const db = await getDb();
-  const notCancelled = ne(orders.status, 'cancelled');
-  const [week] = await db.select({
-    count: sql<number>`count(*)::int`,
-    revenue: sql<number>`coalesce(sum(${orders.totalPhp}), 0)::float`,
-  }).from(orders).where(and(gte(orders.createdAt, daysAgo(7)), notCancelled));
+  const [row] = await db.select(ORDER_AGGREGATE).from(orders).where(where);
+  return row;
+}
 
-  const [month] = await db.select({
-    count: sql<number>`count(*)::int`,
-    revenue: sql<number>`coalesce(sum(${orders.totalPhp}), 0)::float`,
-  }).from(orders).where(and(gte(orders.createdAt, daysAgo(30)), notCancelled));
-
-  const [all] = await db.select({
-    count: sql<number>`count(*)::int`,
-    revenue: sql<number>`coalesce(sum(${orders.totalPhp}), 0)::float`,
-  }).from(orders).where(notCancelled);
-
+export async function orderTotals() {
+  const [week, month, all] = await Promise.all([
+    ordersWhere(and(gte(orders.createdAt, daysAgo(7)), notCancelled)),
+    ordersWhere(and(gte(orders.createdAt, daysAgo(30)), notCancelled)),
+    ordersWhere(notCancelled),
+  ]);
   return { week, month, all };
 }
 
@@ -31,6 +40,12 @@ type FeeTotals = { week: number; month: number; all: number };
 // charge on orders; deferred Hatian checkouts keep one charge on settlements.
 // An order linked to an active settlement must not contribute its legacy fee as
 // well, otherwise the dashboard would count the same parcel twice.
+const chargeableOrderFee = and(
+  notCancelled,
+  or(isNull(orders.settlementId), eq(settlements.status, 'cancelled')),
+);
+const chargeableSettlementFee = ne(settlements.status, 'cancelled');
+
 // The boundaries are bound as ISO strings with an explicit cast, never as Date
 // objects. A Date handed to drizzle's comparison helpers (gte, lt) is mapped
 // through the column it is compared against; one interpolated into a raw `sql`
@@ -54,14 +69,11 @@ export async function packingFeeTotals(): Promise<FeeTotals> {
   const [orderFees] = await db.select(feeColumns(orders.createdAt, orders.packingFeePhp, weekStart, monthStart))
     .from(orders)
     .leftJoin(settlements, eq(orders.settlementId, settlements.id))
-    .where(and(
-      ne(orders.status, 'cancelled'),
-      or(isNull(orders.settlementId), eq(settlements.status, 'cancelled')),
-    ));
+    .where(chargeableOrderFee);
 
   const [settlementFees] = await db.select(feeColumns(settlements.createdAt, settlements.packingFeePhp, weekStart, monthStart))
     .from(settlements)
-    .where(ne(settlements.status, 'cancelled'));
+    .where(chargeableSettlementFee);
 
   return {
     week: orderFees.week + settlementFees.week,
@@ -70,23 +82,50 @@ export async function packingFeeTotals(): Promise<FeeTotals> {
   };
 }
 
-// Per-day order count + revenue for the last 7 days (for the weekly summary chart).
-export async function weeklySummary() {
+/** The same two fee homes, narrowed to one window instead of the standing periods. */
+export async function packingFeesIn(w: Window): Promise<number> {
   const db = await getDb();
-  const rows = await db.select({
+  const sum = { total: sql<number>`coalesce(sum(${orders.packingFeePhp}), 0)::float` };
+
+  const [orderFees] = await db.select(sum)
+    .from(orders)
+    .leftJoin(settlements, eq(orders.settlementId, settlements.id))
+    .where(and(chargeableOrderFee, placedWithin(w)));
+
+  const [settlementFees] = await db
+    .select({ total: sql<number>`coalesce(sum(${settlements.packingFeePhp}), 0)::float` })
+    .from(settlements)
+    .where(and(
+      chargeableSettlementFee,
+      gte(settlements.createdAt, w.start),
+      lt(settlements.createdAt, w.end),
+    ));
+
+  return orderFees.total + settlementFees.total;
+}
+
+// Per-day order count + revenue, for the summary chart. Defaults to the last 7
+// days, which is what the unfiltered dashboard shows.
+export async function dailySummary(w?: Window) {
+  const db = await getDb();
+  const period = w ? placedWithin(w) : gte(orders.createdAt, daysAgo(7));
+  return db.select({
     day: sql<string>`to_char(date_trunc('day', ${orders.createdAt}), 'YYYY-MM-DD')`,
     count: sql<number>`count(*)::int`,
     revenue: sql<number>`coalesce(sum(${orders.totalPhp}), 0)::float`,
   }).from(orders)
-    .where(and(gte(orders.createdAt, daysAgo(7)), ne(orders.status, 'cancelled')))
+    .where(and(period, notCancelled))
     .groupBy(sql`date_trunc('day', ${orders.createdAt})`)
     .orderBy(sql`date_trunc('day', ${orders.createdAt})`);
-  return rows;
 }
 
-// Fast-moving items — top products by units sold in the last 30 days (fallback to soldCount).
-export async function fastMovingItems(limit = 8) {
+// Fast-moving items — top products by units sold. Defaults to the last 30 days,
+// falling back to lifetime catalog leaders so a shop with no orders yet still
+// has something to show. A chosen range gets no such fallback: "nothing sold
+// between these dates" is the answer, and lifetime leaders would contradict it.
+export async function fastMovingItems(limit = 8, w?: Window) {
   const db = await getDb();
+  const period = w ? placedWithin(w) : gte(orders.createdAt, daysAgo(30));
   const recent = await db.select({
     productId: orderItems.productId,
     name: orderItems.nameSnapshot,
@@ -94,25 +133,50 @@ export async function fastMovingItems(limit = 8) {
     revenue: sql<number>`coalesce(sum(${orderItems.lineTotalPhp}), 0)::float`,
   }).from(orderItems)
     .innerJoin(orders, sql`${orders.id} = ${orderItems.orderId}`)
-    .where(and(gte(orders.createdAt, daysAgo(30)), ne(orders.status, 'cancelled')))
+    .where(and(period, notCancelled))
     .groupBy(orderItems.productId, orderItems.nameSnapshot)
     .orderBy(desc(sql`sum(${orderItems.qty})`))
     .limit(limit);
 
-  if (recent.length > 0) return recent;
+  if (recent.length > 0 || w) return recent;
 
-  // Fallback: lifetime soldCount from the catalog (useful before live orders accrue).
   return db.select({
     productId: products.id, name: sql<string>`${products.name} || ' ' || ${products.spec}`,
     unitsSold: products.soldCount, revenue: sql<number>`(${products.soldCount} * ${products.pricePhp})::float`,
   }).from(products).orderBy(desc(products.soldCount)).limit(limit);
 }
 
-export async function dashboardStats() {
+/**
+ * Everything the dashboard renders.
+ *
+ * With a `range`, the period-scoped figures — totals.range, packingFees.range,
+ * the day-by-day summary and the fast movers — narrow to those calendar days.
+ * The lifetime totals and the pending-proof queue deliberately do not: one is
+ * the context the range is read against, the other is a live work queue that
+ * has no period at all.
+ */
+export async function dashboardStats(range?: StatsRange) {
   const db = await getDb();
-  const [totals, packingFees, summary, fastMoving] = await Promise.all([
-    orderTotals(), packingFeeTotals(), weeklySummary(), fastMovingItems(),
+  const window = range ? dateRangeBounds(range.from, range.to) : undefined;
+
+  const [totals, packingFees, summary, fastMoving, rangeTotals, rangeFees] = await Promise.all([
+    orderTotals(),
+    packingFeeTotals(),
+    dailySummary(window),
+    fastMovingItems(8, window),
+    window ? ordersWhere(and(placedWithin(window), notCancelled)) : undefined,
+    window ? packingFeesIn(window) : undefined,
   ]);
-  const [pending] = await db.select({ count: sql<number>`count(*)::int` }).from(orders).where(sql`${orders.status} = 'proof_review'`);
-  return { totals, packingFees, weeklySummary: summary, fastMoving, pendingProofs: pending.count };
+
+  const [pending] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(orders).where(sql`${orders.status} = 'proof_review'`);
+
+  return {
+    totals: { ...totals, range: rangeTotals },
+    packingFees: { ...packingFees, range: rangeFees },
+    dailySummary: summary,
+    fastMoving,
+    pendingProofs: pending.count,
+    range: range ?? null,
+  };
 }

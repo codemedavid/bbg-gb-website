@@ -5,6 +5,7 @@ import { useToast } from './store/toast';
 import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 import type { AccountRow } from './accounts';
+import type { StatsRange } from './analytics-range';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -18,19 +19,28 @@ export type CampaignParticipantsResponse = {
   summary: ReturnType<typeof summariseCampaignParticipants>;
 };
 
+type OrderAggregate = { count: number; revenue: number };
+
 export type DashboardStats = {
-  totals: {
-    week: { count: number; revenue: number };
-    month: { count: number; revenue: number };
-    all: { count: number; revenue: number };
-  };
-  packingFees: { week: number; month: number; all: number };
-  weeklySummary: { day: string; count: number; revenue: number }[];
+  // `range` is present on the period figures only when a range was asked for.
+  totals: { week: OrderAggregate; month: OrderAggregate; all: OrderAggregate; range?: OrderAggregate };
+  packingFees: { week: number; month: number; all: number; range?: number };
+  dailySummary: { day: string; count: number; revenue: number }[];
   fastMoving: { productId: string | null; name: string; unitsSold: number; revenue: number }[];
   pendingProofs: number;
+  range: StatsRange | null;
 };
 
-export const useStats = () => useQuery({ queryKey: ['admin', 'stats'], queryFn: () => apiGet<DashboardStats>('/admin/stats') });
+// The range is part of the key, so switching dates reads a separate cache entry
+// rather than overwriting the unfiltered dashboard the admin can clear back to.
+export const useStats = (range: StatsRange | null = null) =>
+  useQuery({
+    queryKey: ['admin', 'stats', range?.from ?? '', range?.to ?? ''],
+    queryFn: () => apiGet<DashboardStats>(`/admin/stats${qs({ from: range?.from, to: range?.to })}`),
+    // Holding the previous figures keeps the page off "Loading dashboard…" while
+    // a newly picked range is in flight.
+    placeholderData: (prev) => prev,
+  });
 // Every registered account, for Admin → Accounts. The row shape is the server's
 // own (lib/accounts.ts) so the table cannot drift from what the route returns.
 export const useAdminAccounts = (search?: string, role?: string) =>

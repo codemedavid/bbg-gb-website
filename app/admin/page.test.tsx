@@ -127,10 +127,9 @@ describe('admin dashboard date filter', () => {
     fireEvent.change(from(), { target: { value: '2026-08-10' } });
     fireEvent.change(to(), { target: { value: '2026-08-12' } });
 
-    expect(screen.getByText('Orders in range')).toBeInTheDocument();
-    expect(screen.getByText('6')).toBeInTheDocument();
     expect(screen.getByText('Revenue in range')).toBeInTheDocument();
     expect(screen.getByText('₱18,500')).toBeInTheDocument();
+    expect(screen.getByText('6 orders')).toBeInTheDocument();
     expect(screen.getByText('Packing fees in range')).toBeInTheDocument();
     expect(screen.getByText('₱900')).toBeInTheDocument();
     expect(screen.getByText(/Aug 10, 2026 – Aug 12, 2026/)).toBeInTheDocument();
