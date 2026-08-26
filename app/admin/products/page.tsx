@@ -213,6 +213,20 @@ export default function AdminProductsPage() {
   const { archiveProduct } = useMutate();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<Product> | null>(null);
+  const [search, setSearch] = useState('');
+
+  // The table is unpaginated — every product the feed returns is a row — so
+  // reaching one in a catalog of a hundred-odd means scrolling for it.
+  //
+  // Code as well as name: the supplier's price list identifies a product by its
+  // code, so that is what an admin has in front of them when they come here to
+  // edit one. Filtered client-side because the admin feed already returns the
+  // whole catalog; a round trip would buy nothing.
+  const query = search.trim().toLowerCase();
+  const shown = query
+    ? products.filter((p) =>
+        p.name.toLowerCase().includes(query) || (p.code ?? '').toLowerCase().includes(query))
+    : products;
 
   const handleArchive = async (p: Product) => {
     const ok = await confirm({
@@ -225,13 +239,31 @@ export default function AdminProductsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="m-0 font-display text-[24px] font-bold">Products</h1>
-          <p className="mt-1 text-[13px] text-ink-muted">Edit catalog &amp; on-hand prices. {products.length} items.</p>
+          {/* Both figures while filtered: the count in this line is the admin's
+              sense of how big the catalog is, and a search that quietly rewrote
+              it would be worse than no count at all. */}
+          <p className="mt-1 text-[13px] text-ink-muted">
+            Edit catalog &amp; on-hand prices.{' '}
+            {query ? `${shown.length} of ${products.length} items.` : `${products.length} items.`}
+          </p>
         </div>
         <button className={btnPrimary} onClick={() => setEditing(blank())}>+ New product</button>
       </div>
+
+      {/* Nothing to search means nothing to search through. */}
+      {products.length > 0 && (
+        <input
+          type="search"
+          aria-label="Search products"
+          placeholder="Search by name or code…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] sm:w-72"
+        />
+      )}
 
       <div className="overflow-x-auto rounded-[16px] bg-white shadow-card">
         <table className="w-full min-w-[720px] text-left text-[13px]">
@@ -244,7 +276,15 @@ export default function AdminProductsPage() {
           </thead>
           <tbody>
             {isLoading ? <tr><td className="px-4 py-6 text-ink-muted" colSpan={6}>Loading…</td></tr> :
-              products.map((p) => (
+              // A typo and an empty catalog look identical on a blank table, so
+              // the no-match row names what was searched for.
+              shown.length === 0 && query ? (
+                <tr><td className="px-4 py-8 text-center" colSpan={6}>
+                  <div className="mb-1 font-bold text-ink">No product matches &ldquo;{search.trim()}&rdquo;</div>
+                  <div className="text-[13px] text-ink-muted">Check the spelling, or clear the search to see the whole catalog.</div>
+                </td></tr>
+              ) :
+              shown.map((p) => (
                 <tr key={p.id} className={`border-b border-line-soft/60 ${!p.isActive ? 'opacity-40' : ''}`}>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-ink">{p.imageEmoji} {p.name}</div>
