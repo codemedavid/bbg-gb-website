@@ -382,3 +382,81 @@ describe('start new cycle', () => {
     expect(await screen.findByText(/2 counters/i)).toBeInTheDocument();
   });
 });
+
+// Finding one counter on a board that grows a sibling per cycle.
+//
+// Every cycle seals each counter and opens a fresh one beside it, so a board
+// that started at five rows is eleven after one cycle and keeps climbing — all
+// of them carrying the same handful of names.
+describe('board search', () => {
+  const setBoard = (...names: string[]) => {
+    board.current = names.map((name, i) => ({ ...OPEN_HATIAN, id: `gb${i + 1}`, name }));
+  };
+
+  it('shows only the counters whose name matches', () => {
+    setBoard('Bioglutide', 'KLOW 80mg', 'Retatrutide 20mg');
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'KLOW' } });
+
+    expect(screen.getByText('KLOW 80mg')).toBeInTheDocument();
+    expect(screen.queryByText('Bioglutide')).not.toBeInTheDocument();
+    expect(screen.queryByText('Retatrutide 20mg')).not.toBeInTheDocument();
+  });
+
+  // An admin types what they remember, not what the row is titled.
+  it('matches case-insensitively and on part of the name', () => {
+    setBoard('Bioglutide', 'KLOW 80mg');
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'glut' } });
+
+    expect(screen.getByText('Bioglutide')).toBeInTheDocument();
+    expect(screen.queryByText('KLOW 80mg')).not.toBeInTheDocument();
+  });
+
+  // A blank board and a board with no matches look identical otherwise, and the
+  // admin has no way to tell a typo from an empty cycle.
+  it('says so when nothing matches, naming what was searched for', () => {
+    setBoard('Bioglutide', 'KLOW 80mg');
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'zzz' } });
+
+    expect(screen.getByText(/no counter matches/i)).toHaveTextContent('zzz');
+  });
+
+  it('brings the whole board back when the search is cleared', () => {
+    setBoard('Bioglutide', 'KLOW 80mg');
+
+    render(<Page />);
+    const box = screen.getByLabelText(/search/i);
+    fireEvent.change(box, { target: { value: 'KLOW' } });
+    fireEvent.change(box, { target: { value: '' } });
+
+    expect(screen.getByText('Bioglutide')).toBeInTheDocument();
+    expect(screen.getByText('KLOW 80mg')).toBeInTheDocument();
+  });
+
+  // The cycle control acts on the BOARD, not on the view. If a search narrowed
+  // the count it reports, an admin who searched one name would be told they are
+  // ending one counter and would in fact end every open counter there is.
+  it('keeps the cycle control counting the whole board, not the filtered view', async () => {
+    setBoard('Bioglutide', 'KLOW 80mg', 'Retatrutide 20mg');
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'KLOW' } });
+    fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+
+    expect(await screen.findByText(/3 counters/i)).toBeInTheDocument();
+  });
+
+  // Nothing to search means nothing to search through.
+  it('hides the search box when the board is empty', () => {
+    board.current = [];
+
+    render(<Page />);
+
+    expect(screen.queryByLabelText(/search/i)).not.toBeInTheDocument();
+  });
+});
