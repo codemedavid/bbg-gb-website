@@ -7,6 +7,10 @@ screenshots: `/admin/groupbuys` (the Hatian board, no cycle control) and
 **Branch:** `feat/group-buy-page`
 **Checkpoints:** `02196b0` (RED) → `c756d4b` (GREEN) → `25df679` (refactor)
 
+A follow-up request added a search box to the same board and to the products
+catalog; that cycle is recorded in
+[admin-board-search.tdd.md](admin-board-search.tdd.md).
+
 ## User journeys
 
 1. As an admin, I want a "Start new cycle" control on the Hatian board, so that I
