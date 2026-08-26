@@ -331,3 +331,105 @@ describe('AdminProductsPage — on-hand ten-vial price', () => {
     expect(saveMutate.mock.calls[0][0].onHandTenVialPhp).toBeNull();
   });
 });
+
+// Finding one product in a catalog of a hundred-odd rows.
+//
+// The table renders every product the feed returns, unpaginated, so an admin
+// editing one peptide scrolls for it. The supplier sheet identifies a product by
+// its CODE, not its name, which is why the code is searchable too.
+describe('AdminProductsPage — catalog search', () => {
+  const product = (over: Record<string, unknown>) => ({
+    id: 'p1', code: 'BBG-001', supplierCode: null, name: 'Tirzepatide', spec: '20mg vial',
+    pricePhp: '3200', priceUsd: null, categoryId: null, categorySlug: null, categoryName: null,
+    isOnHand: false, onHandKitPhp: null, onHandPiecePhp: null, stock: 5, kitSize: 10,
+    arrivalGroup: 'white_powder', description: null, imageEmoji: '🧪', soldCount: 0, isActive: true,
+    ...over,
+  });
+
+  const setCatalog = (...rows: Record<string, unknown>[]) => { catalog.rows = rows; };
+
+  it('shows only the products whose name matches', () => {
+    setCatalog(
+      product({ id: 'p1', name: 'Tirzepatide' }),
+      product({ id: 'p2', name: 'Retatrutide', code: 'BBG-002' }),
+    );
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'tirze' } });
+
+    expect(screen.getByText(/Tirzepatide/)).toBeInTheDocument();
+    expect(screen.queryByText(/Retatrutide/)).not.toBeInTheDocument();
+  });
+
+  // An admin working off a supplier price list has the code in front of them,
+  // not the name the catalog happens to use.
+  it('finds a product by its code', () => {
+    setCatalog(
+      product({ id: 'p1', name: 'Tirzepatide', code: 'BBG-001' }),
+      product({ id: 'p2', name: 'Retatrutide', code: 'BBG-002' }),
+    );
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'BBG-002' } });
+
+    expect(screen.getByText(/Retatrutide/)).toBeInTheDocument();
+    expect(screen.queryByText(/Tirzepatide/)).not.toBeInTheDocument();
+  });
+
+  // A product with no code must not crash the filter — code is nullable.
+  it('does not fall over on a product with no code', () => {
+    setCatalog(product({ id: 'p1', name: 'Tirzepatide', code: null }));
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'tirze' } });
+
+    expect(screen.getByText(/Tirzepatide/)).toBeInTheDocument();
+  });
+
+  it('says so when nothing matches, naming what was searched for', () => {
+    setCatalog(product({ id: 'p1', name: 'Tirzepatide' }));
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'zzz' } });
+
+    expect(screen.getByText(/no product matches/i)).toHaveTextContent('zzz');
+  });
+
+  // The subtitle is the admin's count of the catalog. While filtered it has to
+  // say both figures, or a search silently rewrites how big the catalog is.
+  it('reports the filtered count against the whole catalog', () => {
+    setCatalog(
+      product({ id: 'p1', name: 'Tirzepatide' }),
+      product({ id: 'p2', name: 'Retatrutide', code: 'BBG-002' }),
+      product({ id: 'p3', name: 'Semaglutide', code: 'BBG-003' }),
+    );
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'tirze' } });
+
+    expect(screen.getByText(/1 of 3 items/i)).toBeInTheDocument();
+  });
+
+  it('brings the whole catalog back when the search is cleared', () => {
+    setCatalog(
+      product({ id: 'p1', name: 'Tirzepatide' }),
+      product({ id: 'p2', name: 'Retatrutide', code: 'BBG-002' }),
+    );
+
+    render(<Page />);
+    const box = screen.getByLabelText(/search/i);
+    fireEvent.change(box, { target: { value: 'tirze' } });
+    fireEvent.change(box, { target: { value: '' } });
+
+    expect(screen.getByText(/Tirzepatide/)).toBeInTheDocument();
+    expect(screen.getByText(/Retatrutide/)).toBeInTheDocument();
+  });
+
+  it('hides the search box when the catalog is empty', () => {
+    setCatalog();
+
+    render(<Page />);
+
+    expect(screen.queryByLabelText(/search/i)).not.toBeInTheDocument();
+  });
+});
