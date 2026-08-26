@@ -448,7 +448,9 @@ describe('board search', () => {
     fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'KLOW' } });
     fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
 
-    expect(await screen.findByText(/3 counters/i)).toBeInTheDocument();
+    // Scoped to the dialog's heading: the filtered board also reports a count
+    // ("1 of 3 counters"), and a bare text match would pass on that instead.
+    expect(await screen.findByRole('heading', { name: /3 counters/i })).toBeInTheDocument();
   });
 
   // Nothing to search means nothing to search through.

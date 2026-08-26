@@ -353,9 +353,22 @@ export default function AdminGroupBuysPage() {
   const [editing, setEditing] = useState<Partial<GroupBuy> | null>(null);
   const [viewing, setViewing] = useState<GroupBuy | null>(null);
 
+  const [search, setSearch] = useState('');
+
   // Nothing running means nothing to end, so the cycle control stays off the
   // board rather than sitting there as a no-op.
+  //
+  // Counted off the whole board, never off `shown`: the cycle acts on every open
+  // counter there is, so an admin who narrowed the view to one name must still
+  // be told how many the button will actually end.
   const running = gbs.filter((g) => g.status === 'open');
+
+  // Every cycle seals each counter and opens a fresh one beside it, so the board
+  // grows a same-named sibling per counter per cycle and finding one by eye
+  // stops working quickly. Filtered here rather than at the API: the admin feed
+  // returns the whole board already, so a round trip would buy nothing.
+  const query = search.trim().toLowerCase();
+  const shown = query ? gbs.filter((g) => g.name.toLowerCase().includes(query)) : gbs;
 
   // Ending every running counter at once — the start of a new trading cycle.
   // Confirmed, because customers are committed to these counters; deliberately
@@ -401,8 +414,38 @@ export default function AdminGroupBuysPage() {
         </div>
       </div>
 
+      {/* Nothing to search means nothing to search through. */}
+      {gbs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            aria-label="Search group buys"
+            placeholder="Search by name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] sm:w-72"
+          />
+          {/* Said out loud while filtered: the board is the admin's count of how
+              many counters exist, and a narrowed view silently contradicts it. */}
+          {query && (
+            <span className="text-[12.5px] text-ink-muted">
+              {shown.length} of {gbs.length} counters
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* A typo and an empty cycle look identical on a blank board, so the
+          no-match state names what was searched for rather than showing nothing. */}
+      {!isLoading && query && shown.length === 0 && (
+        <div className="rounded-[16px] bg-white p-8 text-center shadow-card">
+          <div className="mb-1 font-bold text-ink">No counter matches &ldquo;{search.trim()}&rdquo;</div>
+          <div className="text-[13px] text-ink-muted">Check the spelling, or clear the search to see the whole board.</div>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {isLoading ? <div className="text-ink-muted">Loading…</div> : gbs.map((g) => {
+        {isLoading ? <div className="text-ink-muted">Loading…</div> : shown.map((g) => {
           // Clamped so a row written before the database cap existed reads
           // "10/10 vials", never the "13/10" the business says cannot happen.
           const claimed = kahatiClaimedDisplay(g.claimedSlots, g.totalSlots);
