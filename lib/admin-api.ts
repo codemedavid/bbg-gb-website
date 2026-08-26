@@ -106,6 +106,9 @@ export function useMutate() {
     archiveProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not archive product.') }),
     saveGroupBuy: useMutation({ mutationFn: (g: any) => g.id ? apiSend(`/admin/groupbuys/${g.id}`, 'PATCH', g) : apiSend('/admin/groupbuys', 'POST', g), onSuccess: invalidate, onError: toastError('Could not save group buy.') }),
     deleteGroupBuy: useMutation({ mutationFn: (id: string) => apiSend(`/admin/groupbuys/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete group buy.') }),
+    // Ends every hatian counter that has vials on it and opens each one's
+    // successor — the board-level control, not the per-card Close.
+    startKahatiCycle: useMutation({ mutationFn: () => apiSend('/admin/groupbuys/cycle', 'POST'), onSuccess: invalidate, onError: toastError('Could not start a new cycle.') }),
     // What one transfer was worth. Separate from setOrderStatus because it is a
     // different question — not "where is this order" but "has it been paid" —
     // and an admin types several of these against one order without ever

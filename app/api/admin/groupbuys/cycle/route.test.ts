@@ -37,8 +37,6 @@ async function signIn(role: 'customer' | 'admin' = 'admin') {
   return user;
 }
 
-const req = () => new Request('http://localhost/api/admin/groupbuys/cycle', { method: 'POST' });
-
 const countersNamed = async (name: string) => {
   const db = await getDb();
   return db.select().from(groupBuys).where(eq(groupBuys.name, name)).orderBy(asc(groupBuys.createdAt));
@@ -54,7 +52,7 @@ describe('POST /api/admin/groupbuys/cycle', () => {
     await signIn('admin');
     await makeGroupBuy({ name: 'KLOW 80mg', totalSlots: 10, claimedSlots: 4 });
 
-    const res = await POST(req());
+    const res = await POST();
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -72,7 +70,7 @@ describe('POST /api/admin/groupbuys/cycle', () => {
     await makeGroupBuy({ name: 'Joined', totalSlots: 10, claimedSlots: 2 });
     await makeGroupBuy({ name: 'Empty', totalSlots: 10, claimedSlots: 0 });
 
-    const body = await (await POST(req())).json();
+    const body = await (await POST()).json();
 
     expect(body.data.rolled).toBe(1);
     expect(body.data.skippedEmpty).toBe(1);
@@ -85,7 +83,7 @@ describe('POST /api/admin/groupbuys/cycle', () => {
     await signIn('customer');
     await makeGroupBuy({ name: 'KLOW 80mg', totalSlots: 10, claimedSlots: 4 });
 
-    const res = await POST(req());
+    const res = await POST();
 
     expect(res.status).toBe(403);
     expect((await countersNamed('KLOW 80mg'))[0].status).toBe('open');
@@ -94,7 +92,7 @@ describe('POST /api/admin/groupbuys/cycle', () => {
   it('refuses a signed-out visitor', async () => {
     await makeGroupBuy({ name: 'KLOW 80mg', totalSlots: 10, claimedSlots: 4 });
 
-    const res = await POST(req());
+    const res = await POST();
 
     expect(res.status).toBe(401);
     expect((await countersNamed('KLOW 80mg'))[0].status).toBe('open');

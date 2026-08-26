@@ -14,7 +14,7 @@
 // never ordered, so every participant's order is cancelled, any on-hand stock in
 // that order is returned, and the customer is emailed about their refund. An
 // admin cancelling a hatian outright runs the same release flow (cancelKahati).
-import { and, eq, gte, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, users } from '@/lib/db';
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { VIALS_PER_KIT } from './pricing';
@@ -237,6 +237,15 @@ export type KahatiRollover = { sealed: GroupBuyRow; opened: GroupBuyRow };
 // Returns both rows so a checkout that over-committed can roll its overflow
 // straight into the freshly opened sibling.
 export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<KahatiRollover | null> {
+  return sealKahatiAndOpenSuccessor(db, g);
+}
+
+// The seal-and-succeed itself, with no opinion on WHY the counter is ending. A
+// fill reaches it through closeFullKahati; an admin ending a trading cycle
+// reaches it through rollOpenKahatis. Sealing before inserting is not incidental
+// ordering: group_buys_one_open_per_product_idx allows a product one open
+// counter, so opening the successor first would fail on the index.
+async function sealKahatiAndOpenSuccessor(db: Db, g: GroupBuyRow): Promise<KahatiRollover | null> {
   const [sealed] = await db.update(groupBuys).set({ status: 'closed' })
     .where(and(eq(groupBuys.id, g.id), eq(groupBuys.status, 'open')))
     .returning();
@@ -257,6 +266,52 @@ export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<KahatiRol
     closesAt: nextKahatiClosesAt(g.createdAt, g.closesAt, new Date()),
   }).returning();
   return { sealed, opened };
+}
+
+export type KahatiCycleRollover = {
+  /** Every counter that was sealed, with the successor opened in its place. */
+  rolled: KahatiRollover[];
+  /** Open counters nobody had joined, left running rather than sealed. */
+  skippedEmpty: number;
+};
+
+// Start a new cycle across the whole hatian board: seal every open counter that
+// has vials on it and open its successor. The mirror of rollOpenBatches on the
+// Group Buy side (lib/moq-batch-server.ts), for the board that had no equivalent
+// — closing a hatian card by card leaves no successor, so each counter simply
+// left the board instead of reopening empty for the next cycle.
+//
+// A counter nobody joined is deliberately left alone. It is not running in any
+// sense a customer would recognise — it is merely listed — so sealing it would
+// record a batch that was never ordered and put an identical empty row in its
+// place. The count comes back in the result rather than being swallowed, so the
+// caller can say what it did NOT do.
+//
+// A counter below KAHATI_MIN_VIABLE_VIALS is rolled like any other: the admin
+// ended the cycle deliberately, and 'closed' is what that is. Its participants
+// keep their orders — reconciling them is the admin's call on the orders screen,
+// exactly as on the campaigns side. Sealing also lifts the row out of the expiry
+// sweep's reach, so a later board read cannot cancel and refund those orders
+// behind the admin's back.
+//
+// Sequential, not concurrent: each roll is two writes against one table and the
+// board is tens of rows, so the plain loop is fast enough and keeps the
+// one-open-counter-per-product index from arbitrating writes it does not need
+// to. A counter another request seals first returns null and is skipped, which
+// is what makes the cycle safe to re-run.
+export async function rollOpenKahatis(db: Db): Promise<KahatiCycleRollover> {
+  const running = await db.select().from(groupBuys)
+    .where(eq(groupBuys.status, 'open'))
+    .orderBy(asc(groupBuys.createdAt));
+
+  const rolled: KahatiRollover[] = [];
+  let skippedEmpty = 0;
+  for (const counter of running) {
+    if (counter.claimedSlots <= 0) { skippedEmpty += 1; continue; }
+    const rollover = await sealKahatiAndOpenSuccessor(db, counter);
+    if (rollover) rolled.push(rollover);
+  }
+  return { rolled, skippedEmpty };
 }
 
 // Cancels every live order holding a line on a failed hatian and returns the

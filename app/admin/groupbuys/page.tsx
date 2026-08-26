@@ -348,10 +348,28 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
 
 export default function AdminGroupBuysPage() {
   const { data: gbs = [], isLoading } = useAdminGroupBuys();
-  const { deleteGroupBuy, saveGroupBuy } = useMutate();
+  const { deleteGroupBuy, saveGroupBuy, startKahatiCycle } = useMutate();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<GroupBuy> | null>(null);
   const [viewing, setViewing] = useState<GroupBuy | null>(null);
+
+  // Nothing running means nothing to end, so the cycle control stays off the
+  // board rather than sitting there as a no-op.
+  const running = gbs.filter((g) => g.status === 'open');
+
+  // Ending every running counter at once — the start of a new trading cycle.
+  // Confirmed, because customers are committed to these counters; deliberately
+  // not worded as a warning, though, since the commitments stay with the counter
+  // that took them and its successor opens in the same breath.
+  const handleStartCycle = async () => {
+    const ok = await confirm({
+      title: `Start a new cycle across ${running.length} counter${running.length === 1 ? '' : 's'}?`,
+      message: 'Every counter with vials on it closes and a fresh one opens in its place, ready to take the next cycle. Counters nobody has joined stay open. Customer orders are not changed — settle those on the orders screen.',
+      confirmLabel: 'End all & start next',
+      cancelLabel: 'Keep the board as it is',
+    });
+    if (ok) startKahatiCycle.mutate();
+  };
 
   const handleDelete = async (g: GroupBuy) => {
     const ok = await confirm({
@@ -364,12 +382,23 @@ export default function AdminGroupBuysPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="m-0 font-display text-[24px] font-bold">Group Buys</h1>
           <p className="mt-1 text-[13px] text-ink-muted">Edit kahati prices, slots &amp; close orders.</p>
         </div>
-        <button className={btnPrimary} onClick={() => setEditing(blank())}>+ New group buy</button>
+        <div className="flex flex-wrap items-center gap-2 sm:flex-none">
+          {running.length > 0 && (
+            <button
+              onClick={handleStartCycle}
+              disabled={startKahatiCycle.isPending}
+              className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-brand-blue transition-colors hover:border-brand-blue disabled:opacity-50"
+            >
+              Start new cycle
+            </button>
+          )}
+          <button className={btnPrimary} onClick={() => setEditing(blank())}>+ New group buy</button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
