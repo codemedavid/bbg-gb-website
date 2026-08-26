@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCampaigns, useMutate } from '@/lib/admin-api';
 import { useConfirm } from '@/components/ConfirmDialog';
-import { btnPrimary } from '@/components/admin-ui';
+import { btnPrimary, btnBoardAction } from '@/components/admin-ui';
 import { groupBySeries } from '@/lib/campaign-series';
 import { Breadcrumb } from '../Breadcrumb';
 import { ExtendModal } from './ExtendModal';
@@ -102,7 +102,7 @@ export default function AdminCampaignsPage() {
             <button
               onClick={handleStartCycle}
               disabled={busy}
-              className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-brand-blue transition-colors hover:border-brand-blue disabled:opacity-50"
+              className={btnBoardAction}
             >
               Start new cycle
             </button>

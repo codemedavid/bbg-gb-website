@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useAdminGroupBuys, useAdminGroupBuyCommitments, useMutate } from '@/lib/admin-api';
-import { Modal, field, Labeled, btnPrimary, btnGhost } from '@/components/admin-ui';
+import { Modal, field, Labeled, btnPrimary, btnGhost, btnBoardAction } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS, kahatiProgressPercent, kahatiClaimedDisplay } from '@/lib/kahati';
@@ -392,7 +392,7 @@ export default function AdminGroupBuysPage() {
             <button
               onClick={handleStartCycle}
               disabled={startKahatiCycle.isPending}
-              className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-brand-blue transition-colors hover:border-brand-blue disabled:opacity-50"
+              className={btnBoardAction}
             >
               Start new cycle
             </button>
