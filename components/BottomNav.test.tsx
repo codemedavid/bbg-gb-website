@@ -52,6 +52,13 @@ describe('BottomNav MOQ tab', () => {
     expect(screen.queryByRole('link', { name: /MOQ/i })).not.toBeInTheDocument();
   });
 
+  it('places the MOQ tab directly after On-hand, not at the end of the bar', () => {
+    moqEnabled = { data: true };
+    render(<BottomNav />);
+    const names = tabNames();
+    expect(names.indexOf('\u{1F3F7}\uFE0FMOQ')).toBe(names.findIndex((n) => n.includes('On-hand')) + 1);
+  });
+
   it('still renders the pre-existing tabs alongside MOQ', () => {
     moqEnabled = { data: true };
     render(<BottomNav />);

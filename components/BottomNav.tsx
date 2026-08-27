@@ -16,17 +16,25 @@ const TABS = [
   { href: '/account', icon: '👤', label: 'Account' },
 ];
 
-// The MOQ tab is conditional, so it is defined apart from the fixed six. Its
+// The MOQ tab is conditional, so it is defined apart from the fixed seven. Its
 // label is deliberately the shortest in the bar: at 320px seven tabs leave only
 // ~45px each, and "MOQ" is the one label that still fits comfortably there.
 const MOQ_TAB = { href: '/moq', icon: '🏷️', label: 'MOQ' };
+
+// MOQ sits next to On-hand rather than at the end of the bar: both are
+// buy-now catalogues, so they read as a pair, and appending it after Account
+// would have stranded it past the account tab where nobody looks for it.
+const MOQ_AFTER = '/shop';
 
 export function BottomNav() {
   const pathname = usePathname();
   // Undefined (still loading) is treated as off, so a tab never flashes in and
   // then disappears — and never points at a route that 404s.
   const { data: moqEnabled } = useMoqPageEnabled();
-  const tabs = moqEnabled ? [...TABS, MOQ_TAB] : TABS;
+  const shopIndex = TABS.findIndex((t) => t.href === MOQ_AFTER);
+  const tabs = moqEnabled
+    ? [...TABS.slice(0, shopIndex + 1), MOQ_TAB, ...TABS.slice(shopIndex + 1)]
+    : TABS;
   // The search tab makes the bar wider than a 320px viewport can fairly divide
   // into fixed columns, especially when MOQ is also enabled. Each tab keeps a
   // stable tap target and the bar scrolls sideways only when it has to.
