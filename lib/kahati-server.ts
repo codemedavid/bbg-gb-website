@@ -60,6 +60,12 @@ const expiredUnviable = (now: Date): SQL | undefined => and(
   lt(groupBuys.claimedSlots, KAHATI_MIN_VIABLE_VIALS),
 );
 
+// The row-level twin of expiredUnviable above: the same condition asked of a row
+// already in hand rather than of the table. Kept adjacent so the two cannot
+// drift into disagreeing about what "expired without reaching the minimum" is.
+const isExpiredUnviable = (g: GroupBuyRow, now: Date): boolean =>
+  g.closesAt !== null && g.closesAt < now && g.claimedSlots < KAHATI_MIN_VIABLE_VIALS;
+
 // An OPEN hatian that has reached its vial cap. Its kit is complete, so it must
 // not stay on the board: nobody can join it, and until it is sealed no successor
 // exists for the next customer to join instead.
@@ -273,6 +279,13 @@ export type KahatiCycleRollover = {
   rolled: KahatiRollover[];
   /** Open counters nobody had joined, left running rather than sealed. */
   skippedEmpty: number;
+  /**
+   * Expired counters below the viable minimum, left open on purpose so the
+   * sweep still cancels them and refunds their participants.
+   */
+  leftForCancellation: number;
+  /** Counters whose roll failed. Their board rows are unchanged. */
+  failed: { id: string; name: string; reason: string }[];
 };
 
 // Start a new cycle across the whole hatian board: seal every open counter that
@@ -287,31 +300,57 @@ export type KahatiCycleRollover = {
 // place. The count comes back in the result rather than being swallowed, so the
 // caller can say what it did NOT do.
 //
-// A counter below KAHATI_MIN_VIABLE_VIALS is rolled like any other: the admin
-// ended the cycle deliberately, and 'closed' is what that is. Its participants
-// keep their orders — reconciling them is the admin's call on the orders screen,
-// exactly as on the campaigns side. Sealing also lifts the row out of the expiry
-// sweep's reach, so a later board read cannot cancel and refund those orders
-// behind the admin's back.
+// A counter that has ALREADY expired below KAHATI_MIN_VIABLE_VIALS is the one
+// case that is NOT rolled. The sweep owes those participants a cancellation and
+// a refund email (expiredUnviable → cancelExpiredKahati), and sealing the row
+// 'closed' would put it beyond that query for good — the refund would never
+// happen and nobody would be told. Ending a cycle must not quietly turn a
+// pending refund into a kept payment, so those counters stay open and are
+// counted separately.
+//
+// A counter below the minimum whose deadline has NOT passed is a different
+// matter: no refund is pending on it, so ending it early is the admin's call and
+// it rolls like any other. So does an expired counter that DID reach the
+// minimum — the sweep would only have closed it, and rolling gives it a
+// successor as well.
 //
 // Sequential, not concurrent: each roll is two writes against one table and the
 // board is tens of rows, so the plain loop is fast enough and keeps the
 // one-open-counter-per-product index from arbitrating writes it does not need
 // to. A counter another request seals first returns null and is skipped, which
 // is what makes the cycle safe to re-run.
-export async function rollOpenKahatis(db: Db): Promise<KahatiCycleRollover> {
+export async function rollOpenKahatis(db: Db, now: Date = new Date()): Promise<KahatiCycleRollover> {
   const running = await db.select().from(groupBuys)
     .where(eq(groupBuys.status, 'open'))
     .orderBy(asc(groupBuys.createdAt));
 
   const rolled: KahatiRollover[] = [];
+  const failed: KahatiCycleRollover['failed'] = [];
   let skippedEmpty = 0;
+  let leftForCancellation = 0;
+
   for (const counter of running) {
     if (counter.claimedSlots <= 0) { skippedEmpty += 1; continue; }
-    const rollover = await sealKahatiAndOpenSuccessor(db, counter);
-    if (rollover) rolled.push(rollover);
+    if (isExpiredUnviable(counter, now)) { leftForCancellation += 1; continue; }
+    try {
+      // One transaction per counter, the same way the checkout path wraps
+      // closeFullKahati. Half of the pair — sealed with no successor — is a
+      // counter permanently off the board: closed, unjoinable and out of the
+      // sweep's reach, which is the very state this control exists to avoid.
+      const rollover = await db.transaction(async (tx) => sealKahatiAndOpenSuccessor(tx, counter));
+      if (rollover) rolled.push(rollover);
+    } catch (err) {
+      // Contained, not swallowed: one bad counter must not abort the rest of the
+      // board, and the failures come back named so the admin is told which
+      // counters did not move instead of reading a bare 500.
+      failed.push({
+        id: counter.id,
+        name: counter.name,
+        reason: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
   }
-  return { rolled, skippedEmpty };
+  return { rolled, skippedEmpty, leftForCancellation, failed };
 }
 
 // Cancels every live order holding a line on a failed hatian and returns the

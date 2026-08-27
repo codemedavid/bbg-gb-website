@@ -119,24 +119,92 @@ describe('rollOpenKahatis', () => {
     expect(await countersNamed('KLOW 80mg')).toHaveLength(2);
   });
 
-  // A counter below the 7-vial viable minimum is sealed as 'closed', not
-  // cancelled: the admin ended the cycle deliberately and the participants keep
-  // their orders. Sealing also takes the row out of the expiry sweep's reach —
-  // which is what stops a later board read from cancelling those orders and
-  // refunding customers behind the admin's back.
-  it('closes a counter below the viable minimum without handing it to the cancel sweep', async () => {
+  // A counter that has ALREADY expired below the 7-vial minimum is left alone.
+  //
+  // The sweep owes those participants a cancellation and a refund email
+  // (expiredUnviable → cancelExpiredKahati). Sealing it 'closed' would take the
+  // row out of that query's reach for good — status is no longer 'open' — so the
+  // refund silently never happens and the customers are never told. Ending a
+  // cycle must not quietly turn a pending refund into a kept payment.
+  it('leaves an already-expired counter below the minimum for the cancel sweep', async () => {
     const db = await getDb();
     const thin = await makeGroupBuy({
       name: 'Thin counter', totalSlots: 10, claimedSlots: 2,
       closesAt: new Date(Date.now() - 60_000),
     });
 
-    await rollOpenKahatis(db);
-    const sweep = await sweepKahatis(db);
+    const result = await rollOpenKahatis(db);
 
-    expect((await load(thin.id)).status).toBe('closed');
-    expect(sweep.cancelled).not.toContain(thin.id);
-    expect(sweep.ordersCancelled).toBe(0);
+    expect(result.rolled).toHaveLength(0);
+    expect(result.leftForCancellation).toBe(1);
+    expect((await load(thin.id)).status).toBe('open');
+
+    // Still reachable by the sweep, which cancels and refunds it as designed.
+    const sweep = await sweepKahatis(db);
+    expect(sweep.cancelled).toContain(thin.id);
+  });
+
+  // A counter below the minimum whose deadline has NOT passed is a different
+  // case: no refund is pending on it, so ending it is the admin's call and the
+  // cycle takes it like any other.
+  it('rolls a counter below the minimum that has not expired yet', async () => {
+    const db = await getDb();
+    const early = await makeGroupBuy({
+      name: 'Early counter', totalSlots: 10, claimedSlots: 2,
+      closesAt: new Date(Date.now() + 60_000),
+    });
+
+    const result = await rollOpenKahatis(db);
+
+    expect(result.rolled).toHaveLength(1);
+    expect(result.leftForCancellation).toBe(0);
+    expect((await load(early.id)).status).toBe('closed');
+  });
+
+  // A counter with no deadline at all can never be expired, so it rolls.
+  it('rolls a counter below the minimum that has no deadline', async () => {
+    const db = await getDb();
+    const open = await makeGroupBuy({ name: 'No deadline', totalSlots: 10, claimedSlots: 2, closesAt: null });
+
+    const result = await rollOpenKahatis(db);
+
+    expect(result.rolled).toHaveLength(1);
+    expect((await load(open.id)).status).toBe('closed');
+  });
+
+  // An expired counter AT or above the minimum is viable — the sweep would only
+  // close it, with no refund owed — so the cycle rolls it and gives it a
+  // successor, which is strictly better than the sweep's bare close.
+  it('rolls an expired counter that reached the viable minimum', async () => {
+    const db = await getDb();
+    const viable = await makeGroupBuy({
+      name: 'Viable counter', totalSlots: 10, claimedSlots: 8,
+      closesAt: new Date(Date.now() - 60_000),
+    });
+
+    const result = await rollOpenKahatis(db);
+
+    expect(result.rolled).toHaveLength(1);
+    expect(result.leftForCancellation).toBe(0);
+    expect((await load(viable.id)).status).toBe('closed');
+    expect(await countersNamed('Viable counter')).toHaveLength(2);
+  });
+
+  // Each counter's seal and its successor's insert are one atomic unit. Half of
+  // that pair — sealed with no successor — is a counter permanently off the
+  // board: closed, unjoinable, and out of the sweep's reach.
+  it('never leaves a counter sealed without its successor', async () => {
+    const db = await getDb();
+    await makeGroupBuy({ name: 'Atomic A', totalSlots: 10, claimedSlots: 3 });
+    await makeGroupBuy({ name: 'Atomic B', totalSlots: 10, claimedSlots: 4 });
+
+    await rollOpenKahatis(db);
+
+    for (const name of ['Atomic A', 'Atomic B']) {
+      const rows = await countersNamed(name);
+      expect(rows.filter((r) => r.status === 'closed')).toHaveLength(1);
+      expect(rows.filter((r) => r.status === 'open')).toHaveLength(1);
+    }
   });
 
   // One product may have only one OPEN counter (group_buys_one_open_per_product_idx).

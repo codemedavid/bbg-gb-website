@@ -373,6 +373,37 @@ describe('start new cycle', () => {
     expect(screen.queryByRole('button', { name: /start new cycle/i })).not.toBeInTheDocument();
   });
 
+  // The board right after a cycle: every counter open, none joined. The server
+  // skips empty counters, so pressing the button would change nothing — the
+  // control has to be off the board for that too, not just for a closed one.
+  it('hides the control when every open counter is empty', () => {
+    board.current = [
+      { ...OPEN_HATIAN, id: 'gb1', claimedSlots: 0 },
+      { ...OPEN_HATIAN, id: 'gb2', name: 'KLOW 80mg', claimedSlots: 0 },
+    ];
+
+    render(<Page />);
+
+    expect(screen.queryByRole('button', { name: /start new cycle/i })).not.toBeInTheDocument();
+  });
+
+  // The server rolls only counters with vials on them. Counting every open
+  // counter told the admin five were ending when two were — the dialog has to
+  // name the number that will actually move.
+  it('counts only the counters that will actually end', async () => {
+    board.current = [
+      { ...OPEN_HATIAN, id: 'gb1', claimedSlots: 5 },
+      { ...OPEN_HATIAN, id: 'gb2', name: 'KLOW 80mg', claimedSlots: 2 },
+      { ...OPEN_HATIAN, id: 'gb3', name: 'Empty A', claimedSlots: 0 },
+      { ...OPEN_HATIAN, id: 'gb4', name: 'Empty B', claimedSlots: 0 },
+    ];
+
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+
+    expect(await screen.findByRole('heading', { name: /2 counters/i })).toBeInTheDocument();
+  });
+
   it('says how many counters are about to end', async () => {
     board.current = [OPEN_HATIAN, { ...OPEN_HATIAN, id: 'gb2', name: 'KLOW 80mg' }];
 
@@ -442,7 +473,7 @@ describe('board search', () => {
   // the count it reports, an admin who searched one name would be told they are
   // ending one counter and would in fact end every open counter there is.
   it('keeps the cycle control counting the whole board, not the filtered view', async () => {
-    setBoard('Bioglutide', 'KLOW 80mg', 'Retatrutide 20mg');
+    setBoard('Bioglutide', 'KLOW 80mg', 'Retatrutide 20mg');  // all joined (claimedSlots: 5)
 
     render(<Page />);
     fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'KLOW' } });

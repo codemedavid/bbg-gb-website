@@ -79,6 +79,27 @@ describe('POST /api/admin/groupbuys/cycle', () => {
     ]);
   });
 
+  // The counters the cycle deliberately did not seal because a refund is owed on
+  // them. The admin has to be able to see that those were left for the sweep
+  // rather than quietly ended.
+  it('reports counters left for the cancel sweep separately from empty ones', async () => {
+    await signIn('admin');
+    await makeGroupBuy({ name: 'Joined', totalSlots: 10, claimedSlots: 3 });
+    await makeGroupBuy({ name: 'Empty', totalSlots: 10, claimedSlots: 0 });
+    await makeGroupBuy({
+      name: 'Expired thin', totalSlots: 10, claimedSlots: 2,
+      closesAt: new Date(Date.now() - 60_000),
+    });
+
+    const body = await (await POST()).json();
+
+    expect(body.data.rolled).toBe(1);
+    expect(body.data.skippedEmpty).toBe(1);
+    expect(body.data.leftForCancellation).toBe(1);
+    expect(body.data.failed).toEqual([]);
+    expect((await countersNamed('Expired thin'))[0].status).toBe('open');
+  });
+
   it('refuses a customer', async () => {
     await signIn('customer');
     await makeGroupBuy({ name: 'KLOW 80mg', totalSlots: 10, claimedSlots: 4 });

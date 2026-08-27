@@ -355,13 +355,18 @@ export default function AdminGroupBuysPage() {
 
   const [search, setSearch] = useState('');
 
-  // Nothing running means nothing to end, so the cycle control stays off the
-  // board rather than sitting there as a no-op.
+  // The counters this control will actually end.
   //
-  // Counted off the whole board, never off `shown`: the cycle acts on every open
+  // Open AND joined, matching rollOpenKahatis's own skip rule: the server leaves
+  // a counter nobody has joined alone, so counting every open row told the admin
+  // five were ending when two were — and on the board a cycle has just left
+  // behind (every counter open, none joined) it offered a button that would do
+  // nothing at all.
+  //
+  // Counted off the whole board, never off `shown`: the cycle acts on every such
   // counter there is, so an admin who narrowed the view to one name must still
-  // be told how many the button will actually end.
-  const running = gbs.filter((g) => g.status === 'open');
+  // be told how many the button will move.
+  const running = gbs.filter((g) => g.status === 'open' && g.claimedSlots > 0);
 
   // Every cycle seals each counter and opens a fresh one beside it, so the board
   // grows a same-named sibling per counter per cycle and finding one by eye
