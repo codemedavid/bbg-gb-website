@@ -7,8 +7,8 @@ import { formatDateRange } from '@/lib/report/week';
 import { StatCard } from './StatCard';
 import { DateRangeFilter } from './DateRangeFilter';
 
-// Labels stay short enough to fit a fifth of the stat row; the dates go in the
-// sub-line, where there is room for them.
+// Card labels say only that a figure is scoped, never to what — the dates are
+// long, and they are already stated once in the subtitle above the row.
 const RANGE_LABEL = 'in range';
 
 export default function DashboardPage() {
