@@ -145,4 +145,4 @@ frame rendered "Group BuyOn-hand" as one run of text.
 |-------|--------|
 | RED | `2a77e74` test: pin Orders out of the tab bar and into Account |
 | GREEN | `c55e7b6` fix: move Orders into Account so MOQ fits beside On-hand |
-| RED+GREEN (label size) | `05df1ab` fix: stop the group-buy and on-hand labels touching at 320px |
+| RED+GREEN (label size) | `a29e7ee` fix: stop the group-buy and on-hand labels touching at 320px |
