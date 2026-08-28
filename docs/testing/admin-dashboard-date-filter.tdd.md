@@ -251,3 +251,123 @@ Against the 80% minimum, on every axis.
   detail with no correctness consequence, verified by eye in the browser pass.
 - The picker offers no presets ("last 7 days", "this month"). Not asked for; the
   request was to choose the dates.
+
+---
+
+# Follow-up cycle: one revenue headline, not two
+
+## Source plan
+
+Derived from the reported symptom, 2026-08-28: *"the dashboard element is
+still not responsive most importantly the total revenue and it cant be filtered
+out by custom dates to see the revenue in the custom dates."*
+
+Two findings, both established before any code changed:
+
+1. **The report came from production, which has none of this work.** `origin/main`
+   has no `DateRangeFilter`, no `lib/analytics-range.ts`, no extracted
+   `StatCard.tsx`; its stat value is a hard `text-[28px]` in a fixed
+   `xl:grid-cols-5` row. `₱1,925,496.25` measures ~185px in a 128px card box
+   there, so it spills — and there is no picker to filter with. Both reported
+   symptoms are explained by the branch being unshipped, not by a defect in it.
+2. **One real defect survived on the branch.** Filtering rendered *two* revenue
+   cards — a scoped `Revenue in range`, and the lifetime figure still sitting
+   under `Total revenue`. The card an admin actually watches never moved.
+
+Finding 1 is a release question and is out of scope for this cycle. Finding 2 is
+the cycle below.
+
+## User journey
+
+> As an admin, I want the revenue figure I already watch to change when I pick a
+> date range, so that I can read revenue for those dates without first learning
+> which of two similar cards is the live one.
+
+## Task report
+
+### Collapse the two revenue cards into one scoped card
+
+The filtered row no longer emits a separate range card. `Total revenue` keeps
+its slot and its label, takes `totals.range.revenue` whenever a range is served,
+and moves the lifetime total down to its sub line (`6 orders · ₱1,925,496.25
+all-time`) so the range stays readable against the whole. The filtered row drops
+from four tiles to three (`xl:grid-cols-3`), which also gives the widest figure
+appreciably more room than the five-tile default.
+
+Validation: `npx vitest run app/admin/page.test.tsx`
+
+RED — failing for the intended reason, the second card:
+
+```
+× moves the revenue headline itself to the range, rather than standing a second
+  card beside it
+  → expect(element).not.toBeInTheDocument()
+    expected document not to contain element, found <div ...>Revenue in range</div>
+ Tests  1 failed | 11 passed (12)
+```
+
+GREEN:
+
+```
+✓ app/admin/StatCard.test.tsx (4 tests)
+✓ app/admin/page.test.tsx (12 tests)
+ Tests  16 passed (16)
+```
+
+Guaranteed by the passing test: with a range served, exactly one revenue card
+renders; it is labelled `Total revenue`; it shows the range figure and not the
+lifetime one; and the lifetime total survives as sub-line context.
+
+## Test specification
+
+| # | What is guaranteed | Test file or command | Test type | Result | Evidence |
+|---|--------------------|----------------------|-----------|--------|----------|
+| 1 | A served range puts the range revenue under `Total revenue`, not the lifetime figure | `app/admin/page.test.tsx:moves the revenue headline itself to the range…` | unit | PASS | `npx vitest run app/admin/page.test.tsx` |
+| 2 | No second `Revenue in range` card renders alongside it | same test | unit | PASS | same |
+| 3 | The lifetime total is retained as `N orders · ₱X all-time` context | same test | unit | PASS | same |
+| 4 | The unfiltered dashboard still shows the standing week/month/all-time cards | `app/admin/page.test.tsx:starts unfiltered…` | unit | PASS | same |
+| 5 | Clearing the range restores the unfiltered row | `app/admin/page.test.tsx:returns to the unfiltered dashboard…` | unit | PASS | same |
+
+## Browser verification
+
+Live dev server on :3000 (PGlite, one order of ₱4,555 dated Wed), reading the
+rendered card text at each step:
+
+| State | `TOTAL REVENUE` card |
+|---|---|
+| Unfiltered | `₱4,555` · 1 orders all-time |
+| 2026-08-01 → 2026-08-31 (contains the order) | `₱4,555` · 1 orders · ₱4,555 all-time |
+| 2026-01-01 → 2026-01-31 (contains none) | `₱0` · 0 orders · ₱4,555 all-time |
+
+The headline moves, and only one revenue card is present in the filtered states.
+
+API, via the authenticated page session:
+
+```
+?from=2026-08-01&to=2026-08-31 → 200 range {count: 1, revenue: 4555}
+?from=2026-01-01&to=2026-01-31 → 200 range {count: 0, revenue: 0}
+?from=2026-08-31&to=2026-08-01 → 400 "The end date must be on or after the start date."
+```
+
+## Full suite
+
+```
+npx vitest run app/admin/ app/api/admin/stats/ lib/
+ Test Files  129 passed (129)
+      Tests  1451 passed (1451)
+```
+
+## Known gaps
+
+- **Unshipped.** These commits live on `feat/group-buy-page`, 19 ahead of
+  `origin/main`. Production still shows the pre-fix dashboard. The three
+  dashboard commits (`16f3d53`, `73446a3`, `af402c0`) plus this cycle's two
+  touch only dashboard/analytics files and depend on nothing else from the
+  branch — `isValidYmd`, `dateRangeBounds` and `formatDateRange` are already on
+  `main` — so they cherry-pick cleanly without dragging in the campaign-form
+  changes that conflict with `feat/group-buy-section`.
+- **Unfiltered slack is thin.** In the five-tile default row, `₱1,925,496.25`
+  steps down to 19px and measures 126px inside a 128px box — it fits, and
+  `break-words` means anything larger wraps rather than clips. A figure of
+  `₱10,000,000.00` or beyond would wrap to two lines. Not corrected here; the
+  filtered row's three-tile layout is unaffected.
