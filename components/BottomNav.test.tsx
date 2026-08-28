@@ -114,16 +114,24 @@ describe('BottomNav compact typography', () => {
   const labelClassOf = (name: RegExp) =>
     screen.getByRole('link', { name }).className;
 
+  // Seven tabs on a 320px screen leave ~45.7px each, and "Group Buy" set at
+  // 9px measures ~44px — so in a headless 320px render its label ran straight
+  // into "On-hand" with no gap between them. 8.5px with tightened tracking
+  // puts visible space back between the two without shrinking the tap target.
   it('uses the tightest label size when the MOQ tab is present', () => {
     moqEnabled = { data: true };
     render(<BottomNav />);
-    expect(labelClassOf(/Group Buy/i)).toContain('text-[9px]');
+    expect(labelClassOf(/Group Buy/i)).toContain('text-[8.5px]');
+    expect(labelClassOf(/Group Buy/i)).toContain('tracking-tight');
   });
 
+  // Six tabs get ~53px each, which "Group Buy" clears at the standard size —
+  // tightening the tracking there would only cost legibility.
   it('uses the standard compact label size when only fixed tabs render', () => {
     moqEnabled = { data: false };
     render(<BottomNav />);
     expect(labelClassOf(/Group Buy/i)).toContain('text-[9.5px]');
+    expect(labelClassOf(/Group Buy/i)).not.toContain('tracking-tight');
   });
 
   it('applies one consistent label size across all seven tabs', () => {

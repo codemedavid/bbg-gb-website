@@ -40,9 +40,11 @@ export function BottomNav() {
   const tabs = moqEnabled
     ? [...TABS.slice(0, shopIndex + 1), MOQ_TAB, ...TABS.slice(shopIndex + 1)]
     : TABS;
-  // Seven tabs divide a 320px screen into ~45px columns, so the labels tighten
-  // by half a pixel once MOQ is on. Six leave enough room to stay readable.
-  const labelSize = tabs.length > 6 ? 'text-[9px]' : 'text-[9.5px]';
+  // Seven tabs divide a 320px screen into ~45.7px columns. "Group Buy" set at
+  // 9px measures ~44px and butted straight into "On-hand" with no gap; 8.5px
+  // with tightened tracking puts the space back while keeping the label
+  // readable. Six tabs get ~53px each and need neither.
+  const labelSize = tabs.length > 6 ? 'text-[8.5px] tracking-tight' : 'text-[9.5px]';
   return (
     <nav className="fixed bottom-0 left-1/2 z-20 flex w-full max-w-app -translate-x-1/2 overflow-x-auto border-t border-line-mist bg-white pb-4 pt-2 md:max-w-2xl md:border-x lg:max-w-4xl">
       {tabs.map((t) => {
