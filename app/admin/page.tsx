@@ -62,20 +62,28 @@ export default function DashboardPage() {
         <DateRangeFilter from={picked.from} to={picked.to} error={rangeError} onChange={setPicked} />
       </div>
 
-      {/* Filtering trades the two standing period cards for one range card, so
-          the row carries four tiles instead of five. Each range figure then sits
-          beside its own all-time counterpart, which is the comparison the filter
-          exists to make. */}
-      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${rangeTotals ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
-        {rangeTotals ? (
-          <StatCard label={`Revenue ${RANGE_LABEL}`} value={php(rangeTotals.revenue)} sub={`${rangeTotals.count} orders`} accent="#57a814" />
-        ) : (
+      {/* Filtering drops the two standing period cards, leaving three tiles
+          instead of five — and the revenue tile keeps its place and its label
+          rather than yielding to a second one. A scoped figure appearing beside
+          an unchanged 'Total revenue' is how the filter came to look broken:
+          the number an admin watches has to be the number that moves. */}
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${rangeTotals ? 'xl:grid-cols-3' : 'xl:grid-cols-5'}`}>
+        {!rangeTotals && (
           <>
             <StatCard label="Orders this week" value={String(data.totals.week.count)} sub={php(data.totals.week.revenue)} accent="#0b46b8" />
             <StatCard label="Orders this month" value={String(data.totals.month.count)} sub={php(data.totals.month.revenue)} accent="#57a814" />
           </>
         )}
-        <StatCard label="Total revenue" value={php(data.totals.all.revenue)} sub={`${data.totals.all.count} orders all-time`} />
+        {/* The lifetime total is not dropped, it steps down to the sub line: the
+            range is only readable against the whole. */}
+        <StatCard
+          label="Total revenue"
+          value={php(rangeTotals ? rangeTotals.revenue : data.totals.all.revenue)}
+          sub={rangeTotals
+            ? `${rangeTotals.count} orders · ${php(data.totals.all.revenue)} all-time`
+            : `${data.totals.all.count} orders all-time`}
+          accent={rangeTotals ? '#57a814' : undefined}
+        />
         {rangeFees !== undefined ? (
           <StatCard label={`Packing fees ${RANGE_LABEL}`} value={php(rangeFees)} sub={`${php(data.packingFees.all)} all-time`} accent="#0b46b8" />
         ) : (
