@@ -68,7 +68,7 @@ export default function AccountPage() {
 
   return (
     <>
-      <SectionHeader title="👤 My Account" sub="Profile · shipping address · password" />
+      <SectionHeader title="👤 My Account" sub="Orders · profile · shipping address · password" />
       <div className="grid grid-cols-1 gap-3.5 p-4 md:grid-cols-2 md:items-start md:p-6">
         <div className="flex items-center gap-3 rounded-[16px] bg-gradient-to-br from-brand-navy to-brand-blue p-4 text-white md:col-span-2">
           <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-white/20 text-[20px] font-bold">
@@ -82,6 +82,20 @@ export default function AccountPage() {
             <button onClick={() => router.push('/admin')} className="ml-auto flex-none rounded-lg bg-white/20 px-3 py-1.5 text-[12px] font-bold">Admin →</button>
           )}
         </div>
+
+        {/* The only entrance to My Orders. It lost its slot in the tab bar —
+            eight tabs did not fit a 320px phone — so it leads this page rather
+            than sitting among the forms: a customer opening Account is far more
+            often chasing an order than editing their address. */}
+        <Link href="/orders"
+          className="flex items-center gap-3 rounded-[16px] bg-white p-4 shadow-card transition-colors hover:bg-surface-mist active:scale-[.99] md:col-span-2">
+          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-[12px] bg-[#f2f8ec] text-[20px]">📦</span>
+          <span className="min-w-0">
+            <span className="block font-display text-[15px] font-bold text-ink">My Orders</span>
+            <span className="block text-[12px] text-ink-muted">Track status · download COA · settle hatian</span>
+          </span>
+          <span className="ml-auto flex-none text-[16px] font-bold text-brand-blue">→</span>
+        </Link>
 
         <Card title="Profile">
           <form onSubmit={saveProfile} className="flex flex-col gap-3">

@@ -39,10 +39,15 @@ describe('Account page — My Orders entrance', () => {
     expect(ordersLink()).toHaveTextContent(/my orders/i);
   });
 
-  it('puts the orders link first, above the profile forms', () => {
+  // Position matters as much as presence: a customer opening Account is far
+  // more often chasing an order than editing an address, and this link is now
+  // the only way there. Asserted against the page's own content, not the
+  // shared header — that chrome renders a cart link ahead of everything.
+  it('puts the orders link above the profile forms', () => {
     render(<AccountPage />);
-    const links = screen.getAllByRole('link');
-    expect(links[0]).toHaveAttribute('href', '/orders');
+    const profile = screen.getByRole('heading', { name: /^profile$/i });
+    const position = ordersLink().compareDocumentPosition(profile);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('still renders the profile, address and password cards', () => {
