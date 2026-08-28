@@ -127,15 +127,35 @@ describe('admin dashboard date filter', () => {
     fireEvent.change(from(), { target: { value: '2026-08-10' } });
     fireEvent.change(to(), { target: { value: '2026-08-12' } });
 
-    expect(screen.getByText('Revenue in range')).toBeInTheDocument();
     expect(screen.getByText('₱18,500')).toBeInTheDocument();
-    expect(screen.getByText('6 orders')).toBeInTheDocument();
     expect(screen.getByText('Packing fees in range')).toBeInTheDocument();
     expect(screen.getByText('₱900')).toBeInTheDocument();
     expect(screen.getByText(/Aug 10, 2026 – Aug 12, 2026/)).toBeInTheDocument();
     expect(screen.queryByText('Orders this week')).not.toBeInTheDocument();
-    // The lifetime figure is context the range never replaces.
+  });
+
+  // The dashboard used to answer a filtered question with two revenue cards: a
+  // scoped one, and the lifetime card sitting inertly beside it under the label
+  // an admin actually reads — 'Total revenue'. Picking dates appeared to do
+  // nothing, because the figure being watched was never the one that moved.
+  it('moves the revenue headline itself to the range, rather than standing a second card beside it', async () => {
+    stats.data.totals.all = { count: 220, revenue: 1925496.25 };
+    stats.data.range = { from: '2026-08-10', to: '2026-08-12' };
+    stats.data.totals.range = { count: 6, revenue: 18500 };
+    stats.data.packingFees.range = 900;
+
+    render(<DashboardPage />);
+    fireEvent.change(from(), { target: { value: '2026-08-10' } });
+    fireEvent.change(to(), { target: { value: '2026-08-12' } });
+
+    // One revenue card, under the label the admin was already watching.
     expect(screen.getByText('Total revenue')).toBeInTheDocument();
+    expect(screen.queryByText('Revenue in range')).not.toBeInTheDocument();
+    // ...and it carries the range figure, not the lifetime one.
+    expect(screen.getByText('₱18,500')).toBeInTheDocument();
+    expect(screen.queryByText('₱1,925,496.25')).not.toBeInTheDocument();
+    // The lifetime total is not lost — it steps down to context on that card.
+    expect(screen.getByText('6 orders · ₱1,925,496.25 all-time')).toBeInTheDocument();
   });
 
   it('refuses to request a backwards range and says why', async () => {
