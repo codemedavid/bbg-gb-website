@@ -31,10 +31,25 @@ export const SEGMENT_SHORT_LABEL: Record<ReportSegment, string> = {
   kahati: 'Kahati',
 };
 
-// orders.buy_type, as written by checkout (lib/order-modes.ts). 'solo' is the
-// on-hand shop; the other three are all pre-ordered against a batch and belong
-// on the supplier's side of the split.
-const GROUP_BUY_TYPES = new Set(['group_buy', 'moq']);
+// orders.buy_type, as written by checkout (lib/order-modes.ts), grouped by the
+// segment it belongs to. 'solo' is the on-hand shop; the other three are all
+// pre-ordered against a batch and belong on the supplier's side of the split.
+//
+// Exported because the admin orders board splits its list the same way, and two
+// copies of this mapping would be one page-load away from disagreeing about
+// where MOQ orders go.
+export const SEGMENT_BUY_TYPES: Record<ReportSegment, readonly string[]> = {
+  onhand: ['solo'],
+  groupbuy: ['group_buy', 'moq'],
+  kahati: ['kahati'],
+};
+
+/** Narrows an untrusted string — a query param, a route slug — to a segment. */
+export function isReportSegment(value: unknown): value is ReportSegment {
+  return typeof value === 'string' && (REPORT_SEGMENTS as readonly string[]).includes(value);
+}
+
+const GROUP_BUY_TYPES = new Set(SEGMENT_BUY_TYPES.groupbuy);
 
 // order_items.kind, the second signal. 'product' is an on-hand line; everything
 // else references a counter, a campaign or the MOQ shelf.

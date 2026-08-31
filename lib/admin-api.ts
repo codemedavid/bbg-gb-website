@@ -6,6 +6,7 @@ import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommit
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 import type { AccountRow } from './accounts';
 import type { StatsRange } from './analytics-range';
+import type { ReportSegment } from './report/segment';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -96,8 +97,14 @@ export const useCampaignParticipants = (id: string | null) =>
     enabled: !!id,
     retry: false,
   });
-export const useAdminOrders = (status?: string) =>
-  useQuery({ queryKey: ['admin', 'orders', status], queryFn: () => apiGet<(Order & { customerEmail: string })[]>(`/admin/orders${qs({ status })}`) });
+// `segment` scopes the list to one board — on-hand, group buy or hatian — and is
+// applied on the server: the list is unpaginated, so splitting it in the browser
+// would still fetch every order to throw most of it away.
+export const useAdminOrders = ({ status, segment }: { status?: string; segment?: ReportSegment } = {}) =>
+  useQuery({
+    queryKey: ['admin', 'orders', status, segment],
+    queryFn: () => apiGet<(Order & { customerEmail: string })[]>(`/admin/orders${qs({ status, segment })}`),
+  });
 export const useAdminOrder = (id: string | null) =>
   useQuery({
     queryKey: ['admin', 'order', id],
