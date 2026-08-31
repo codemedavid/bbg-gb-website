@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CartButton } from './BottomNav';
 import { CartShortcut } from './CartShortcut';
+import { OrdersShortcut } from './OrdersShortcut';
 import { useAuth } from '@/lib/useAuth';
 
 const Logo = () => (
@@ -37,6 +38,7 @@ export function AppHeader({ greeting }: { greeting?: string }) {
       <div className="ml-auto flex items-center gap-2">
         {greeting && <span className="hidden text-[13px] font-semibold text-ink-body xs:inline">{greeting}</span>}
         <CartButton />
+        <OrdersShortcut />
         <AuthControl />
       </div>
     </header>
@@ -54,7 +56,7 @@ export function SectionHeader({ title, sub }: { title: string; sub?: string }) {
         <div className="font-display text-[18px] font-bold text-ink">{title}</div>
         {sub && <div className="truncate text-[12px] text-ink-muted">{sub}</div>}
       </div>
-      <div className="ml-auto flex items-center gap-2"><CartShortcut /><AuthControl /></div>
+      <div className="ml-auto flex items-center gap-2"><CartShortcut /><OrdersShortcut /><AuthControl /></div>
     </header>
   );
 }

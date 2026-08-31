@@ -5,7 +5,7 @@
 // your orders live. A customer chasing a delivery is the most common reason to
 // open the app at all, so the shortcut belongs in the header chrome the cart
 // already occupies.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { User } from '@/lib/types';
 

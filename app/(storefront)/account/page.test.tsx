@@ -1,9 +1,10 @@
-// My Account — now the only entrance to My Orders.
+// My Account — the page's own entrance to My Orders.
 //
 // Orders lost its slot in the tab bar (seven tabs plus a conditional MOQ tab
-// did not fit a 320px phone). That is only a safe trade while Account carries
-// the link: without it a customer has no way back to their own orders, and the
-// hatian settle prompt that lives on that page becomes unreachable.
+// did not fit a 320px phone). The header now carries a shortcut too, but this
+// card is the signposted route: it is what a customer who opens Account
+// looking for a delivery actually reads. Without it the hatian settle prompt
+// that lives on the orders page loses its only described entrance.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -26,7 +27,10 @@ const AccountPage = (await import('./page')).default;
 
 beforeEach(() => { auth = { user, loading: false }; });
 
-const ordersLink = () => screen.getByRole('link', { name: /orders/i });
+// Matched on the card's own description rather than "orders": the shared
+// header carries an Orders shortcut with the same name, and these tests are
+// about the page's content, not that chrome.
+const ordersLink = () => screen.getByRole('link', { name: /track status/i });
 
 describe('Account page — My Orders entrance', () => {
   it('links to the orders page', () => {
@@ -40,9 +44,9 @@ describe('Account page — My Orders entrance', () => {
   });
 
   // Position matters as much as presence: a customer opening Account is far
-  // more often chasing an order than editing an address, and this link is now
-  // the only way there. Asserted against the page's own content, not the
-  // shared header — that chrome renders a cart link ahead of everything.
+  // more often chasing an order than editing an address. Asserted against the
+  // page's own content, not the shared header — that chrome renders a cart
+  // link ahead of everything.
   it('puts the orders link above the profile forms', () => {
     render(<AccountPage />);
     const profile = screen.getByRole('heading', { name: /^profile$/i });
@@ -61,6 +65,6 @@ describe('Account page — My Orders entrance', () => {
     auth = { user: null, loading: false };
     render(<AccountPage />);
     expect(replace).toHaveBeenCalledWith('/login');
-    expect(screen.queryByRole('link', { name: /my orders/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /track status/i })).not.toBeInTheDocument();
   });
 });
