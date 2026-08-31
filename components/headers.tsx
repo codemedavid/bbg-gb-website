@@ -45,10 +45,11 @@ export function AppHeader({ greeting }: { greeting?: string }) {
   );
 }
 
-// Every board tab's header. The cart shortcut lives here rather than on each
-// page, so adding it once covers Kahati, Group Buy, MOQ, Orders and Account —
-// the customer can open their basket from whichever tab they are browsing
-// instead of hunting for the bottom nav.
+// Every board tab's header. The cart and Orders shortcuts live here rather
+// than on each page, so placing them once covers Kahati, Group Buy, MOQ, Search
+// and Account — the customer can open their basket, or check on an order they
+// already placed, from whichever tab they are browsing instead of hunting for
+// the bottom nav.
 export function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <header className="sticky top-0 z-10 flex items-center gap-3 border-b-2 border-brand-green bg-white px-4 py-3.5 md:px-6">
