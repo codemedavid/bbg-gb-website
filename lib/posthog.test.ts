@@ -95,7 +95,42 @@ describe('captureEvent', () => {
     flush.mockRejectedValue(new Error('network down'));
     const { captureEvent: fn } = await import('./posthog');
 
-    await expect(fn(input())).resolves.toBeUndefined();
+    await expect(fn(input())).resolves.toBeDefined();
+  });
+});
+
+// PostHog is the delivery mechanism, so the capture IS the send. A caller that
+// cannot tell whether it succeeded cannot write a truthful email_log row, which
+// is how 144 undelivered password resets came to look like 144 delivered ones.
+// Reporting the outcome must not turn a PostHog outage into a thrown error.
+describe('captureEvent outcome', () => {
+  it('reports success once the event has flushed', async () => {
+    fakeEnv.posthogKey = 'phc_test';
+    const { captureEvent: fn } = await import('./posthog');
+
+    await expect(fn(input())).resolves.toEqual({ ok: true });
+  });
+
+  it('reports the failure and its reason when the flush is rejected', async () => {
+    fakeEnv.posthogKey = 'phc_test';
+    flush.mockRejectedValue(new Error('network down'));
+    const { captureEvent: fn } = await import('./posthog');
+
+    const outcome = await fn(input());
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toContain('network down');
+  });
+
+  // Unconfigured is a valid local state, but it is not a delivery. Saying so
+  // is what stops a dev-shaped production reading as a working one.
+  it('reports not-sent when POSTHOG_KEY is unset', async () => {
+    const { captureEvent: fn } = await import('./posthog');
+
+    const outcome = await fn(input());
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toMatch(/POSTHOG_KEY/i);
   });
 });
 

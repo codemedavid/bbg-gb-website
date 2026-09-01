@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 type Captured = { event: string; distinctId: string; email: string; properties?: Record<string, unknown> };
-const captureEvent = vi.fn(async (_input: Captured) => {});
+const captureEvent = vi.fn(async (_input: Captured) => ({ ok: true }) as { ok: boolean; error?: string });
 vi.mock('@/lib/posthog', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/posthog')>();
   return { ...actual, captureEvent };
@@ -30,7 +30,8 @@ const tokensOf = async (userId: string) => {
 
 beforeEach(async () => {
   await resetDb();
-  captureEvent.mockClear();
+  captureEvent.mockReset();
+  captureEvent.mockResolvedValue({ ok: true });
 });
 
 describe('POST /api/auth/forgot-password', () => {
@@ -137,6 +138,59 @@ describe('POST /api/auth/forgot-password', () => {
     const res = await POST(req({ email: 'not-an-email' }));
 
     expect(res.status).toBe(400);
+  });
+
+  // PostHog delivers this mail, so the capture IS the send. The audit row has to
+  // record what the capture actually did — the old row said "sent" either way,
+  // which is how 144 undelivered resets went unnoticed for two weeks.
+  it('records the reset as sent once PostHog accepted the event', async () => {
+    await makeUser({ email: 'ana@bbg.test' });
+
+    await POST(req({ email: 'ana@bbg.test' }));
+
+    const db = await getDb();
+    const [mail] = await db.select().from(emailLog);
+    expect(mail.deliveredBy).toBe('posthog');
+    expect(mail.status).toBe('sent');
+    expect(mail.error).toBeNull();
+  });
+
+  it('records the reset as failed, with the reason, when PostHog refused the event', async () => {
+    await makeUser({ email: 'ana@bbg.test' });
+    captureEvent.mockResolvedValue({ ok: false, error: 'network down' });
+
+    await POST(req({ email: 'ana@bbg.test' }));
+
+    const db = await getDb();
+    const [mail] = await db.select().from(emailLog);
+    expect(mail.status).toBe('failed');
+    expect(mail.error).toContain('network down');
+  });
+
+  // The token is still minted and the answer is still the generic one: a
+  // customer whose mail failed can retry, and a stranger still learns nothing.
+  it('still answers generically and still issues the token when delivery fails', async () => {
+    const user = await makeUser({ email: 'ana@bbg.test' });
+    captureEvent.mockResolvedValue({ ok: false, error: 'network down' });
+
+    const res = await POST(req({ email: 'ana@bbg.test' }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: { sent: true }, error: null });
+    expect(await tokensOf(user.id)).toHaveLength(1);
+  });
+
+  // The event has to be emitted before the row is written, or the row cannot
+  // know what happened to it.
+  it('captures the event before recording the audit row', async () => {
+    await makeUser({ email: 'ana@bbg.test' });
+
+    await POST(req({ email: 'ana@bbg.test' }));
+
+    const db = await getDb();
+    const [mail] = await db.select().from(emailLog);
+    expect(captureEvent).toHaveBeenCalledTimes(1);
+    expect(mail.status).toBe('sent');
   });
 
   it('leaves the existing password working until the link is used', async () => {
