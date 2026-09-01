@@ -1,9 +1,13 @@
 # BBG Peptides — customer email templates
 
 Gmail-safe HTML for every customer-facing order email. **PostHog Workflows is the
-sender** (see `docs/posthog-events.md` and the `posthog-email-sender-decision` note) —
-these files are meant to be pasted into a PostHog message template's HTML editor, one
-per workflow, and they use Liquid variables bound to the trigger event.
+sender for all of these** (see `docs/posthog-events.md`) — these files are meant to be
+pasted into a PostHog message template's HTML editor, one per workflow, and they use
+Liquid variables bound to the trigger event.
+
+That includes the password reset. It briefly moved to app-side SMTP on 2026-09-01 and
+was moved back on 2026-09-02; its workflow has settings the others do not need, and
+they are not optional. See gap 3.
 
 They are plain `.html` files, so you can also open them in a browser to check layout
 (Liquid tags render as literal text there) or paste one into a Gmail compose window if
@@ -14,7 +18,7 @@ you ever need to send an update by hand.
 Every CTA points at **`https://www.bbgph.org`** — the canonical host. The apex
 `bbgph.org` answers 308 to `www`, so linking `www` directly saves the redirect hop.
 `password-reset.html` is the exception: its link is absolute already, built server-side
-from `APP_URL`.
+from `APP_URL` and delivered to the template as `resetUrl`.
 
 Note that `/orders/<id>` requires a signed-in session and the app has no
 `?next=` return path yet — see the last gap below.
@@ -34,7 +38,7 @@ Note that `/orders/<id>` requires a signed-in session and the app has no
 | `kahati-cancelled.html` | `kahati_cancelled` | Hatian expired under 7 vials — explains the refund |
 | `settlement-placed.html` | `settlement_placed` | Hatian final checkout — one payment, one packing fee |
 | `settlement-confirmed.html` | ⚠ **no event yet** | See the gap below |
-| `password-reset.html` | `password_reset_requested` | Someone asked for a reset link on `/forgot-password` — carries a single-use link that expires in an hour |
+| `password-reset.html` | `password_reset_requested` | Someone asked for a reset link on `/forgot-password` — carries a single-use link that expires in an hour. **Its workflow needs non-default settings — see gap 3** |
 
 `order_status_changed` gets **no** template and **no** workflow. It only fires when a
 status was added without a name in `ORDER_STATUS_EVENT`, which needs a developer.
@@ -96,18 +100,47 @@ Each file carries its subject in the top HTML comment. Collected here:
 ## Known gaps
 
 1. **`settlement_confirmed` has no event.** `app/api/admin/settlements/[id]/route.ts`
-   calls `sendEmail(settlementConfirmedEmail(...))` but never `captureEvent()`. With
-   `SMTP_HOST` unset, a customer whose final payment is verified currently hears
-   nothing. `settlement-confirmed.html` is ready, but the route needs a
+   calls `sendEmail(settlementConfirmedEmail(...))` but never `captureEvent()`, and
+   `settlement_confirmed` is not in `SMTP_KINDS` either — so a customer whose final
+   payment is verified still hears nothing from either sender. Since 2026-09-02 those
+   rows are logged as **`undeliverable`** and show up in Admin → Emails rather than
+   looking sent. `settlement-confirmed.html` is ready, but the route needs a
    `settlement_confirmed` capture (`settlementId`, `orderCount`, `totalPhp`) first.
+   The admin-side order edit (`app/api/admin/orders/[id]/route.ts`) has the same hole.
 2. **Money renders unformatted.** `totalPhp: 10700` prints as `₱10700`; Liquid has no
    thousands-separator filter. If the client wants `₱10,700`, the cleanest fix is to
    emit preformatted `*Display` strings alongside the numbers in `lib/posthog.ts`.
-3. **`lib/email.ts` uses `display:flex` for its receipt rows.** Those templates are
-   dormant while `SMTP_HOST` is unset, but if app-side sending is ever turned on, the
-   receipts will render misaligned in Gmail. Copy the table markup from
-   `order-placed.html` at that point.
-4. **The order CTA dead-ends for a logged-out customer.**
+3. **`password-reset.html`'s workflow must not use the default settings.** This is the
+   one template whose *configuration* is load-bearing, and getting it wrong has
+   already cost two weeks of broken account recovery.
+
+   | Setting | Required value | Why |
+   |---|---|---|
+   | Re-entry | **Allow unlimited re-entry** | A customer who forgets twice must get two emails. This is the setting that failed. |
+   | Unsubscribe / opt-out suppression | **Ignore** | Recovery is transactional, not marketing. Someone who opted out of order updates must still get back into their account. |
+   | Link | `{{ event.properties.resetUrl }}` | Without it the mail carries no link and the whole flow is pointless. |
+
+   Between 2026-08-17 and 2026-08-31 the defaults were in force: a person who had
+   entered the workflow once could never enter again, so only a first request could
+   ever deliver. The app minted 144 valid links for 54 customers and **0 of the 54
+   ever completed a reset** (verified against production). The app side was provably
+   fine throughout.
+
+   The reset briefly moved to app-side SMTP on 2026-09-01 to escape this, and moved
+   back on 2026-09-02. SMTP was never actually viable: `MAIL_FROM` defaulted to
+   `noreply@bbgpeptides.ph`, a domain with no MX and no SPF/TXT, so the mail would
+   have been rejected or spam-binned anyway.
+
+   Whether it worked is now visible in **Admin → Emails** (`/admin/emails`) rather
+   than guessed. Note that `status = sent` only means PostHog accepted the event — if
+   resets read `sent` and customers still get nothing, the fault is in the settings
+   above.
+4. **`lib/email.ts` uses `display:flex` for its receipt rows.** Dormant: `SMTP_KINDS`
+   (now in `lib/email-delivery.ts`) is empty, so PostHog renders every receipt from
+   the table markup here. Only if a kind is ever added to that allowlist do those rows
+   go out misaligned in Gmail; copy the table markup from `order-placed.html` at that
+   point.
+5. **The order CTA dead-ends for a logged-out customer.**
    `app/(storefront)/orders/[id]/page.tsx` guards on `isLoading || !data`, so a 401 from
    an expired session renders "Loading…" forever instead of a login prompt. And
    `app/login/page.tsx` always `router.replace('/')`, so even logging in manually loses
