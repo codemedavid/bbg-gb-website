@@ -36,14 +36,13 @@ export const POST = handler(async (req: Request) => {
   });
 
   const link = resetUrl(resetOrigin(req.url, env.appUrl), token);
-  await sendEmail({
-    to: user.email,
-    ...passwordResetEmail({ name: user.name, resetUrl: link, expiresInMinutes: RESET_TOKEN_TTL_MINUTES }),
-    kind: 'password_reset',
-  });
-  // PostHog is what actually delivers customer mail here (lib/posthog.ts), so the
-  // link has to travel as a property or the destination has nothing to send.
-  await captureEvent({
+
+  // PostHog delivers this mail (docs/posthog-events.md), so the capture *is* the
+  // send and the link has to travel as a property or the workflow has nothing to
+  // put in the email. It runs before the audit row is written, so the row can
+  // record what actually happened instead of assuming it worked — the assumption
+  // is what hid 144 undelivered resets for two weeks.
+  const delivery = await captureEvent({
     event: 'password_reset_requested',
     distinctId: user.id,
     email: user.email,
@@ -51,5 +50,14 @@ export const POST = handler(async (req: Request) => {
     properties: { resetUrl: link, expiresInMinutes: RESET_TOKEN_TTL_MINUTES },
   });
 
+  await sendEmail({
+    to: user.email,
+    ...passwordResetEmail({ name: user.name, resetUrl: link, expiresInMinutes: RESET_TOKEN_TTL_MINUTES }),
+    kind: 'password_reset',
+    delivery,
+  });
+
+  // Still the generic answer even when delivery failed. The customer can retry,
+  // Admin → Emails shows the failure, and a stranger still learns nothing.
   return ok(GENERIC);
 });

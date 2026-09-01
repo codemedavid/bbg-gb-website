@@ -5,7 +5,7 @@
 // access here, and so a two-week outage of the password reset was invisible
 // until customers complained. This page exists to make the next one obvious.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 
 type Row = {
   id: string; toEmail: string; subject: string; kind: string;
@@ -38,8 +38,10 @@ describe('AdminEmailsPage', () => {
     feed.rows = [row()];
     render(<Page />);
 
-    expect(screen.getByText('ana@bbg.test')).toBeInTheDocument();
-    expect(screen.getByText(/sent/i)).toBeInTheDocument();
+    // Scoped to the table: the status filter buttons carry the same words.
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('ana@bbg.test')).toBeInTheDocument();
+    expect(table.getByText(/sent/i)).toBeInTheDocument();
   });
 
   // The whole point: a failure must not read like a success at a glance.
@@ -54,7 +56,9 @@ describe('AdminEmailsPage', () => {
     feed.rows = [row({ kind: 'settlement_confirmed', status: 'undeliverable', deliveredBy: 'none' })];
     render(<Page />);
 
-    expect(screen.getByText(/undeliverable/i)).toBeInTheDocument();
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText(/undeliverable/i)).toBeInTheDocument();
+    expect(table.getByText('settlement_confirmed')).toBeInTheDocument();
   });
 
   // An admin lands here because something is wrong, so the count of what is

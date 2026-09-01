@@ -204,6 +204,13 @@
       "when": 1785423272654,
       "tag": "0028_product_supplier_code",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1785423273654,
+      "tag": "0029_email_log_delivery_status",
+      "breakpoints": true
     }
   ]
 }

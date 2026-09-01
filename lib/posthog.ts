@@ -11,8 +11,10 @@
 //   2. Flush on every capture. Serverless invocations end before a batching
 //      client would ever send.
 //
-// The app still writes its own email_log rows and (when SMTP is configured)
-// sends its own mail; PostHog runs alongside that, not instead of it.
+// Never throwing used to mean never reporting either: the outcome was swallowed
+// and the caller wrote an email_log row claiming a send it had not observed. So
+// captureEvent returns what happened instead. Still no throw — the caller
+// records the failure rather than propagating it.
 import { PostHog } from 'posthog-node';
 import { env } from './env';
 
@@ -56,12 +58,21 @@ export type CaptureInput = {
   properties?: Record<string, unknown>;
 };
 
-export async function captureEvent({ event, distinctId, email, name, properties }: CaptureInput): Promise<void> {
+/**
+ * What became of a capture. `ok: false` is not an exception — the caller records
+ * it on the email_log row so an undelivered notification can be seen later.
+ */
+export type CaptureOutcome = { ok: boolean; error?: string };
+
+export async function captureEvent(
+  { event, distinctId, email, name, properties }: CaptureInput,
+): Promise<CaptureOutcome> {
   const posthog = getClient();
   if (!posthog) {
-    // Mirrors lib/email.ts: unconfigured is a valid local/dev state, not an error.
+    // Unconfigured is a valid local/dev state, but it is not a delivery. Saying
+    // so is what stops a dev-shaped production reading as a working one.
     console.log(`[posthog:skipped] ${event} -> ${email}`);
-    return;
+    return { ok: false, error: 'POSTHOG_KEY is not set, so nothing was sent.' };
   }
   try {
     posthog.capture({
@@ -76,7 +87,9 @@ export async function captureEvent({ event, distinctId, email, name, properties 
       },
     });
     await posthog.flush();
+    return { ok: true };
   } catch (err) {
     console.error(`[posthog] capture failed for ${event}:`, err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

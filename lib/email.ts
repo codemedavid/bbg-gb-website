@@ -1,9 +1,16 @@
-// Email notifications. Uses SMTP when configured; otherwise logs to console and the
-// email_log table so the flow works offline. Triggered on order placement + status changes.
+// Email notifications. Every one is recorded in email_log together with what
+// actually became of it — who was responsible for delivering it and whether that
+// worked. Who delivers which kind lives in lib/email-delivery.ts.
+//
+// The recording is the point. This function used to write a row and swallow
+// every failure, so a transmitted mail, a refused one and one nothing would ever
+// send were the same row. 144 undelivered password resets read as 144 successes
+// for two weeks because of it.
 import nodemailer, { type Transporter } from 'nodemailer';
 import { env } from './env';
 import { getDb, emailLog } from './db';
 import { collectedAmountLabel } from './kahati-downpayment';
+import { delivererFor, type DeliveryStatus } from './email-delivery';
 
 let transport: Transporter | null = null;
 function getTransport(): Transporter | null {
@@ -17,21 +24,69 @@ function getTransport(): Transporter | null {
   return transport;
 }
 
-export async function sendEmail(opts: { to: string; subject: string; html: string; kind: string }): Promise<void> {
-  const t = getTransport();
-  try {
-    if (t) {
-      await t.sendMail({ from: env.mailFrom, to: opts.to, subject: opts.subject, html: opts.html });
-    } else {
-      console.log(`\n[email:${opts.kind}] -> ${opts.to}\n  ${opts.subject}`);
+export type SendEmailInput = {
+  to: string;
+  subject: string;
+  html: string;
+  kind: string;
+  /**
+   * For a PostHog-delivered kind, the outcome of the capture that *is* the send
+   * (lib/posthog.ts captureEvent). Pass it and the row records what happened;
+   * omit it and the row says only that the mail was handed over, which is all
+   * the caller actually knows.
+   */
+  delivery?: { ok: boolean; error?: string };
+};
+
+/** What the app itself did about one notification, for the audit row. */
+async function transmit(opts: SendEmailInput): Promise<{ status: DeliveryStatus; error: string | null }> {
+  switch (delivererFor(opts.kind)) {
+    case 'smtp': {
+      const t = getTransport();
+      if (!t) return { status: 'skipped', error: 'SMTP_HOST is not set, so nothing was sent.' };
+      try {
+        await t.sendMail({ from: env.mailFrom, to: opts.to, subject: opts.subject, html: opts.html });
+        return { status: 'sent', error: null };
+      } catch (err) {
+        // Not rethrown: /api/auth/forgot-password answers every address
+        // identically, and a 500 here would make an existing account answer
+        // differently from a stranger's. The row carries the reason instead.
+        const error = err instanceof Error ? err.message : String(err);
+        console.error(`[email:${opts.kind}] send to ${opts.to} failed:`, err);
+        return { status: 'failed', error };
+      }
     }
-  } catch (err) {
-    console.error('[email] send failed:', err);
+    case 'posthog': {
+      console.log(`\n[email:${opts.kind}] -> ${opts.to}\n  ${opts.subject}`);
+      if (opts.delivery) {
+        return opts.delivery.ok
+          ? { status: 'sent', error: null }
+          : { status: 'failed', error: opts.delivery.error ?? 'PostHog refused the event.' };
+      }
+      // No outcome handed in: the caller emits its event separately, so all this
+      // knows is whether PostHog is configured to receive one at all.
+      return env.posthogKey
+        ? { status: 'queued', error: null }
+        : { status: 'skipped', error: 'POSTHOG_KEY is not set, so nothing was sent.' };
+    }
+    default:
+      // No workflow listens for this kind and the app does not transmit it, so
+      // composing it achieved nothing. Said out loud rather than logged as sent.
+      console.error(`[email:${opts.kind}] no delivery route — nothing will send this to ${opts.to}`);
+      return {
+        status: 'undeliverable',
+        error: `No delivery route is configured for kind "${opts.kind}".`,
+      };
   }
-  // Always record the notification for auditing/history.
+}
+
+export async function sendEmail(opts: SendEmailInput): Promise<void> {
+  const { status, error } = await transmit(opts);
+  // Always record the notification, and always record its fate with it.
   const db = await getDb();
   await db.insert(emailLog).values({
     toEmail: opts.to, subject: opts.subject, body: opts.html, kind: opts.kind,
+    deliveredBy: delivererFor(opts.kind), status, error,
   }).catch(() => {});
 }
 

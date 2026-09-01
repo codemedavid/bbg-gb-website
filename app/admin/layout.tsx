@@ -23,6 +23,10 @@ const NAV = [
   { href: '/admin/payment-methods', label: 'Payment Methods', icon: '💳' },
   // Registered accounts — the only view of a customer who has not ordered yet.
   { href: '/admin/accounts', label: 'Accounts', icon: '👥' },
+  // Delivery of every notification. Without a screen for it, a failed send is
+  // only a console.error — and this project has no Vercel log access, which is
+  // how 144 undelivered password resets went unnoticed for two weeks.
+  { href: '/admin/emails', label: 'Emails', icon: '✉️' },
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ];
 

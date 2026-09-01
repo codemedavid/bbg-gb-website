@@ -52,6 +52,27 @@ export const useAdminAccounts = (search?: string, role?: string) =>
     // previous rows keeps the table from blinking to "Loading…" between them.
     placeholderData: (prev) => prev,
   });
+// What became of every notification the shop composed, for Admin → Emails. The
+// `body` is deliberately absent from the row: for a password_reset it holds a
+// live single-use token, and this screen answers "did it arrive", not "what did
+// it say".
+export type AdminEmailRow = {
+  id: string;
+  toEmail: string;
+  subject: string;
+  kind: string;
+  deliveredBy: string;
+  status: string;
+  error: string | null;
+  sentAt: string;
+};
+
+export const useAdminEmails = (status?: string, kind?: string, search?: string) =>
+  useQuery({
+    queryKey: ['admin', 'emails', status ?? '', kind ?? '', search ?? ''],
+    queryFn: () => apiGet<AdminEmailRow[]>(`/admin/emails${qs({ status, kind, search })}`),
+    placeholderData: (prev) => prev,
+  });
 export const useAdminProducts = () => useQuery({ queryKey: ['admin', 'products'], queryFn: () => apiGet<Product[]>('/admin/products') });
 export const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], queryFn: () => apiGet<Category[]>('/admin/categories') });
 export const useAdminGroupBuys = () => useQuery({ queryKey: ['admin', 'groupbuys'], queryFn: () => apiGet<GroupBuy[]>('/admin/groupbuys') });

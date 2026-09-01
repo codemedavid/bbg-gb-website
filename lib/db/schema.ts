@@ -517,6 +517,15 @@ export const emailLog = pgTable('email_log', {
   subject: text('subject').notNull(),
   body: text('body').notNull(),
   kind: varchar('kind', { length: 60 }).notNull(),
+  // What actually became of this notification. Without these three columns the
+  // table recorded only that a mail had been composed — 144 undelivered password
+  // resets looked exactly like 144 delivered ones, which is how a two-week
+  // outage went unnoticed. Values are lib/email-delivery.ts's Deliverer and
+  // DeliveryStatus; rows written before this existed default to 'unknown',
+  // because that is the truth about them.
+  deliveredBy: varchar('delivered_by', { length: 20 }).notNull().default('none'),
+  status: varchar('status', { length: 20 }).notNull().default('unknown'),
+  error: text('error'),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
