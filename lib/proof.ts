@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { putFile } from '@/lib/storage';
 import { BUCKETS } from '@/lib/env';
 import { ApiError } from '@/lib/session';
-import { MAX_PROOFS, MAX_PROOF_BYTES, PROOF_TYPES } from '@/lib/proof-limits';
+import { MAX_PROOFS, MAX_PROOF_BYTES, PROOF_TYPES, isAcceptableProof } from '@/lib/proof-limits';
 
 // Re-exported so server callers keep one import, while the browser reaches for
 // lib/proof-limits.ts directly — this module pulls in ApiError from the
 // `server-only` session module and cannot be in a client bundle.
-export { MAX_PROOFS, MAX_PROOF_BYTES, PROOF_TYPES };
+export { MAX_PROOFS, MAX_PROOF_BYTES, PROOF_TYPES, isAcceptableProof };
 
 // An untouched <input type="file"> still submits an entry, so "did the customer
 // attach anything" is a question about size, not presence.
@@ -15,7 +15,12 @@ const isAttached = (v: FormDataEntryValue): v is File => v instanceof File && v.
 
 function validate(proof: File): void {
   if (proof.size > MAX_PROOF_BYTES) throw new ApiError(400, 'Proof must be 8MB or smaller.');
-  if (!PROOF_TYPES.test(proof.type)) throw new ApiError(400, 'Proof must be an image or PDF.');
+  // Not PROOF_TYPES directly: a file picked through some Android file managers
+  // arrives with an empty `type`, and matching that against the MIME list
+  // refuses an ordinary screenshot with a message that reads as nonsense to
+  // whoever is holding it. isAcceptableProof falls back to the name in exactly
+  // that case (lib/proof-limits.ts).
+  if (!isAcceptableProof(proof)) throw new ApiError(400, 'Proof must be an image or PDF.');
 }
 
 async function store(proof: File): Promise<string> {

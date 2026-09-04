@@ -602,6 +602,16 @@ export const POST = handler(async (req: Request) => {
       lineTotal: round2(line.unitPricePhp * line.qty),
     }));
 
+    // Best-effort, both of them. The order is committed: stock is drawn, slots
+    // are claimed, the row is there. Letting a mail server or an analytics
+    // outage throw from here reached the customer as 500 "Something went wrong."
+    // for an order that exists — and the reload that message invites mints a
+    // fresh idempotency key and places the whole thing a second time.
+    //
+    // Both channels already record their own fate (lib/email.ts writes every
+    // notification and its status to email_log; lib/posthog.ts returns an
+    // outcome), so a swallowed throw here loses no diagnosis — it only stops a
+    // delivery problem from being reported as an ordering one.
     await sendEmail({
       to: session.email,
       ...orderPlacedEmail({
@@ -610,7 +620,7 @@ export const POST = handler(async (req: Request) => {
         items: receiptItems,
       }),
       kind: 'order_receipt',
-    });
+    }).catch((err) => console.error(`[orders] receipt failed for ${orderNo}:`, err));
     await captureEvent({
       event: 'order_placed',
       distinctId: session.sub,
@@ -627,7 +637,7 @@ export const POST = handler(async (req: Request) => {
         // receipt — the customer cannot check it against what they ordered.
         items: receiptItems,
       },
-    });
+    }).catch((err) => console.error(`[orders] order_placed event failed for ${orderNo}:`, err));
   }
 
   // `orders` carries every order created. The single-order fields alongside it

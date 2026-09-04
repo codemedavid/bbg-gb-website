@@ -10,7 +10,7 @@
 // The cap is repeated on the server (lib/proof.ts) — this is the courteous half,
 // not the enforcing one.
 import { useEffect, useMemo, useState } from 'react';
-import { MAX_PROOFS } from '@/lib/proof-limits';
+import { MAX_PROOFS, MAX_PROOF_BYTES, isAcceptableProof } from '@/lib/proof-limits';
 
 type Props = {
   files: File[];
@@ -54,6 +54,21 @@ export function ProofUploader({ files, onChange, startIndex = 0 }: Props) {
       setError(
         `You can attach up to ${MAX_PROOFS} proofs. Remove one before adding another.`,
       );
+      return;
+    }
+    // The same two rules the route applies (lib/proof.ts), checked before the
+    // customer waits out an upload that was never going to be accepted — and
+    // said here while the file they picked is still on screen to be swapped.
+    // Naming the file matters: a batch of three screenshots refused as a group
+    // leaves them guessing which one to replace.
+    const tooBig = added.find((f) => f.size > MAX_PROOF_BYTES);
+    if (tooBig) {
+      setError(`"${tooBig.name}" is larger than 8MB. Please attach a smaller screenshot.`);
+      return;
+    }
+    const wrongKind = added.find((f) => !isAcceptableProof(f));
+    if (wrongKind) {
+      setError(`"${wrongKind.name}" is not an image or PDF. Please attach a screenshot or photo of your payment.`);
       return;
     }
     setError(null);
