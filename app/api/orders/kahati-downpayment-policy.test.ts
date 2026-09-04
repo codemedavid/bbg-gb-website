@@ -29,7 +29,7 @@ vi.mock('@/lib/session', () => {
 
 const { POST } = await import('./route');
 const { setKahatiDownpaymentPolicy } = await import('@/lib/settings');
-const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest } =
+const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest, makeDownpaymentMethod } =
   await import('@/lib/test/harness');
 
 async function signIn() {
@@ -48,6 +48,11 @@ beforeEach(async () => {
   session.current = null;
   await resetDb();
   await openBoards();
+  // A deposit policy cannot be configured without a QR to pay the deposit into
+  // — checkout blocks outright in that state, so lib/settings.ts now refuses the
+  // save. These tests configure deposits, so each needs the method an admin
+  // would have had to add first.
+  await makeDownpaymentMethod();
 });
 
 describe('kahati downpayment under a fixed policy', () => {

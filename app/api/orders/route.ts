@@ -5,7 +5,8 @@ import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
   computeTotals, perVialPrice, round2,
-  onHandUnitPrice, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT, type PriceableItem, type OnHandUnit,
+  onHandQuote, onHandSpecSnapshot, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT,
+  type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
 import { isChannelEnabled, channelRefusal } from '@/lib/product-channels';
@@ -25,6 +26,7 @@ import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
 import { captureEvent } from '@/lib/posthog';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
+import { isRetryableTxError, withTxRetry } from '@/lib/db/tx-retry';
 
 const itemSchema = z.object({
   kind: z.enum(['product', 'group_buy', 'moq_campaign', 'moq_product']),
@@ -199,10 +201,15 @@ export const POST = handler(async (req: Request) => {
         if (!isChannelEnabled(p, 'on_hand')) throw new ApiError(400, channelRefusal(`${p.name} ${p.spec}`, 'on_hand'));
 
         const unit: OnHandUnit = it.unit ?? 'piece';
-        const unitPricePhp = onHandUnitPrice(p, unit);
-        if (unitPricePhp == null) {
+        // Quantity is part of the price here: a piece line of ten vials or more
+        // is charged the shelf's bulk rate. Re-derived from the product row like
+        // every other price on this path — the storefront shows the customer the
+        // same quote (lib/pricing.ts onHandQuote), it does not send it.
+        const quote = onHandQuote(p, unit, it.qty);
+        if (quote == null) {
           throw new ApiError(400, `${p.name} ${p.spec} is not sold by the ${unit}.`);
         }
+        const unitPricePhp = quote.unitPricePhp;
         const check = validateOnHandQty(it.qty, unit, p.stock);
         if (!check.ok) throw new ApiError(400, `${p.name} ${p.spec}: ${check.message}`);
 
@@ -234,7 +241,7 @@ export const POST = handler(async (req: Request) => {
           qty: it.qty,
           packingFeePhp: packingFees.solo,
           nameSnapshot: `${p.name} ${p.spec}`,
-          specSnapshot: unit === 'kit' ? `On-hand · kit of ${VIALS_PER_KIT}` : 'On-hand · per piece',
+          specSnapshot: onHandSpecSnapshot(unit, quote.bulkApplied),
           productId: p.id,
         });
       } else if (it.kind === 'moq_product') {
@@ -551,7 +558,14 @@ export const POST = handler(async (req: Request) => {
 
   let created: Awaited<ReturnType<typeof placeOrders>>;
   try {
-    created = await placeOrders();
+    // Rows are locked in the order the customer's cart holds them, which is
+    // insertion order the client decides, so two carts naming the same counters
+    // the other way round deadlock. Postgres kills one side and rolls it back
+    // WHOLE — no slots claimed, no stock drawn — so re-running is the same as
+    // the customer having tapped Place a moment later. Doing it here spares them
+    // a failure that resolves itself; see lib/db/tx-retry.ts for why the set of
+    // retryable codes is as narrow as it is.
+    created = await withTxRetry(placeOrders);
   } catch (err) {
     // Two racing submissions of the same checkout: the loser's transaction
     // rolls back (stock draws included) on the unique idempotency key. If the
@@ -560,6 +574,15 @@ export const POST = handler(async (req: Request) => {
     if (body.idempotencyKey) {
       const replayed = await findReplayedCheckout(db, session.sub, body.idempotencyKey);
       if (replayed) return ok(replayed, 201);
+    }
+    // Still contending after every retry. The request is well-formed and nothing
+    // was written, so this is a conflict with concurrent traffic rather than a
+    // fault — 409, like the kahati rollover races above, and worded so the
+    // customer knows the one thing that will work. Left as a bare 500 it read as
+    // "Something went wrong", which invites a reload, a fresh idempotency key
+    // and a duplicate order.
+    if (isRetryableTxError(err)) {
+      throw new ApiError(409, 'The shop is busy right now — please tap Place order again.');
     }
     throw err;
   }

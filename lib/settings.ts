@@ -1,13 +1,13 @@
 // Admin-editable global defaults, backed by the `settings` key/value table.
 // Absent keys fall back to the code constants in PACKING_FEE_PHP, so an empty
 // table yields the documented defaults (solo 200 / kahati 150 / group_buy 300).
-import { eq, inArray } from 'drizzle-orm';
-import { getDb, settings } from '@/lib/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { getDb, paymentMethods, settings } from '@/lib/db';
 import { PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
 import { cycleAt, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
 import {
-  KAHATI_DOWNPAYMENT_KEYS, parseKahatiDownpaymentPolicy, serializeKahatiDownpaymentPolicy,
-  type KahatiDownpaymentPolicy,
+  KAHATI_DOWNPAYMENT_KEYS, isDownpaymentWaivableByCycle, parseKahatiDownpaymentPolicy,
+  serializeKahatiDownpaymentPolicy, type KahatiDownpaymentPolicy,
 } from '@/lib/kahati-downpayment';
 
 export type { PackingFees, Cycle, ScheduleRecurrence, KahatiDownpaymentPolicy };
@@ -248,8 +248,36 @@ export async function setKahatiDownpaymentPolicy(p: KahatiDownpaymentPolicy): Pr
       throw new Error('A fixed downpayment must be more than zero — pick the packing-fee rule to collect only the fee.');
     }
   }
-  const values = serializeKahatiDownpaymentPolicy(p);
   const db = await getDb();
+
+  // A deposit with nowhere to send it stops every kahati checkout dead.
+  //
+  // The refusal at checkout is right and stays: a kit that has not filled must
+  // not be payable through the full-payment QR, so with no deposit method the
+  // Place button blocks outright rather than falling back to it. But the policy
+  // and the QR are configured on different admin screens, so saving this first
+  // takes the busiest board offline with no signal except customers reporting
+  // they cannot order.
+  //
+  // So the two are coupled here, at the write, where an admin is present to read
+  // why. Only a real deposit needs one — the packing-fee rule collects nothing
+  // extra and pays through the ordinary methods, and gating it would lock an
+  // admin out of the very setting that undoes a misconfiguration.
+  if (!isDownpaymentWaivableByCycle(p)) {
+    const [qr] = await db.select({ id: paymentMethods.id }).from(paymentMethods)
+      .where(and(
+        eq(paymentMethods.purpose, 'kahati_downpayment'),
+        eq(paymentMethods.isActive, true),
+      ));
+    if (!qr) {
+      throw new Error(
+        'Add an active Kahati downpayment method first — a deposit with no downpayment QR to '
+        + 'pay it into blocks every Kahati checkout.',
+      );
+    }
+  }
+
+  const values = serializeKahatiDownpaymentPolicy(p);
   // One transaction: a policy written halfway would pair a new mode with the old
   // amount, and quote a downpayment nobody configured.
   await db.transaction(async (tx) => {

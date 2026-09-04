@@ -98,6 +98,9 @@ export async function makeProduct(
     // rather than anything the customer sees, so they default to absent.
     code: string | null; priceUsd: string | null; kitSize: number;
     isOnHand: boolean; onHandPiecePhp: number | null; onHandKitPhp: number | null;
+    // Price of ten vials — the shelf's bulk rate. Absent by default: most
+    // products state none, and the tests that care set it explicitly.
+    onHandTenVialPhp: number | null;
     // The two board channels, independent of each other: isGroupBuy is the
     // campaign board, isKahati the vial counters (lib/product-channels.ts).
     // Both off by default: most tests are about the shop, and a flagged product
@@ -125,6 +128,7 @@ export async function makeProduct(
     isOnHand: overrides.isOnHand ?? true,
     onHandPiecePhp: onHandPiecePhp != null ? String(onHandPiecePhp) : null,
     onHandKitPhp: onHandKitPhp != null ? String(onHandKitPhp) : null,
+    onHandTenVialPhp: overrides.onHandTenVialPhp != null ? String(overrides.onHandTenVialPhp) : null,
     isGroupBuy: overrides.isGroupBuy ?? false,
     // Defaults to the group buy flag, so the many tests written before channels
     // split still get the counter they expect from `isGroupBuy: true` alone.
@@ -215,7 +219,11 @@ export async function makeMoqProduct(
 export const SHIPPING = { shipName: 'Ana Cruz', shipPhone: '09171234567', shipAddress: '123 Mabini St, Manila' } as const;
 
 export async function makePaymentMethod(
-  overrides: Partial<{ label: string; accountName: string; accountNumber: string; isActive: boolean }> = {},
+  overrides: Partial<{
+    label: string; accountName: string; accountNumber: string; isActive: boolean;
+    /** 'full' (the default) or 'kahati_downpayment' — see lib/payment-purpose.ts. */
+    purpose: string;
+  }> = {},
 ): Promise<{ id: string; label: string }> {
   const db = await getDb();
   const label = overrides.label ?? 'GCash';
@@ -223,9 +231,20 @@ export async function makePaymentMethod(
     label, accountName: overrides.accountName ?? 'BBG Peptides',
     accountNumber: overrides.accountNumber ?? '09171234567',
     isActive: overrides.isActive ?? true,
+    purpose: overrides.purpose ?? 'full',
   }).returning();
   return { id: row.id, label };
 }
+
+/**
+ * The deposit QR a kahati downpayment policy cannot be configured without.
+ *
+ * setKahatiDownpaymentPolicy refuses a deposit with no active method to pay it
+ * into, because checkout blocks outright in that state — so any fixture that
+ * configures a deposit has to stand one up first, exactly as an admin would.
+ */
+export const makeDownpaymentMethod = (label = 'GCash Deposits') =>
+  makePaymentMethod({ label, purpose: 'kahati_downpayment' });
 
 // Builds the multipart Request a checkout route handler expects.
 export function checkoutRequest(

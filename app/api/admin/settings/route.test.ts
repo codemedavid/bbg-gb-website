@@ -23,7 +23,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { GET, PATCH } = await import('./route');
-const { resetDb, makeUser } = await import('@/lib/test/harness');
+const { resetDb, makeUser, makeDownpaymentMethod } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'admin') {
   const user = await makeUser({ role });
@@ -74,6 +74,10 @@ describe('PATCH /api/admin/settings', () => {
 
   it('saves a kahati downpayment policy and reads it back', async () => {
     await signIn('admin');
+    // The deposit QR the policy cannot be saved without — configuring a deposit
+    // with nowhere to send it blocks every kahati checkout, so the setting
+    // refuses it (lib/settings.ts).
+    await makeDownpaymentMethod();
     const res = await PATCH(patchReq({
       kahatiDownpayment: { mode: 'fixed', amountPhp: 500, percent: 0, refundable: false, policyNote: 'Non-refundable.' },
     }));

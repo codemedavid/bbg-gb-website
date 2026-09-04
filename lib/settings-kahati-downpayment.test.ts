@@ -5,7 +5,7 @@
 // configured. It degrades to the packing-fee rule that predates it instead.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb, settings } from '@/lib/db';
-import { resetDb } from '@/lib/test/harness';
+import { makeDownpaymentMethod, resetDb } from '@/lib/test/harness';
 import { getKahatiDownpaymentPolicy, setKahatiDownpaymentPolicy } from '@/lib/settings';
 import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from '@/lib/kahati-downpayment';
 
@@ -21,6 +21,8 @@ describe('kahati downpayment policy setting', () => {
   });
 
   it('stores and reads back a flat downpayment', async () => {
+    // A deposit needs a QR to pay it into before it can be configured at all.
+    await makeDownpaymentMethod();
     const saved = await setKahatiDownpaymentPolicy({
       mode: 'fixed', amountPhp: 500, percent: 0, refundable: true, policyNote: null,
     });
@@ -30,6 +32,7 @@ describe('kahati downpayment policy setting', () => {
   });
 
   it('stores and reads back a percentage downpayment with its refund terms', async () => {
+    await makeDownpaymentMethod();
     const saved = await setKahatiDownpaymentPolicy({
       mode: 'percent', amountPhp: 0, percent: 25, refundable: false,
       policyNote: 'Forfeited if you back out after the kit is confirmed.',
