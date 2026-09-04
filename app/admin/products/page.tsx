@@ -4,7 +4,7 @@ import { useAdminProducts, useAdminCategories, useMutate } from '@/lib/admin-api
 import { Modal, field, Labeled, btnPrimary, btnGhost, searchInput } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { php } from '@/lib/format';
-import { KAHATI_MAX_VIALS } from '@/lib/pricing';
+import { KAHATI_MAX_VIALS, ON_HAND_BULK_MIN_VIALS, round2 } from '@/lib/pricing';
 import { SALES_CHANNELS, CHANNEL_LABELS, CHANNEL_FIELD } from '@/lib/product-channels';
 import type { Product } from '@/lib/types';
 
@@ -15,9 +15,23 @@ const CHANNEL_HINT =
   'On-Hand sells ready stock from the shop. Group Buy pools whole kits in a campaign batch. '
   + 'Kahati splits one kit between buyers, so leave it off for anything not sold per vial.';
 
-// The bundle the shop quotes on the shelf. Ten vials happens to be a kit's
-// worth, but the two are priced independently — this is a rate, not a kit.
-const ON_HAND_BUNDLE_VIALS = 10;
+// The admin quotes the bulk deal as a PER-VIAL rate — "₱650 a vial if you take
+// ten" — because that is how the shop says it to a customer. The column has
+// always stored what ten vials come to, so the form converts in both directions
+// and neither the admin's habit nor the stored data has to change.
+//
+// Ten vials happens to be a kit's worth, but the two are priced independently:
+// this is a rate on the shelf, not a kit.
+const bulkVialFromTen = (ten: unknown): number | null => {
+  if (ten == null || ten === '') return null;
+  const n = Number(ten);
+  return Number.isFinite(n) && n > 0 ? round2(n / ON_HAND_BULK_MIN_VIALS) : null;
+};
+const tenFromBulkVial = (perVial: unknown): number | null => {
+  if (perVial == null || perVial === '') return null;
+  const n = Number(perVial);
+  return Number.isFinite(n) && n > 0 ? round2(n * ON_HAND_BULK_MIN_VIALS) : null;
+};
 
 const blank = (): Partial<Product> => ({
   name: '', spec: '', pricePhp: '0', arrivalGroup: 'white_powder', isOnHand: false,
@@ -46,11 +60,24 @@ function groupBuyError(f: Partial<Product>): string | null {
 function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose: () => void }) {
   const { data: cats = [] } = useAdminCategories();
   const { saveProduct } = useMutate();
-  const [f, setF] = useState<Partial<Product>>(initial);
+  // The bulk rate is edited as a per-vial figure but stored as a ten-vial one,
+  // so the row is converted on the way in as well as on the way out.
+  const [f, setF] = useState<Partial<Product>>(() => ({
+    ...initial,
+    onHandTenVialPhp: bulkVialFromTen(initial.onHandTenVialPhp) as any,
+  }));
   const num = (v: string) => (v === '' ? null : Number(v));
   // A rejected save must show its reason here in the form — silently keeping
   // the modal open reads as a broken Save button.
   const [error, setError] = useState<string | null>(null);
+
+  // Both read straight off the form so the hints move as the admin types.
+  const bulkRate = f.onHandTenVialPhp != null && Number(f.onHandTenVialPhp) > 0
+    ? Number(f.onHandTenVialPhp)
+    : null;
+  const piecePrice = f.onHandPiecePhp != null && Number(f.onHandPiecePhp) > 0
+    ? Number(f.onHandPiecePhp)
+    : null;
 
   const submit = async () => {
     setError(null);
@@ -67,7 +94,7 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
         pricePhp: Number(f.pricePhp) as any, priceUsd: (f.priceUsd != null ? Number(f.priceUsd) : null) as any,
         isOnHand: f.isOnHand, onHandKitPhp: (f.onHandKitPhp != null ? Number(f.onHandKitPhp) : null) as any,
         onHandPiecePhp: (f.onHandPiecePhp != null ? Number(f.onHandPiecePhp) : null) as any,
-        onHandTenVialPhp: (f.onHandTenVialPhp != null ? Number(f.onHandTenVialPhp) : null) as any,
+        onHandTenVialPhp: tenFromBulkVial(f.onHandTenVialPhp) as any,
         stock: f.stock, kitSize: f.kitSize, arrivalGroup: f.arrivalGroup, imageEmoji: f.imageEmoji, description: f.description ?? null,
         // Sent whether or not the product is currently offered this way:
         // isGroupBuy is the switch, and keeping the figures means an admin who
@@ -163,15 +190,30 @@ function ProductForm({ initial, onClose }: { initial: Partial<Product>; onClose:
           <div className="mt-2 grid grid-cols-2 gap-3">
             <Labeled label="On-hand price / kit ₱"><input className={field} type="number" value={(f.onHandKitPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandKitPhp: num(e.target.value) as any })} /></Labeled>
             <Labeled label="On-hand price / piece ₱"><input className={field} type="number" value={(f.onHandPiecePhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandPiecePhp: num(e.target.value) as any })} /></Labeled>
-            {/* The bulk rate for ten vials, stated rather than inferred: the two
-                prices above only ever implied it, and the shop quotes ten at a
-                rate of its own. Blank means the product has no bundle rate —
-                never ₱0, which would read as ten free vials. */}
-            <Labeled label={`On-hand price / ${ON_HAND_BUNDLE_VIALS} vials ₱`}><input className={field} type="number" min={0} value={(f.onHandTenVialPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandTenVialPhp: num(e.target.value) as any })} /></Labeled>
+            {/* The bulk rate, stated rather than inferred: the two prices above
+                only ever implied it, and the shop quotes ten at a rate of its
+                own. Blank means the product has no bulk rate — never ₱0, which
+                would read as free vials. */}
+            <Labeled label={`Discounted price / vial at ${ON_HAND_BULK_MIN_VIALS}+ ₱`}><input className={field} type="number" min={0} value={(f.onHandTenVialPhp as any) ?? ''} onChange={(e) => setF({ ...f, onHandTenVialPhp: num(e.target.value) as any })} /></Labeled>
           </div>
-          {f.onHandTenVialPhp != null && Number(f.onHandTenVialPhp) > 0 && (
-            <p className="mt-1.5 text-[12px] leading-snug text-ink-muted">
-              {php(Number(f.onHandTenVialPhp) / ON_HAND_BUNDLE_VIALS)} per vial across the {ON_HAND_BUNDLE_VIALS}.
+          <p className="mt-1.5 text-[12px] leading-snug text-ink-muted">
+            A customer taking {ON_HAND_BULK_MIN_VIALS} vials or more pays this per vial instead of the
+            piece price. Leave blank for no bulk discount.
+          </p>
+          {bulkRate != null && (
+            <p className="mt-1 text-[12px] font-semibold leading-snug text-brand-greendark">
+              {ON_HAND_BULK_MIN_VIALS} vials = {php(bulkRate * ON_HAND_BULK_MIN_VIALS)}
+              {piecePrice != null && ` · saves ${php(round2((piecePrice - bulkRate) * ON_HAND_BULK_MIN_VIALS))}`}
+            </p>
+          )}
+          {/* A rate that is not cheaper is not a discount, and the storefront
+              declines to present it as one (lib/pricing.ts onHandBulkVialPrice).
+              An admin who typed it needs to hear that here, not discover it by
+              watching a customer not get a discount. */}
+          {bulkRate != null && piecePrice != null && bulkRate >= piecePrice && (
+            <p className="mt-1 text-[12px] font-semibold leading-snug text-[#c2410c]">
+              That is not cheaper than the piece price of {php(piecePrice)} — customers will keep
+              paying the piece price.
             </p>
           )}
         </>
@@ -291,7 +333,13 @@ export default function AdminProductsPage() {
                     <div className="text-[11.5px] text-ink-muted">{p.spec} · {p.code}</div>
                   </td>
                   <td className="px-4 py-3 font-display font-bold">{php(p.pricePhp)}</td>
-                  <td className="px-4 py-3 text-ink-body">{p.isOnHand ? `${php(p.onHandKitPhp || 0)} / ${php(p.onHandPiecePhp || 0)}` : <span className="text-ink-faint">—</span>}</td>
+                  {/* `|| 0` here printed "₱0" for every unit a product is not sold by —
+                      six live products on the day this was written — which is the
+                      admin-side half of the reported "prices display as ₱0". An
+                      unset on-hand price means NOT SOLD THIS WAY (lib/pricing.ts
+                      onHandUnitPrice returns null for it, and checkout refuses the
+                      line), never free. php() now says so on its own. */}
+                  <td className="px-4 py-3 text-ink-body">{p.isOnHand ? `${php(p.onHandKitPhp as never)} / ${php(p.onHandPiecePhp as never)}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="px-4 py-3">{p.stock}</td>
                   <td className="px-4 py-3"><span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${p.arrivalGroup === 'white_powder' ? 'bg-[#e8f5db] text-brand-greendark' : 'bg-warn-bg text-warn-fg'}`}>{p.arrivalGroup === 'white_powder' ? 'White' : 'Salt/Liquid'}</span></td>
                   <td className="px-4 py-3 text-right">

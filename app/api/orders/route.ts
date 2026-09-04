@@ -6,6 +6,7 @@ import { requireSession, ApiError } from '@/lib/session';
 import {
   computeTotals, perVialPrice, round2,
   onHandQuote, onHandSpecSnapshot, validateOnHandQty, validateMoqQty, vialsFor, VIALS_PER_KIT,
+  priceChangedMessage, priceHasChanged,
   type PriceableItem, type OnHandUnit,
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
@@ -22,6 +23,8 @@ import { isDownpaymentWaivableByCycle, kahatiDownpaymentDue } from '@/lib/kahati
 import type { PaymentPurpose } from '@/lib/payment-purpose';
 import { requireCommitmentsOpen } from '@/lib/schedule-gate';
 import { validateAndStoreProofs } from '@/lib/proof';
+import { checkoutPaymentStatus } from '@/lib/payment-status';
+import { checkoutLog } from '@/lib/checkout-log';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
 import { nextOrderNo } from '@/lib/order-number';
 import { captureEvent } from '@/lib/posthog';
@@ -35,6 +38,12 @@ const itemSchema = z.object({
   // On-hand lines only: 'piece' (single vial) or 'kit' (VIALS_PER_KIT vials).
   // Absent on kahati lines; defaults to 'piece' so older clients keep working.
   unit: z.enum(['piece', 'kit']).optional(),
+  // What the CART displayed for one unit of this line, if it said. Advisory
+  // only: the price charged is always re-read from the database below, and this
+  // is compared against it so a customer is never billed a figure they were
+  // never shown (lib/pricing.ts priceHasChanged). Optional, so a client running
+  // an older bundle still checks out.
+  quotedUnitPricePhp: z.number().nonnegative().max(10_000_000).optional(),
 });
 const checkoutSchema = z.object({
   items: z.array(itemSchema).min(1),
@@ -91,6 +100,7 @@ export const POST = handler(async (req: Request) => {
   });
 
   const db = await getDb();
+  checkoutLog('checkout_started', { userId: session.sub, itemCount: body.items.length });
 
   // A retry of an already-successful submission replays the original orders —
   // no new rows, no new stock draws, no repeat emails.
@@ -188,6 +198,20 @@ export const POST = handler(async (req: Request) => {
     if (body.paymentMethod) await requireMethod(body.paymentMethod, 'full');
     if (body.downpaymentMethod) await requireMethod(body.downpaymentMethod, 'kahati_downpayment');
 
+    // Refuse a line the cart priced differently from the database. 409 rather
+    // than 400: the request is well-formed and the item exists — it conflicts
+    // with a price that moved underneath it, and re-placing the order is what
+    // resolves it. Thrown from inside the transaction, so nothing is written
+    // and no stock or slot is drawn.
+    const requireQuoteMatches = (quoted: number | undefined, actual: number, name: string): void => {
+      if (priceHasChanged(quoted, actual)) {
+        checkoutLog('price_changed_mid_checkout', {
+          userId: session.sub, quotedPhp: quoted as number, actualPhp: actual,
+        });
+        throw new ApiError(409, priceChangedMessage(name, quoted as number, actual));
+      }
+    };
+
     // Re-price server-side; never trust client prices.
     const priced: Priced[] = [];
     for (const it of body.items) {
@@ -210,6 +234,7 @@ export const POST = handler(async (req: Request) => {
           throw new ApiError(400, `${p.name} ${p.spec} is not sold by the ${unit}.`);
         }
         const unitPricePhp = quote.unitPricePhp;
+        requireQuoteMatches(it.quotedUnitPricePhp, unitPricePhp, `${p.name} ${p.spec}`);
         const check = validateOnHandQty(it.qty, unit, p.stock);
         if (!check.ok) throw new ApiError(400, `${p.name} ${p.spec}: ${check.message}`);
 
@@ -255,6 +280,7 @@ export const POST = handler(async (req: Request) => {
         // quantity past the target fills the buy rather than overselling it.
         const check = validateMoqQty(it.qty, m.minOrderQty);
         if (!check.ok) throw new ApiError(400, `${m.name}: ${check.message}`);
+        requireQuoteMatches(it.quotedUnitPricePhp, round2(Number(m.pricePhp)), m.name);
 
         // The counter climbs in SQL rather than from a value read a moment ago,
         // so two customers committing at the same instant both land instead of
@@ -292,6 +318,8 @@ export const POST = handler(async (req: Request) => {
         if (!Number.isInteger(it.qty) || it.qty < c.perCustomerMin) {
           throw new ApiError(400, `${c.name}: minimum commitment is ${c.perCustomerMin} kit(s).`);
         }
+
+        requireQuoteMatches(it.quotedUnitPricePhp, Number(c.pricePerKitPhp), c.name);
 
         // A filled batch is full, not closed for business — the kits belong in
         // whichever batch of the series is open. Cancelled and approved
@@ -366,6 +394,7 @@ export const POST = handler(async (req: Request) => {
         if (!Number.isInteger(it.qty) || it.qty < g.minVials) {
           throw new ApiError(400, `Minimum kahati commitment is ${g.minVials} vials.`);
         }
+        requireQuoteMatches(it.quotedUnitPricePhp, perVialPrice(Number(g.pricePerKitPhp)), g.name);
 
         // Claim across counters. Fill the current counter; when it caps, that
         // fill closes it and auto-opens a fresh sibling (the "reset" the client
@@ -482,11 +511,29 @@ export const POST = handler(async (req: Request) => {
 
       // Nothing was paid and no proof exists, so there is nothing for an admin
       // to verify — parking it in 'proof_review' would queue a review that can
-      // never resolve. The commitment is simply confirmed.
+      // never resolve. The commitment moves straight on in the FULFILMENT flow.
+      //
+      // What this deliberately no longer does is treat that as a statement
+      // about money. 'payment_confirmed' is a fulfilment position here and
+      // nothing more; whether a payment was actually received and checked is
+      // paymentStatus's job, immediately below.
       const status = confirmOnly ? 'payment_confirmed' : 'proof_review';
 
+      // …and the money, separately and honestly. A checkout can only ever
+      // report 'not_due', 'proof_submitted' or 'pending' — checkoutPaymentStatus
+      // has no path to 'confirmed', so no client-built request can claim a
+      // verified payment however it is shaped (lib/payment-status.ts).
+      //
+      // This is the fix for the reported "Payment Confirmed without proof": a
+      // confirm-only commitment now records that nothing was DUE, rather than
+      // that something was PAID.
+      const paymentStatus = checkoutPaymentStatus({
+        nothingDue: confirmOnly,
+        proofCount: proofKeys.length,
+      });
+
       const [order] = await tx.insert(orders).values({
-        orderNo, userId: session.sub, status, buyType,
+        orderNo, userId: session.sub, status, paymentStatus, buyType,
         subtotalPhp: String(totals.subtotal), packingFeePhp: String(totals.packingFee),
         totalPhp: String(totals.total), downpaymentPhp: String(downpayment), totalUsd: String(totalUsd),
         shipName: body.shipName, shipPhone: body.shipPhone, shipAddress: body.shipAddress,
@@ -557,6 +604,7 @@ export const POST = handler(async (req: Request) => {
   });
 
   let created: Awaited<ReturnType<typeof placeOrders>>;
+  checkoutLog('order_creation_started', { userId: session.sub, itemCount: body.items.length });
   try {
     // Rows are locked in the order the customer's cart holds them, which is
     // insertion order the client decides, so two carts naming the same counters
@@ -582,8 +630,18 @@ export const POST = handler(async (req: Request) => {
     // "Something went wrong", which invites a reload, a fresh idempotency key
     // and a duplicate order.
     if (isRetryableTxError(err)) {
+      checkoutLog('order_creation_failed', {
+        userId: session.sub, httpStatus: 409, reason: 'contended_after_retries',
+      });
       throw new ApiError(409, 'The shop is busy right now — please tap Place order again.');
     }
+    // The reason, never the message: a validation refusal names products and a
+    // driver error can carry query text, and neither belongs in a log drain.
+    checkoutLog('order_creation_failed', {
+      userId: session.sub,
+      httpStatus: err instanceof ApiError ? err.status : 500,
+      reason: err instanceof ApiError ? 'refused' : 'unexpected',
+    });
     throw err;
   }
 
@@ -592,6 +650,13 @@ export const POST = handler(async (req: Request) => {
   // totals, downpayments and delivery timelines, so a single combined notice would
   // misstate what the customer owes on each.
   for (const { order, orderNo, totals, lineCount, lines, confirmOnly } of created) {
+    checkoutLog('order_created', {
+      userId: session.sub, orderId: order.id, orderNo, buyType: order.buyType,
+      status: order.status, paymentStatus: order.paymentStatus,
+      totalPhp: totals.total, downpaymentPhp: Number(order.downpaymentPhp),
+      itemCount: lineCount, proofCount: proofKeys.length, splitCount: created.length,
+      cycleKey: order.cycleKey,
+    });
     // The same lines go to both channels, built once. PostHog is what actually
     // delivers the mail (lib/posthog.ts), so a receipt it cannot itemise is a
     // receipt the customer never gets — sendEmail's beautifully rendered one

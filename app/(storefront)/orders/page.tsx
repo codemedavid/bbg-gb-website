@@ -8,7 +8,7 @@ import { useOrders, useSettlementPreview } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { php, shortDate } from '@/lib/format';
 import { collectedAmountLabel } from '@/lib/kahati-downpayment';
-import { STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
+import { STATUS_LABEL, STATUS_BADGE, orderBadge } from '@/lib/order-status';
 import { useToast } from '@/lib/store/toast';
 import type { Order } from '@/lib/types';
 
@@ -31,6 +31,9 @@ function OrderCard({ order }: { order: Order }) {
   const router = useRouter();
   const toast = useToast((s) => s.show);
   const items = order.items ?? [];
+  // Payment and fulfilment are two fields now; orderBadge decides which one
+  // this order's badge should be speaking about.
+  const badge = orderBadge(order);
   const downpayment = Number(order.downpaymentPhp ?? 0);
   const balance = Number(order.totalPhp) - downpayment;
   // A count, not a sample. Naming the first item and appending "+3 more" read
@@ -45,7 +48,7 @@ function OrderCard({ order }: { order: Order }) {
           <div className="text-[14.5px] font-bold text-ink">{order.orderNo}</div>
           <div className="text-[12px] text-ink-muted">{shortDate(order.createdAt)} · {itemsText}</div>
         </div>
-        <span className={`flex-none rounded-md px-2.5 py-1 text-[11px] font-bold ${STATUS_BADGE[order.status] || ''}`}>{STATUS_LABEL[order.status] ?? order.status}</span>
+        <span className={`flex-none rounded-md px-2.5 py-1 text-[11px] font-bold ${badge.className}`}>{badge.label}</span>
       </button>
       {open && (
         <div className="mt-3.5 border-t border-line-soft pt-3.5">

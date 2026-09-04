@@ -1,9 +1,10 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { getDb, orders, orderPaymentProofs, orderStatusHistory } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import { validateAndStoreProofs } from '@/lib/proof';
 import { acceptsMoreProofs } from '@/lib/order-status';
+import { checkoutLog } from '@/lib/checkout-log';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -58,10 +59,26 @@ export const POST = handler(async (req: Request, ctx: Ctx) => {
     await tx.insert(orderPaymentProofs).values(keys.map((storageKey, i) => ({
       orderId: id, storageKey, sortOrder: nextIndex + i,
     })));
-    // The order's status is deliberately NOT touched. Reverting a confirmed
+
+    // The FULFILMENT status is deliberately NOT touched. Reverting a confirmed
     // order to proof_review would undo an admin's verification every time a
     // customer uploaded. The history row is how they learn of it instead —
     // without it a thumbnail simply appears and nobody knows when or why.
+    //
+    // The PAYMENT status does move, and only in the one direction that is
+    // honest: something is now waiting to be looked at. This is the transition
+    // the client asked for — "uploading a payment proof should NOT equal
+    // confirming payment; it should only change pending -> proof_submitted".
+    //
+    // Guarded on 'pending' alone, in the WHERE clause rather than in an if:
+    // an admin who has already confirmed or rejected this order made a decision
+    // about money, and a later upload must not quietly reopen it. A 'not_due'
+    // order is not moved either — nothing was owed, so a screenshot attached to
+    // it is not evidence of a payment we are waiting on.
+    await tx.update(orders)
+      .set({ paymentStatus: 'proof_submitted', updatedAt: new Date() })
+      .where(and(eq(orders.id, id), eq(orders.paymentStatus, 'pending')));
+
     await tx.insert(orderStatusHistory).values({
       orderId: id,
       status: order.status,
@@ -69,6 +86,13 @@ export const POST = handler(async (req: Request, ctx: Ctx) => {
         ? `Customer added proof #${nextIndex + 1}`
         : `Customer added proofs #${nextIndex + 1}–#${nextIndex + keys.length}`,
     });
+  });
+
+  checkoutLog('payment_proof_uploaded', {
+    userId: session.sub, orderId: id, orderNo: order.orderNo,
+    proofCount: existing.length + keys.length,
+    previousPaymentStatus: order.paymentStatus,
+    paymentStatus: order.paymentStatus === 'pending' ? 'proof_submitted' : order.paymentStatus,
   });
 
   const proofs = await db.select().from(orderPaymentProofs)

@@ -8,9 +8,16 @@ import { vialsForOrderLine } from '@/lib/kahati-server';
 import { sendEmail, orderStatusEmail } from '@/lib/email';
 import { captureEvent, orderStatusEvent } from '@/lib/posthog';
 import { STATUS_LABEL } from '@/lib/order-status';
+import { PAYMENT_STATUSES, type PaymentStatus } from '@/lib/payment-status';
+import { checkoutLog } from '@/lib/checkout-log';
 
 const schema = z.object({
   status: z.enum([...ORDER_STATUS_FLOW, 'cancelled'] as [string, ...string[]]),
+  // The admin's verdict on the MONEY, separate from the parcel's progress.
+  // Optional: most status changes are about fulfilment and leave the payment
+  // verdict where it was. When absent, paymentVerdictFor derives the obvious
+  // one from the fulfilment move.
+  paymentStatus: z.enum(PAYMENT_STATUSES as unknown as [string, ...string[]]).optional(),
   trackingNo: z.string().max(80).optional(),
   note: z.string().max(500).optional(),
   // Weekly-report fulfilment fields (admin-editable, optional).
@@ -18,6 +25,32 @@ const schema = z.object({
   packedBy: z.string().max(60).optional(),
   paymentMethod: z.string().max(40).optional(),
 });
+
+
+/**
+ * The payment verdict this status change implies.
+ *
+ * An admin moving an order INTO 'payment_confirmed' is the act of verifying
+ * money — that is what the button means on the admin board, and it is the only
+ * place in the system a payment may become 'confirmed'. Cancelling ends any
+ * obligation, so nothing is collectable. Every other fulfilment move (shipped,
+ * delivered, batch_filling) says nothing about money and must leave the existing
+ * verdict alone, or an admin marking a parcel shipped would silently confirm a
+ * payment nobody checked.
+ *
+ * An explicit `paymentStatus` in the request always wins: it lets an admin
+ * reject a bad proof without touching fulfilment at all.
+ */
+function paymentVerdictFor(
+  requested: string | undefined,
+  nextStatus: string,
+  current: string,
+): PaymentStatus {
+  if (requested) return requested as PaymentStatus;
+  if (nextStatus === 'payment_confirmed') return 'confirmed';
+  if (nextStatus === 'cancelled') return 'not_due';
+  return current as PaymentStatus;
+}
 
 export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   await requireAdmin();
@@ -27,9 +60,12 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   const [order] = await db.select().from(orders).where(eq(orders.id, id));
   if (!order) throw new ApiError(404, 'Order not found.');
 
+  const paymentStatus = paymentVerdictFor(b.paymentStatus, b.status, order.paymentStatus);
+
   const updated = await db.transaction(async (tx) => {
     const [row] = await tx.update(orders).set({
       status: b.status as never,
+      paymentStatus,
       trackingNo: b.trackingNo ?? order.trackingNo,
       // Weekly-report fulfilment fields — only overwrite when provided.
       courier: b.courier ?? order.courier,
@@ -117,6 +153,16 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
     }
     return row;
   });
+
+  // Only when it actually moved. A fulfilment-only change logging a payment
+  // event would make the payment history unreadable.
+  if (paymentStatus !== order.paymentStatus) {
+    checkoutLog('payment_status_changed', {
+      orderId: id, orderNo: order.orderNo, buyType: order.buyType,
+      previousPaymentStatus: order.paymentStatus, paymentStatus,
+      status: b.status, totalPhp: Number(order.totalPhp),
+    });
+  }
 
   const [customer] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, order.userId));
   if (customer) {

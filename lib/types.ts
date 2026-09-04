@@ -142,6 +142,13 @@ export type OrderItem = {
 export type Order = {
   // Mirrors the buy_type enum — see lib/types-order-modes.test.ts.
   id: string; orderNo: string; status: string; buyType: 'solo' | 'kahati' | 'group_buy' | 'moq';
+  // What is happening to the MONEY, separate from `status` above, which is
+  // about the parcel. See lib/payment-status.ts. Optional so a response from a
+  // server that predates the column still types — orderBadge falls back to
+  // deriving it from the proofs the order carries.
+  paymentStatus?: string | null;
+  // How many proofs this order carries, for that fallback alone.
+  proofCount?: number;
   // packingFeePhp is the single fee (local shipping incl.). shipping/repack remain for legacy orders.
   subtotalPhp: string; packingFeePhp: string; shippingPhp?: string; repackFeePhp?: string; totalPhp: string;
   // Kahati amount paid at checkout. The order total already includes it as the

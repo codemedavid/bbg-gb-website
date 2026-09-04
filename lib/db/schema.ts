@@ -388,6 +388,19 @@ export const orders = pgTable('orders', {
   orderNo: varchar('order_no', { length: 20 }).notNull().unique(), // BBG-2418
   userId: uuid('user_id').references(() => users.id).notNull(),
   status: orderStatusEnum('status').notNull().default('proof_review'),
+  // What is happening to the MONEY, as opposed to what `status` above says is
+  // happening to the parcel. See lib/payment-status.ts for why these are two
+  // fields: one column carrying both meant a commitment that owed ₱0 at
+  // checkout had no state to be in and borrowed 'payment_confirmed', which told
+  // 72 customers their payment was verified when nobody had looked at anything.
+  //
+  // varchar rather than a pg enum, matching payment_methods.purpose: the value
+  // set is owned by lib/payment-status.ts, which the browser also imports, and
+  // adding a state should not need a type migration coordinated with a deploy.
+  //
+  // Defaults to 'pending' — money owed, nothing seen — because that is the safe
+  // reading of a row nobody has classified. 0030 backfills the real value.
+  paymentStatus: varchar('payment_status', { length: 20 }).notNull().default('pending'),
   buyType: buyTypeEnum('buy_type').notNull().default('solo'),
   subtotalPhp: numeric('subtotal_php', { precision: 12, scale: 2 }).notNull(),
   // Single packing fee (local shipping incl., no admin fee). shipping_php/repack_fee_php
@@ -439,6 +452,9 @@ export const orders = pgTable('orders', {
   userIdx: index('orders_user_idx').on(t.userId),
   createdIdx: index('orders_created_idx').on(t.createdAt),
   statusIdx: index('orders_status_idx').on(t.status),
+  // "What still needs someone to look at money" is the admin's first question
+  // every day, and it is a question about this column rather than about status.
+  paymentStatusIdx: index('orders_payment_status_idx').on(t.paymentStatus),
   // "What has this customer already paid for in this cycle" is asked on every
   // gated checkout, and it is exactly this pair.
   userCycleIdx: index('orders_user_cycle_idx').on(t.userId, t.cycleKey),

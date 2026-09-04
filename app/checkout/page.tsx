@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { OverlayShell } from '@/components/OverlayShell';
 import { BackHeader } from '@/components/headers';
 import { OrderSummary, useOrderTotals } from '@/components/OrderSummary';
-import { useCart } from '@/lib/store/cart';
+import { useCart, lineUnitPrice } from '@/lib/store/cart';
 import { useAuth } from '@/lib/useAuth';
 import { useToast } from '@/lib/store/toast';
 import { useKahatiCommitments, usePaymentMethods } from '@/lib/queries';
@@ -15,7 +15,7 @@ import { ProofUploader } from '@/components/ProofUploader';
 import { PaymentMethodPicker } from '@/components/PaymentMethodPicker';
 import { php } from '@/lib/format';
 import { refundNoticeFor } from '@/lib/kahati-downpayment';
-import { friendlyCheckoutError, staleCheckoutLine } from '@/lib/checkout-error';
+import { friendlyCheckoutError, matchesStaleLine, staleCheckoutLine } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 export default function CheckoutPage() {
@@ -154,7 +154,15 @@ export default function CheckoutPage() {
     setSubmitting(true);
     try {
       const fd = new FormData();
-      fd.append('items', JSON.stringify(items.map((i) => ({ kind: i.kind, refId: i.refId, qty: i.qty, unit: i.unit }))));
+      // ids and quantities are what the server prices from — it re-reads every
+      // price from the database and this payload carries none it bills against.
+      // `quotedUnitPricePhp` is what the CART showed the customer, sent purely
+      // so the server can refuse a checkout whose price moved underneath it
+      // (lib/pricing.ts priceHasChanged). Evidence, never arithmetic.
+      fd.append('items', JSON.stringify(items.map((i) => ({
+        kind: i.kind, refId: i.refId, qty: i.qty, unit: i.unit,
+        quotedUnitPricePhp: lineUnitPrice(i),
+      }))));
       fd.append('shipName', name);
       fd.append('shipPhone', phone);
       fd.append('shipAddress', address);
@@ -180,11 +188,23 @@ export default function CheckoutPage() {
         // persisted, so it never heals on its own. Drop the dead line, keep
         // the rest of the cart, and say so without exposing raw ids.
         const stale = res.status === 400 ? staleCheckoutLine(json.error ?? '') : null;
-        const deadLine = stale && items.find((i) =>
-          'refId' in stale ? i.refId === stale.refId : i.kind === 'group_buy' && i.name.startsWith(stale.kahatiName));
+        const deadLine = stale && items.find((i) => matchesStaleLine(i, stale));
         if (deadLine) {
           removeLine(deadLine.key);
           toast(`"${deadLine.name}" is no longer available and was removed from your cart.`);
+          setSubmitting(false);
+          return;
+        }
+        // A price moved while the cart sat open. The server refused rather than
+        // billing a figure the customer never saw, and the message names both
+        // prices — so the useful thing here is to re-read the boards so the
+        // cart re-prices, and leave the basket completely alone.
+        if (res.status === 409 && /changed from/.test(json.error ?? '')) {
+          qc.invalidateQueries({ queryKey: ['products'] });
+          qc.invalidateQueries({ queryKey: ['groupbuys'] });
+          qc.invalidateQueries({ queryKey: ['campaigns'] });
+          qc.invalidateQueries({ queryKey: ['moq-products'] });
+          toast(json.error);
           setSubmitting(false);
           return;
         }
@@ -196,6 +216,9 @@ export default function CheckoutPage() {
         return;
       }
       idempotencyKey.current = null; // this submission is done; the next one is new
+      // Cleared ONLY here: after a 201 the server confirmed, never in a finally
+      // and never on the way in. Logged so the two events can be told apart in
+      // a report of a cart that "disappeared" (lib/checkout-log.ts).
       clear();
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['groupbuys'] });

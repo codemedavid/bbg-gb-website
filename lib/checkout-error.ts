@@ -43,3 +43,39 @@ export function staleCheckoutLine(serverMessage: string): StaleCheckoutLine | nu
   if (kahati) return { kahatiName: kahati[1] };
   return null;
 }
+
+// The suffix the cart appends to a kahati line's name (components/JoinSheet.tsx).
+// Stripped before comparing, because the server names the counter and the cart
+// names the line, and those two strings differ by exactly this.
+const KAHATI_SUFFIX = ' — kahati';
+
+/**
+ * Is this cart line the one the server refused?
+ *
+ * Lives here rather than inline in the checkout page so the matching rule is
+ * testable on its own — it decides which line gets DELETED from a customer's
+ * cart, which is the most destructive thing that screen does.
+ *
+ * The kahati branch matches the name EXACTLY. It used to use startsWith, and
+ * kahati counters are named after the peptide they carry, so "Retatrutide 10mg"
+ * is a prefix of "Retatrutide 10mg (Batch 2)" and of "Retatrutide 10mg XL" — a
+ * customer holding two of them could have the wrong one silently removed, and
+ * be told by the toast that they had lost the other. An exact match can only
+ * ever fail safe: the worst case is a line that stays and shows its own refusal
+ * again, which is recoverable, rather than one that vanishes, which is not.
+ *
+ * Matching by name at all is forced by the server's message — a closed kahati is
+ * named for the customer's benefit, not by id. Every other refusal ends in the
+ * refId and matches on that.
+ */
+export function matchesStaleLine(
+  line: { kind: string; refId: string; name: string },
+  stale: StaleCheckoutLine,
+): boolean {
+  if ('refId' in stale) return line.refId === stale.refId;
+  if (line.kind !== 'group_buy') return false;
+  const bare = line.name.endsWith(KAHATI_SUFFIX)
+    ? line.name.slice(0, -KAHATI_SUFFIX.length)
+    : line.name;
+  return bare === stale.kahatiName;
+}

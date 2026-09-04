@@ -165,7 +165,13 @@ export function vialsFor(unit: OnHandUnit, qty: number): number {
   return unit === 'kit' ? qty * VIALS_PER_KIT : qty;
 }
 
-type OnHandPrices = { onHandPiecePhp: string | number | null; onHandKitPhp: string | number | null };
+type OnHandPrices = {
+  onHandPiecePhp: string | number | null;
+  onHandKitPhp: string | number | null;
+  // The shelf's bulk rate, stored as the price of ON_HAND_BULK_MIN_VIALS vials.
+  // Optional because the admin surface is the only place that sets it.
+  onHandTenVialPhp?: string | number | null;
+};
 
 // Price for one unit of an on-hand product. Returns null when that unit is not
 // offered — an unset or zero price means "not sold this way", never free.
@@ -175,6 +181,93 @@ export function onHandUnitPrice(p: OnHandPrices, unit: OnHandUnit): number | nul
   const price = Number(raw);
   if (!Number.isFinite(price) || price <= 0) return null;
   return round2(price);
+}
+
+// Vials on ONE on-hand line that unlock the shelf's bulk rate. Ten is the
+// quantity customers actually ask for, and the figure the admin form prices —
+// so it is the same constant on both sides rather than two tens that can drift.
+export const ON_HAND_BULK_MIN_VIALS = 10;
+
+// The discounted PER-VIAL price a product charges once a line reaches
+// ON_HAND_BULK_MIN_VIALS, or null when it offers none.
+//
+// The column stores what ten vials cost, which is the figure the shop quotes;
+// this divides it back down so the rate can be compared against, and shown
+// beside, the ordinary piece price.
+//
+// Two things disqualify a rate rather than half-applying it:
+//   - the product is not sold per piece at all, so there is no piece price for
+//     a bulk rate to be a discount ON;
+//   - the rate is not actually cheaper. A mistyped figure that RAISES the price
+//     must never be presented to a customer as a discount, and must never be
+//     what checkout charges them.
+export function onHandBulkVialPrice(p: OnHandPrices): number | null {
+  const piece = onHandUnitPrice(p, 'piece');
+  if (piece == null) return null;
+  const raw = p.onHandTenVialPhp;
+  if (raw == null) return null;
+  const ten = Number(raw);
+  if (!Number.isFinite(ten) || ten <= 0) return null;
+  const perVial = round2(ten / ON_HAND_BULK_MIN_VIALS);
+  return perVial < piece ? perVial : null;
+}
+
+// What one on-hand line actually costs, and what to tell the customer about it.
+//
+// Quantity changes the price here, which no other line kind does — so the whole
+// answer is returned together rather than left to each surface to reassemble.
+// The product page, the cart, the checkout card and the server all read the
+// same quote, which is what keeps the price the customer is shown and the price
+// they are charged the same number.
+//
+// The bulk rate applies to PIECE lines only. A kit is already ten vials at a
+// kit rate of its own, so applying a ten-vial discount to it would be the same
+// discount twice.
+export type OnHandQuote = {
+  /** Per-unit price actually charged — the bulk rate when it applies. */
+  unitPricePhp: number;
+  /** Per-unit price before any bulk discount, for the struck-through figure. */
+  listUnitPricePhp: number;
+  /** The rate this product offers, whether or not this qty reaches it. */
+  bulkUnitPricePhp: number | null;
+  bulkApplied: boolean;
+  /** Vials still needed to unlock the rate; 0 when reached or not offered. */
+  vialsToBulk: number;
+  lineTotalPhp: number;
+  /** What the bulk rate saved on this line, against the list price. */
+  savingsPhp: number;
+};
+
+export function onHandQuote(p: OnHandPrices, unit: OnHandUnit, qty: number): OnHandQuote | null {
+  const listUnitPricePhp = onHandUnitPrice(p, unit);
+  if (listUnitPricePhp == null) return null;
+
+  const bulkUnitPricePhp = unit === 'piece' ? onHandBulkVialPrice(p) : null;
+  const bulkApplied = bulkUnitPricePhp != null && qty >= ON_HAND_BULK_MIN_VIALS;
+  const unitPricePhp = bulkApplied ? bulkUnitPricePhp : listUnitPricePhp;
+
+  return {
+    unitPricePhp,
+    listUnitPricePhp,
+    bulkUnitPricePhp,
+    bulkApplied,
+    vialsToBulk: bulkUnitPricePhp == null || bulkApplied
+      ? 0
+      : ON_HAND_BULK_MIN_VIALS - Math.max(0, qty),
+    lineTotalPhp: round2(unitPricePhp * qty),
+    savingsPhp: round2((listUnitPricePhp - unitPricePhp) * qty),
+  };
+}
+
+// What an on-hand order line records about how it was priced. Snapshotted onto
+// the order at checkout, so a line settled months later still says why it cost
+// what it cost — a ₱650 vial on a ₱700 shelf is otherwise unexplainable.
+// Shared by checkout and the admin order editor so both write the same string.
+export function onHandSpecSnapshot(unit: OnHandUnit, bulkApplied: boolean): string {
+  if (unit === 'kit') return `On-hand · kit of ${VIALS_PER_KIT}`;
+  return bulkApplied
+    ? `On-hand · per piece · ${ON_HAND_BULK_MIN_VIALS}+ vial price`
+    : 'On-hand · per piece';
 }
 
 // Gate an on-hand purchase: whole positive quantities, never beyond stock.
@@ -379,4 +472,47 @@ export function groupBuyMoqStatus(committed: number, moq: number): GroupBuyMoqSt
     reached: committed >= moq,
     full: held >= capacity,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Stale-cart detection
+//
+// The cart persists in localStorage with each line's price frozen at the moment
+// Add was tapped, and nothing ever revisits it. An admin repricing a product
+// therefore leaves live carts quoting a figure the shop no longer charges.
+//
+// Checkout has always re-read the real price from the database and billed that,
+// which is the correct half — a client cannot set its own prices. But it did so
+// SILENTLY, so a customer who reviewed ₱1,100, uploaded a screenshot for
+// ₱1,100 and tapped Place got an order for ₱1,400 with nothing said, and
+// whoever reconciled the proof found it short.
+//
+// So the cart now also sends what it displayed, and the server compares. That
+// figure is evidence about what the customer saw. It is never arithmetic: no
+// total, subtotal or line is ever computed from it, and a request claiming a ₱1
+// vial does not buy a ₱1 vial — it is refused, exactly like a stale one.
+// ---------------------------------------------------------------------------
+
+// Money is compared to the centavo. Below that is float noise from round2 and
+// the numeric->string->number round trip through the driver, not a price change.
+const PRICE_EPSILON = 0.005;
+
+export function priceHasChanged(quoted: number | undefined, actual: number): boolean {
+  if (quoted == null || !Number.isFinite(quoted)) return false;
+  return Math.abs(quoted - actual) > PRICE_EPSILON;
+}
+
+/**
+ * What to tell a customer whose cart quoted a price the shop no longer charges.
+ *
+ * Names BOTH figures. "The price changed, please try again" gives someone no
+ * way to decide whether they still want the item, and invites the reload that
+ * loses the rest of the basket.
+ */
+export function priceChangedMessage(name: string, quoted: number, actual: number): string {
+  const peso = (n: number) => `₱${n.toLocaleString('en-US', {
+    minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2,
+  })}`;
+  return `The price of ${name} changed from ${peso(quoted)} to ${peso(actual)} while it was in your cart. `
+    + 'Nothing has been charged and your cart is unchanged — please review it and place the order again.';
 }

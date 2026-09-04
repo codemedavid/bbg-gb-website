@@ -10,6 +10,9 @@
 // Nothing here stores state. Every label and every step is derived from the
 // status the backend holds, so the two cannot drift apart.
 import { ORDER_STATUS_FLOW } from '@/lib/db/schema';
+import {
+  PAYMENT_STATUS_BADGE, PAYMENT_STATUS_LABEL, derivePaymentStatus,
+} from '@/lib/payment-status';
 
 /** The fulfilment progression, in order. Mirrors the stored enum exactly. */
 export const STATUS_FLOW = ORDER_STATUS_FLOW;
@@ -93,3 +96,60 @@ export const PROOF_ACCEPTING_STATUSES = ['proof_review', 'payment_confirmed', 'b
 /** May another proof of payment be attached to an order in this status? */
 export const acceptsMoreProofs = (status: string): boolean =>
   (PROOF_ACCEPTING_STATUSES as readonly string[]).includes(status);
+
+// ---------------------------------------------------------------------------
+// The badge on the customer's own order
+// ---------------------------------------------------------------------------
+
+/**
+ * The fulfilment states during which MONEY is the thing the customer is waiting
+ * on. While an order is here, the badge speaks about payment; past here, the
+ * parcel is the news and the payment verdict is history.
+ *
+ * 'payment_confirmed' is in this set precisely because it is the state that was
+ * lying: as a fulfilment position it only means "cleared to proceed", and what
+ * the customer needs to read off it is whether their money actually arrived.
+ */
+const PAYMENT_PHASE: readonly string[] = ['proof_review', 'payment_confirmed'];
+
+export type OrderBadge = { label: string; className: string };
+
+/**
+ * What the customer's order list shows for this order.
+ *
+ * One function rather than a `STATUS_LABEL[...]` lookup at each call site,
+ * because the answer now depends on two fields and a legacy fallback, and three
+ * screens deciding that for themselves is how they end up describing the same
+ * order differently — which is the class of bug this whole change is about.
+ *
+ * `proofCount` is only consulted for a row written before payment had a field
+ * (see derivePaymentStatus); a row carrying paymentStatus never needs it.
+ */
+export function orderBadge(order: {
+  status: string;
+  paymentStatus?: string | null;
+  proofCount?: number;
+}): OrderBadge {
+  // A called-off order is neither a payment state nor a delivery state. Said
+  // first so nothing below can overrule it.
+  if (isCancelledStatus(order.status)) {
+    return { label: STATUS_LABEL.cancelled, className: STATUS_BADGE.cancelled };
+  }
+
+  if (PAYMENT_PHASE.includes(order.status)) {
+    const payment = derivePaymentStatus({
+      status: order.status,
+      paymentStatus: order.paymentStatus ?? null,
+      proofCount: order.proofCount ?? 0,
+    });
+    return { label: PAYMENT_STATUS_LABEL[payment], className: PAYMENT_STATUS_BADGE[payment] };
+  }
+
+  // Past the payment phase, or a status this build does not recognise. Falling
+  // back to the raw value keeps an unknown state visible rather than rendering
+  // an empty badge that reads as "no status at all".
+  return {
+    label: STATUS_LABEL[order.status] ?? order.status,
+    className: STATUS_BADGE[order.status] || STATUS_BADGE.proof_review,
+  };
+}
