@@ -35,7 +35,9 @@ export function useOrderTotals(paidThisCycle = false) {
   // server prices: a mixed cart becomes one order per mode (lib/order-modes.ts),
   // and a deposit computed over on-hand items too would quote a figure no order
   // ever carries.
-  const { data: policy, isSuccess: policyLoaded } = useKahatiDownpaymentPolicy();
+  const {
+    data: policy, isSuccess: policyLoaded, isError: policyFailed, isFetching: policyFetching, refetch: refetchPolicy,
+  } = useKahatiDownpaymentPolicy();
   const downpaymentPolicy = policy ?? DEFAULT_KAHATI_DOWNPAYMENT_POLICY;
   //
   // The hatian segment's PACKING FEE cannot be computed from the hatian lines
@@ -87,6 +89,14 @@ export function useOrderTotals(paidThisCycle = false) {
     // policy object alone, and the difference decides whether a screen may skip
     // asking for payment — so it is reported rather than inferred.
     downpaymentPolicyLoaded: policyLoaded,
+    // Why the policy is not loaded, which the flag above cannot say on its own.
+    // A request still in flight and one that has already given up look identical
+    // from `!policyLoaded`, and they need opposite things said to the customer:
+    // one is "a moment please", the other is "that did not work, here is how to
+    // try again". Reported alongside the retry so a screen can offer it.
+    downpaymentPolicyFailed: policyFailed,
+    downpaymentPolicyFetching: policyFetching,
+    retryDownpaymentPolicy: refetchPolicy,
     // A configured deposit is not a per-cycle parcel charge, so "you already
     // paid this cycle" does not silence it.
     downpaymentIsDeposit: !isDownpaymentWaivableByCycle(downpaymentPolicy),

@@ -1,9 +1,27 @@
 // Browser-side API helpers. Unwraps the {success,data,error} envelope.
 export type ApiEnvelope<T> = { success: boolean; data: T; error: string | null };
 
+/**
+ * A failed API call, carrying the status that caused it.
+ *
+ * The status is the whole point: a caller has to be able to tell an answer
+ * apart from a non-answer. A 401 means the server looked and there is no
+ * session; a 500 or a thrown fetch means we never found out. Collapsing both
+ * into a bare Error is what let a dropped request log a signed-in customer out
+ * of their own checkout (see lib/useAuth.tsx).
+ */
+export class ApiClientError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = 'ApiClientError';
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
   const body = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
-  if (!res.ok || !body?.success) throw new Error(body?.error || `Request failed (${res.status})`);
+  if (!res.ok || !body?.success) {
+    throw new ApiClientError(res.status, body?.error || `Request failed (${res.status})`);
+  }
   return body.data;
 }
 

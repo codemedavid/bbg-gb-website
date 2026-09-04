@@ -21,7 +21,7 @@ import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 export default function CheckoutPage() {
   const router = useRouter();
   const qc = useQueryClient();
-  const { user, loading } = useAuth();
+  const { user, loading, status: authStatus } = useAuth();
   const items = useCart((s) => s.items);
   const note = useCart((s) => s.note);
   const clear = useCart((s) => s.clear);
@@ -33,8 +33,10 @@ export default function CheckoutPage() {
   const { data: kahatiHeld } = useKahatiCommitments();
   const paidThisCycle = !!kahatiHeld?.paidThisCycle;
   // A hatian pays a deposit now; the goods are settled once its kit completes.
-  const { hasKahati, dueNow, downpayment, downpaymentPolicy, downpaymentIsDeposit, downpaymentPolicyLoaded } =
-    useOrderTotals(paidThisCycle);
+  const {
+    hasKahati, dueNow, downpayment, downpaymentPolicy, downpaymentIsDeposit, downpaymentPolicyLoaded,
+    downpaymentPolicyFailed, retryDownpaymentPolicy,
+  } = useOrderTotals(paidThisCycle);
 
   // A cart of nothing but hatian lines with the cycle fee already paid owes
   // nothing at all: no fee, and so no payment method, no proof, nothing to
@@ -68,6 +70,13 @@ export default function CheckoutPage() {
   // is unknown it says so and holds the order. Brief on a normal first paint,
   // and honest on a request that never lands.
   const awaitingDownpaymentPolicy = hasKahati && !downpaymentPolicyLoaded;
+  // …and the request can also simply have failed. `retry: 1` with no refetch on
+  // window focus (app/providers.tsx) means nothing asks again on its own, so
+  // this state is permanent once reached: the screen that only ever said "please
+  // wait" left the customer waiting for something that was never coming, with
+  // the Place button disabled and the copy telling them not to reload. Saying
+  // what happened and offering the retry is the whole escape route.
+  const downpaymentPolicyUnreachable = awaitingDownpaymentPolicy && downpaymentPolicyFailed;
   const toast = useToast((s) => s.show);
   const { data: methods = [] } = usePaymentMethods();
 
@@ -129,7 +138,16 @@ export default function CheckoutPage() {
   // so checkout blocks and says so instead.
   const downpaymentUnavailable = collectingDownpayment && downpaymentMethods.length === 0;
 
-  useEffect(() => { if (!loading && !user) router.replace('/login'); }, [loading, user, router]);
+  // Only a settled "signed out" sends anyone away. `unknown` is a /auth/me that
+  // never landed (lib/useAuth.tsx) — the cookie is still in the browser and the
+  // checkout POST will be accepted, so ejecting here loses a filled-in order to
+  // a network blip. And the bounce names where to come back to: a checkout is
+  // the most expensive screen in the app to lose, and returning to the home page
+  // means rebuilding the cart, the address and the screenshots.
+  useEffect(() => {
+    if (authStatus !== 'unauthenticated') return;
+    router.replace(`/login?next=${encodeURIComponent('/checkout')}`);
+  }, [authStatus, router]);
 
   const place = async () => {
     if ((proofs.length === 0 && !confirmOnly) || !items.length || submitting) return;
@@ -254,7 +272,22 @@ export default function CheckoutPage() {
 
         {/* Nothing on this screen can be quoted until the deposit rule is
             known, so nothing is: no card, no QR, no proof box. */}
-        {awaitingDownpaymentPolicy ? (
+        {downpaymentPolicyUnreachable ? (
+          <div role="alert" className="rounded-[14px] border-[1.5px] border-[#e6b8b8] bg-white p-4 shadow-card">
+            <p className="m-0 text-[13px] font-bold text-[#a33]">
+              We couldn’t load the Kahati payment details.
+            </p>
+            <p className="mb-3 mt-1.5 text-[13px] leading-relaxed text-ink-body">
+              Your cart is safe and nothing has been charged. Please don’t send any payment
+              yet — the amount and the account depend on these details. Check your
+              connection and try again.
+            </p>
+            <button type="button" onClick={() => retryDownpaymentPolicy()}
+              className="rounded-[10px] border-[1.5px] border-brand-green px-4 py-2.5 text-[13px] font-bold text-brand-greendark">
+              Try again
+            </button>
+          </div>
+        ) : awaitingDownpaymentPolicy ? (
           <div role="status" className="rounded-[14px] bg-white p-4 text-[13px] leading-relaxed text-ink-body shadow-card">
             Getting the latest Kahati payment details… Please wait a moment before
             sending anything — the amount and the account to send it to depend on this.
