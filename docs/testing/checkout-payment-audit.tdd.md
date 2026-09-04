@@ -192,7 +192,7 @@ for the confirm-only path and still pass — deliberately, because `status` keep
 its fulfilment meaning and only the new field describes money. That is what makes
 this backwards compatible.
 
-## The production backfill is written but NOT applied
+## The production backfill — APPLIED 2026-09-04
 
 `drizzle/0030_order_payment_status.sql` adds the column and backfills by the same
 rule `derivePaymentStatus` falls back to. It has been applied 260 times against
@@ -201,25 +201,44 @@ PGlite by the test harness, and dry-run read-only against production:
 | Would become | From fulfilment status | Orders | Value |
 |---|---|---|---|
 | `confirmed` | payment_confirmed / shipped / delivered / batch_filling | 248 | ₱1,684,542.50 |
-| `not_due` | cancelled | 27 | ₱679,078.50 |
+| `confirmed` | cancelled (paid — refund owed) | 19 | ₱1,500 deposits held |
+| `not_due` | cancelled (never paid) | 8 | — |
 | **`not_due`** | **payment_confirmed (no proof — the reported bug)** | **24** | **₱43,500.00** |
 | `not_due` | shipped / batch_filling (no proof) | 6 | ₱16,035.00 |
 | `proof_submitted` | proof_review | 59 | ₱275,703.75 |
 
 364 of 364 orders classify; none fall to the `pending` catch-all.
 
-**I have not run it against production** — it rewrites live customer payment
-records, and that is your call, not mine. It applies on the next deploy through
-the normal migration path, or immediately with `npm run db:push` against prod.
+**Applied to production on 2026-09-04 with the user's explicit go-ahead.**
+Pre-check confirmed the starting state (column absent, 364 orders, 24 bug rows /
+₱43,500). Post-check: 0 nulls, 0 unknown values, 0 orders `confirmed` without
+proof, and the 24 rows now read `not_due`. The project's own `formatDrift`,
+run against the live schema shape, reports "Database matches schema.ts — no
+drift", so the prebuild `db:check` gate will pass.
+
+### One rule was wrong, and the verification caught it
+
+The first pass sent every cancelled order to `not_due`. That was the same
+conflation this whole change exists to remove — a FULFILMENT fact (the order is
+off) overwriting a PAYMENT fact — and it had a real cost: **19 cancelled orders
+carry a proof and 10 hold ₱1,500 in deposits**, and reading those as "nothing
+due" forgets a refund we owe.
+
+Corrected in `derivePaymentStatus`, in this migration, and in the 19 live rows:
+a cancelled order that was paid into keeps `confirmed`; only one that was never
+paid is `not_due`. `orders.status` already says it was cancelled. No
+customer-facing display changed either way — `orderBadge` returns "Cancelled"
+before it consults the payment field.
 
 ## Coverage and known gaps
 
 No coverage number: the repo defines no coverage script (`package.json` has
 `test` only), and the suite is the project's own gate. Deliberately not covered:
 
-- **The migration has not run against real Postgres.** Verified on PGlite and
-  dry-run as SELECTs against production, but this repo has a known
-  pglite-vs-postgres-js gap, so the write path is unproven on the real driver.
+- ~~The migration has not run against real Postgres.~~ **Applied and verified
+  against production Postgres; the pglite-vs-postgres-js gap is closed for this
+  change.** What remains unverified is the app *reading* the new column in a
+  browser against prod — see the browser-QA gap below.
 - **No browser QA.** The badge changes, the 409 price-change toast and the `—`
   price want a pass against PGlite + `STORAGE_DRIVER=local`.
 - **RLS is still off on all 17 tables.** Flagged as HIGH and left alone: the

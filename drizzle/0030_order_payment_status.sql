@@ -21,8 +21,19 @@ ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "payment_status" varchar(20) DEFAU
 --- means if the column is ever absent, and a difference between them would show
 --- up as an order changing its mind about whether it was paid.
 
---- Nothing is collectable on a called-off order, whatever it carries.
-UPDATE "orders" SET "payment_status" = 'not_due' WHERE "status" = 'cancelled';--> statement-breakpoint
+--- A cancellation is a FULFILMENT fact and must not overwrite a payment one:
+--- a cancelled order the customer paid into is still paid into, and reading it
+--- as "nothing due" forgets a refund we owe. 19 cancelled orders carry a proof
+--- and 10 hold deposits. Only a cancelled order that was never paid is not_due.
+UPDATE "orders" SET "payment_status" = 'confirmed'
+ WHERE "status" = 'cancelled'
+   AND ("payment_proof_key" IS NOT NULL
+        OR EXISTS (SELECT 1 FROM "order_payment_proofs" p WHERE p."order_id" = "orders"."id"));--> statement-breakpoint
+
+UPDATE "orders" SET "payment_status" = 'not_due'
+ WHERE "status" = 'cancelled'
+   AND "payment_proof_key" IS NULL
+   AND NOT EXISTS (SELECT 1 FROM "order_payment_proofs" p WHERE p."order_id" = "orders"."id");--> statement-breakpoint
 
 --- Awaiting review, split by whether evidence actually arrived.
 UPDATE "orders" SET "payment_status" = 'proof_submitted'

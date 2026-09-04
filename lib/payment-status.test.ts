@@ -98,9 +98,17 @@ describe('reading a row written before the column existed', () => {
     expect(legacy('proof_review', 0)).toBe('pending');
   });
 
-  it('owes nothing on a cancelled order', () => {
+  it('does not let a cancellation erase money we are holding', () => {
+    // Cancellation is a FULFILMENT fact. Letting it overwrite the payment fact
+    // is the same conflation this module exists to end — and it has a cost:
+    // 19 cancelled orders in production carry a proof and 10 hold deposits
+    // (₱1,500 between them). Reading those as "nothing due" forgets a refund we
+    // owe. A cancelled order that was paid for is still paid for.
+    expect(legacy('cancelled', 3)).toBe('confirmed');
+  });
+
+  it('owes nothing on a cancelled order that was never paid', () => {
     expect(legacy('cancelled', 0)).toBe('not_due');
-    expect(legacy('cancelled', 3)).toBe('not_due');
   });
 
   it('assumes money is owed on a status it does not recognise', () => {

@@ -124,8 +124,17 @@ export function derivePaymentStatus(
   // A stored value is an answer; never second-guess it with a derivation.
   if (order.paymentStatus && isPaymentStatus(order.paymentStatus)) return order.paymentStatus;
 
-  // Nothing is collectable on a called-off order, whatever it carries.
-  if (order.status === 'cancelled') return 'not_due';
+  // A cancellation is a FULFILMENT fact, and letting it overwrite the payment
+  // fact would be the same conflation this module exists to end. A cancelled
+  // order the customer actually paid into is still paid into — and forgetting
+  // that forgets a refund we owe. In production 19 cancelled orders carry a
+  // proof and 10 hold deposits (₱1,500 between them).
+  //
+  // `orders.status` already says the order is off; this field is only asked
+  // what became of the money.
+  if (order.status === 'cancelled') {
+    return order.proofCount > 0 ? 'confirmed' : 'not_due';
+  }
 
   if (order.status === 'proof_review') {
     return order.proofCount > 0 ? 'proof_submitted' : 'pending';
