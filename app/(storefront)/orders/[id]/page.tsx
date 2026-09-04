@@ -14,7 +14,8 @@ import { useToast } from '@/lib/store/toast';
 import { php, shortDate } from '@/lib/format';
 import { collectedAmountLabel } from '@/lib/kahati-downpayment';
 import { customerEditability, EDIT_BLOCKED_MESSAGE } from '@/lib/order-edit';
-import { STATUS_LABEL, STATUS_BADGE } from '@/lib/order-status';
+import { STATUS_LABEL, STATUS_BADGE, orderBadge } from '@/lib/order-status';
+import { PAYMENT_STATUS_LABEL, derivePaymentStatus } from '@/lib/payment-status';
 
 // One order, whole, on one screen.
 //
@@ -123,8 +124,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         <Section title="Order information" testId="order-block">
           <div className="mb-2.5 flex flex-wrap items-center gap-2">
             <span className="font-display text-[18px] font-bold text-ink">{order.orderNo}</span>
-            <span className={`rounded-md px-2.5 py-1 text-[11px] font-bold ${STATUS_BADGE[order.status] || ''}`}>
-              {STATUS_LABEL[order.status] ?? order.status}
+            <span className={`rounded-md px-2.5 py-1 text-[11px] font-bold ${orderBadge(order).className}`}>
+              {orderBadge(order).label}
             </span>
           </div>
           <Field label="Placed on" value={shortDate(order.createdAt)} />
@@ -185,7 +186,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         <Section title="Payment" testId="payment-block">
           <Field label="Method" value={order.paymentMethod || 'Not recorded'} />
-          <Field label="Status" value={STATUS_LABEL[order.status] ?? order.status} />
+          {/* This field sits under "Payment", so it answers about money and
+              nothing else. It used to print the FULFILMENT status, which is
+              how an order that owed nothing came to tell its customer
+              "Payment Confirmed" — see lib/payment-status.ts. */}
+          <Field label="Status" value={PAYMENT_STATUS_LABEL[derivePaymentStatus({
+            status: order.status,
+            paymentStatus: order.paymentStatus ?? null,
+            proofCount: proofs.length || (proofUrl ? 1 : 0),
+          })]} />
           <Field label="Amount" value={php(order.totalPhp)} />
           {/* Every proof, plus a way to add one the customer only paid later.
               A bank that caps each transfer turns one order into several
