@@ -197,6 +197,23 @@ describe('AdminAccountsPage', () => {
         .toBe('https://www.bbgph.org/reset-password?token=abc123'));
     });
 
+    // Clipboard permission can be refused outright. The link is on screen and
+    // selectable regardless, so this degrades rather than fails — but it must
+    // not claim a copy that never happened.
+    it('keeps the link on screen and claims nothing when the clipboard is refused', async () => {
+      const user = userEvent.setup();
+      render(<Page />);
+      await user.click(resetLinkButton());
+      await waitFor(() => expect(screen.getByTestId('reset-link-u1')).toBeInTheDocument());
+      vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+
+      await user.click(screen.getByRole('button', { name: /copy/i }));
+
+      expect(screen.getByTestId('reset-link-u1')).toHaveTextContent('token=abc123');
+      expect(screen.getByRole('button', { name: /copy link/i })).toBeInTheDocument();
+      vi.restoreAllMocks();
+    });
+
     // Silence here would leave the admin telling a customer a link is coming
     // that never got minted.
     it('says so when the link could not be issued', async () => {

@@ -162,6 +162,22 @@ Test Files  262 passed (262)
 npx tsc --noEmit --pretty false   → clean
 ```
 
+Coverage of the modules this cycle touched (`--coverage`, scoped to the four
+relevant test files):
+
+| file | stmts | branch | funcs | lines |
+|---|---|---|---|---|
+| `lib/password-reset-server.ts` | 100 | 100 | 100 | 100 |
+| `app/api/admin/accounts/[id]/reset-link/route.ts` | 100 | 100 | 100 | 100 |
+| `app/api/auth/forgot-password/route.ts` | 100 | 100 | 100 | 100 |
+| `app/admin/accounts/page.tsx` | 98.18 | 80.85 | 100 | 98.18 |
+
+The one branch still uncovered on `page.tsx` is the pre-existing "could not load
+the accounts" alert, which predates this cycle. `lib/admin-api.ts` reads 0% in
+that scoped run because the page test mocks it wholesale; it is a thin
+query/mutation declaration layer, covered in the full suite by
+`lib/admin-api.errors.test.tsx`.
+
 Deliberately **not** covered here:
 
 - **`POSTHOG_KEY` itself.** The missing production variable is the immediate cause
