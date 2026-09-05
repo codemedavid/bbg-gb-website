@@ -13,6 +13,7 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 
 // Cleared between tests, children before parents.
 const TABLES = [
+  'order_item_refunds',
   'order_status_history', 'order_items', 'order_payment_proofs', 'orders',
   'settlement_payment_proofs', 'settlements',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories',
@@ -147,7 +148,13 @@ export async function makeGroupBuy(
     // The catalog product this counter is for. A counter without one is a
     // free-text row an admin made by hand — which is why it is optional here.
     productId: string | null;
-    status: 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+    status: 'scheduled' | 'open' | 'pasalo' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+    // Pasalo (Bunuan) fields. `kahatiVials` null means the counter has not
+    // ended its Kahati stage, which is every counter written before Pasalo
+    // existed and every one still on the Kahati board.
+    kahatiVials: number | null;
+    pasaloClosesAt: Date | null;
+    minViableVials: number;
   }> = {},
 ): Promise<{ id: string; totalSlots: number; minVials: number }> {
   const db = await getDb();
@@ -159,6 +166,9 @@ export async function makeGroupBuy(
     repackFeePhp: String(overrides.repackFeePhp ?? 150), status: overrides.status ?? 'open',
     closesAt: overrides.closesAt ?? null,
     productId: overrides.productId ?? null,
+    kahatiVials: overrides.kahatiVials ?? null,
+    pasaloClosesAt: overrides.pasaloClosesAt ?? null,
+    minViableVials: overrides.minViableVials ?? 7,
   }).returning();
   return { id: row.id, totalSlots, minVials };
 }

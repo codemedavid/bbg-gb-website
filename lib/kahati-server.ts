@@ -274,6 +274,29 @@ async function sealKahatiAndOpenSuccessor(db: Db, g: GroupBuyRow): Promise<Kahat
   return { sealed, opened };
 }
 
+/**
+ * A Pasalo counter that has just filled its kit.
+ *
+ * Sealed 'closed' with NO successor, which is the whole difference from
+ * closeFullKahati. Kahati opens a sibling because a filled kit means the next
+ * one starts at once; Pasalo is the last window this batch gets, so filling it
+ * ends the batch rather than starting another — and a fresh 0/10 counter here
+ * would land on a board the cycle has already moved past.
+ *
+ * Ten vials clears any minimum, so 'closed' is exactly the outcome
+ * closePasaloStage would reach for this counter. Arriving at it early is the
+ * same decision, not a different one.
+ *
+ * Guarded on 'pasalo': a counter another request has already sealed stays
+ * sealed, and this returns false rather than flipping a closed batch again.
+ */
+export async function sealFullPasalo(db: Db, id: string): Promise<boolean> {
+  const [sealed] = await db.update(groupBuys).set({ status: 'closed' })
+    .where(and(eq(groupBuys.id, id), eq(groupBuys.status, 'pasalo')))
+    .returning({ id: groupBuys.id });
+  return Boolean(sealed);
+}
+
 export type KahatiCycleRollover = {
   /** Every counter that was sealed, with the successor opened in its place. */
   rolled: KahatiRollover[];

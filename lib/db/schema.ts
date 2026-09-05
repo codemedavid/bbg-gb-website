@@ -25,9 +25,22 @@ export const orderStatusEnum = pgEnum('order_status', [
   'delivered',         // 4 Delivered
   'cancelled',
 ]);
-// 'closed' = full (reached the 10-vial cap) or admin-closed; 'cancelled' = deadline
-// passed before the cap was reached. Both are terminal for accepting new commits.
-export const groupBuyStatusEnum = pgEnum('group_buy_status', ['scheduled', 'open', 'closed', 'shipped', 'completed', 'cancelled']);
+// 'closed' = full (reached the 10-vial cap) or admin-closed; 'cancelled' = the
+// batch was never placed. Both are terminal for accepting new commits.
+//
+// 'pasalo' is the second selling stage — the Bunuan. A counter that ends Kahati
+// below its minimum moves here rather than straight to 'cancelled', and keeps
+// taking vials on a second, admin-set clock until an admin closes the stage.
+// Only then is the outcome decided: at or above the minimum it 'closed's and is
+// fulfilled, below it 'cancelled's and its lines become refunds.
+//
+// It earns its own status rather than a flag because two constraints already in
+// this schema do the right thing with it for free:
+//   - group_buys_one_open_per_product_idx is partial on 'open', so a pasalo
+//     counter does not occupy its product's one open slot;
+//   - SETTLEABLE_GROUP_BUY_STATUSES (lib/settlement.ts) excludes it, so an
+//     order cannot be settled while any of its counters is still in Pasalo.
+export const groupBuyStatusEnum = pgEnum('group_buy_status', ['scheduled', 'open', 'pasalo', 'closed', 'shipped', 'completed', 'cancelled']);
 // White powder ships first; salt/blend/liquid (incl. NAD+) arrives 3-5 days later.
 export const arrivalGroupEnum = pgEnum('arrival_group', ['white_powder', 'salt_liquid']);
 export const orderItemKindEnum = pgEnum('order_item_kind', ['product', 'group_buy', 'moq_campaign', 'moq_product']);
@@ -169,6 +182,34 @@ export const groupBuys = pgTable('group_buys', {
   minVials: integer('min_vials').notNull().default(1),          // min vials one person may commit
   repackFeePhp: numeric('repack_fee_php', { precision: 12, scale: 2 }).notNull().default('150'),
   status: groupBuyStatusEnum('status').notNull().default('open'),
+  // Vials this counter held the moment Kahati closed, frozen there.
+  //
+  // claimed_slots keeps moving through Pasalo, so without this the two halves
+  // of the total are unrecoverable — and "3 Kahati + 2 Pasalo" is exactly what
+  // the admin dashboard and the refund sheet have to be able to say. The Pasalo
+  // half is DERIVED (claimed_slots − kahati_vials, floored at 0 by
+  // lib/kahati-quantity.ts) rather than counted in a third column, so the parts
+  // can never disagree with the counter itself.
+  //
+  // Null until Kahati is closed on this counter: every vial on it is a Kahati
+  // vial, because Pasalo has not happened yet.
+  kahatiVials: integer('kahati_vials'),
+  // The Pasalo deadline, per counter and admin-set. Its own column rather than
+  // reusing closesAt, which belongs to the Kahati stage and is the date the
+  // storefront counted down to — overwriting it would erase when Kahati ended.
+  //
+  // Passing it stops NEW commitments through the checkout guard that already
+  // refuses a counter past its deadline. It decides nothing else: whether a
+  // counter is fulfilled or refunded is settled by an admin closing the stage,
+  // never by a clock. There is no scheduler here, and unattended refunds are
+  // not a thing anyone asked for.
+  pasaloClosesAt: timestamp('pasalo_closes_at', { withTimezone: true }),
+  // The vials this counter must reach to be worth ordering. Was the constant
+  // KAHATI_MIN_VIABLE_VIALS, which meant every counter ever created was judged
+  // by whatever the constant says today — so changing the rule would
+  // retroactively re-decide finished batches, refunded ones included. Frozen
+  // per counter, defaulting to the same 7 every existing row was made under.
+  minViableVials: integer('min_viable_vials').notNull().default(7),
   // When this counter goes on the board. Null means "already there" — which is
   // every counter written before scheduling existed. A future date parks the row
   // at 'scheduled' until a sweep opens it (lib/kahati-server.ts openDueKahatis).
@@ -517,6 +558,98 @@ export const orderItems = pgTable('order_items', {
 }, (t) => ({
   orderIdx: index('order_items_order_idx').on(t.orderId),
   productIdx: index('order_items_product_idx').on(t.productId),
+}));
+
+// ---- Order item refunds -------------------------------------------------
+// What we owe one customer for one failed line, and whether it has been paid.
+//
+// Nothing in this schema has ever recorded a refund. A cancelled hatian sent an
+// email and stopped: the amount, the reason and whether the money actually went
+// back existed only in whoever remembered.
+//
+// Keyed on the ORDER ITEM, not the order, and that is the whole point. A kahati
+// cart splits into one order per MODE (lib/order-modes.ts), so a single order
+// routinely holds lines against three different counters — and when one of them
+// falls short the other two are fine. Refunding at order granularity is what
+// forced the entire order to be cancelled, taking two good products down with
+// the bad one; refunding at item granularity is what lets Product A ship while
+// Product B is paid back.
+export const orderItemRefunds = pgTable('order_item_refunds', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // Unique, and that uniqueness IS the anti-double-count guarantee. "The same
+  // failed item cannot appear twice in the refund calculation" is a property of
+  // this index rather than a rule the evaluation is trusted to remember — so
+  // closing Pasalo twice, or re-running an evaluation, cannot book a second
+  // refund for one line.
+  orderItemId: uuid('order_item_id').notNull().unique()
+    .references(() => orderItems.id, { onDelete: 'cascade' }),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  groupBuyId: uuid('group_buy_id').references(() => groupBuys.id),
+  // The money, split so the sheet can explain itself rather than assert a
+  // total. `goodsPhp` is the line total, owed only where that money was
+  // actually collected; `depositPhp` is the customer's checkout deposit, owed
+  // only when every line they hold in the batch failed and no parcel ships.
+  // `amountPhp` is the sum, computed once at close and STORED — an export must
+  // never re-derive a figure that was already decided, or two downloads of the
+  // same report can disagree about what someone is owed.
+  goodsPhp: numeric('goods_php', { precision: 12, scale: 2 }).notNull().default('0'),
+  depositPhp: numeric('deposit_php', { precision: 12, scale: 2 }).notNull().default('0'),
+  amountPhp: numeric('amount_php', { precision: 12, scale: 2 }).notNull(),
+  // Which of this customer's payments had actually cleared when the stage
+  // closed — see lib/refund-status.ts CollectedBasis. Stored rather than
+  // re-read, so a settlement paid AFTER the refund was decided cannot silently
+  // restate what the refund was for.
+  collectedBasis: varchar('collected_basis', { length: 30 }).notNull(),
+  // The sentence the admin and the customer both get: "Final combined quantity
+  // 5/7 minimum after Pasalo closed."
+  reason: text('reason').notNull(),
+  // What was ordered, COPIED rather than joined. The order item survives a
+  // refund — a customer's history must still show what they bought — but it is
+  // editable, and its product can be renamed or repriced afterwards. A sheet
+  // that read the name and the price back through the join would therefore stop
+  // reproducing, which for a financial export is the whole ballgame. These four
+  // are what the workbook prints.
+  nameSnapshot: varchar('name_snapshot', { length: 200 }).notNull().default(''),
+  qty: integer('qty').notNull().default(0),
+  unitPricePhp: numeric('unit_price_php', { precision: 12, scale: 2 }).notNull().default('0'),
+  lineTotalPhp: numeric('line_total_php', { precision: 12, scale: 2 }).notNull().default('0'),
+  // The counter's closing arithmetic, frozen. The counter row keeps living — an
+  // admin can edit it and its product starts a new cycle — so a refund that
+  // pointed at it for evidence would quietly restate its own reason.
+  kahatiVials: integer('kahati_vials').notNull().default(0),
+  pasaloVials: integer('pasalo_vials').notNull().default(0),
+  combinedVials: integer('combined_vials').notNull().default(0),
+  minRequired: integer('min_required').notNull().default(7),
+  // Never written by an export. Downloading a spreadsheet is not evidence that
+  // money moved, so the file always leaves here saying PENDING and only an
+  // explicit admin action marks one paid. varchar rather than a pg enum,
+  // matching orders.payment_status and payment_methods.purpose: the value set
+  // is owned by lib/refund-status.ts, which the browser imports too.
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  // Filled when the money actually goes back. `refundAccount` exists because
+  // the customer's own GCash/Maya/bank number is stored nowhere in this system
+  // — payment_methods holds OUR accounts — so whoever sends the refund records
+  // where they sent it, and the next person can check.
+  reference: varchar('reference', { length: 80 }),
+  method: varchar('method', { length: 40 }),
+  refundAccount: varchar('refund_account', { length: 120 }),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
+  refundedBy: uuid('refunded_by').references(() => users.id),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  // "Who do I still owe" is the question this table exists to answer, and it is
+  // a question about this column.
+  statusIdx: index('order_item_refunds_status_idx').on(t.status),
+  userIdx: index('order_item_refunds_user_idx').on(t.userId),
+  orderIdx: index('order_item_refunds_order_idx').on(t.orderId),
+  groupBuyIdx: index('order_item_refunds_group_buy_idx').on(t.groupBuyId),
+  // A refund is money leaving. Negative is not a smaller refund, it is a
+  // charge — and the arithmetic that produces these figures subtracts, so the
+  // floor lives in the database rather than in whichever function got it right
+  // today.
+  amountNonNegative: check('order_item_refunds_amount_non_negative', sql`${t.amountPhp} >= 0`),
 }));
 
 export const orderStatusHistory = pgTable('order_status_history', {

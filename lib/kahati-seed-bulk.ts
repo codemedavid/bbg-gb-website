@@ -15,8 +15,16 @@ import { getPackingFees } from '@/lib/settings';
 import { kahatiSeedFor } from './kahati-seed';
 import type { SeedableProduct } from './campaign-seed';
 
-/** Statuses that mean a product already has a counter customers can join. */
-const LIVE_STATUSES = ['open'] as const;
+// Statuses that mean a product already has a counter customers can join.
+//
+// 'pasalo' counts, and that is a deliberate business decision rather than
+// bookkeeping. A product in Pasalo is a batch that fell SHORT and is being
+// given one last window to reach its minimum. Opening a fresh 0/10 Kahati
+// counter beside it would list the same product twice and send new buyers to
+// the empty one — splitting the very demand the Pasalo needs to survive. So
+// while a product is in Pasalo it is sold there and only there; the next
+// Kahati counter opens on the first board read after the stage closes.
+const LIVE_STATUSES = ['open', 'pasalo'] as const;
 
 export type OpenKahatisReport = {
   /** Flagged, listed products considered. */

@@ -11,7 +11,8 @@ import {
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
 import { isChannelEnabled, channelRefusal } from '@/lib/product-channels';
-import { closeFullKahati } from '@/lib/kahati-server';
+import { closeFullKahati, sealFullPasalo } from '@/lib/kahati-server';
+import { isJoinableKahatiStatus, isPasaloStage } from '@/lib/pasalo';
 import { listCyclePayments } from '@/lib/packing-cycle-server';
 import { chargeCycleFeeOnce, hasPaidPackingFeeThisCycle } from '@/lib/packing-cycle';
 import { canCommit } from '@/lib/group-buy';
@@ -367,7 +368,12 @@ export const POST = handler(async (req: Request) => {
       } else {
         const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
         if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
-        if (g.status !== 'open') throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
+        // Both selling stages take vials. A Pasalo counter is a hatian that
+        // fell short and is being given a second window rather than cancelled,
+        // so it buys through this exact path — same guarded claim, same 10-vial
+        // database cap, same packing fee. Asking only about 'open' here is what
+        // would make Pasalo a board customers can see and cannot buy from.
+        if (!isJoinableKahatiStatus(g.status)) throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
 
         // The Kahati switch, enforced where the money is taken. The board
         // already hides an off-channel product's counters, but hiding is not
@@ -413,6 +419,15 @@ export const POST = handler(async (req: Request) => {
           // A full-but-still-open counter (e.g. an admin over-edit) has no room;
           // close it and roll straight into its sibling rather than claiming 0.
           if (openSlots <= 0) {
+            // A Pasalo counter does NOT roll. Kahati rolls because a filled kit
+            // means the next one starts immediately; Pasalo is the last window
+            // this batch gets, so a full box is simply the end of it — "10/10
+            // FULL, no more purchases". Opening a successor here would also put
+            // a fresh 0/10 counter on a board the cycle has already left.
+            if (isPasaloStage(current.status)) {
+              await sealFullPasalo(tx, current.id);
+              throw new ApiError(400, `Pasalo "${g.name}" is already full (${current.totalSlots}/${current.totalSlots}).`);
+            }
             const rolled = await closeFullKahati(tx, current);
             if (!rolled) throw new ApiError(409, `Kahati "${g.name}" just rolled over — please try again.`);
             current = rolled.opened;
@@ -423,16 +438,31 @@ export const POST = handler(async (req: Request) => {
             .set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${take}` })
             .where(and(
               eq(groupBuys.id, current.id),
-              eq(groupBuys.status, 'open'),
-              or(isNull(groupBuys.closesAt), gt(groupBuys.closesAt, now)),
+              // Each stage is guarded against its OWN deadline. A Pasalo
+              // counter's closes_at belongs to the Kahati window it already
+              // finished, so testing that would refuse every Pasalo purchase
+              // the moment the stage began; pasalo_closes_at is the clock this
+              // one is running on. Written as one predicate so a counter can
+              // never be claimed against the wrong stage's date.
+              or(
+                and(
+                  eq(groupBuys.status, 'open'),
+                  or(isNull(groupBuys.closesAt), gt(groupBuys.closesAt, now)),
+                ),
+                and(
+                  eq(groupBuys.status, 'pasalo'),
+                  or(isNull(groupBuys.pasaloClosesAt), gt(groupBuys.pasaloClosesAt, now)),
+                ),
+              ),
               sql`${groupBuys.claimedSlots} + ${take} <= ${groupBuys.totalSlots}`,
             ))
             .returning({ claimedSlots: groupBuys.claimedSlots });
           if (!claimed) {
             const [fresh] = await tx.select().from(groupBuys).where(eq(groupBuys.id, current.id));
             // Tell the customer what actually stopped them: a hatian past its
-            // deadline (or no longer open) has closed — vials did not "run out".
-            if (!fresh || fresh.status !== 'open' || (fresh.closesAt && fresh.closesAt <= now)) {
+            // deadline (or no longer selling) has closed — vials did not "run out".
+            const deadline = fresh && isPasaloStage(fresh.status) ? fresh.pasaloClosesAt : fresh?.closesAt;
+            if (!fresh || !isJoinableKahatiStatus(fresh.status) || (deadline && deadline <= now)) {
               throw new ApiError(400, `Kahati "${g.name}" has already closed and is no longer accepting commitments.`);
             }
             throw new ApiError(400, `Only ${Math.max(fresh.totalSlots - fresh.claimedSlots, 0)} vials left in this kahati.`);
@@ -457,10 +487,21 @@ export const POST = handler(async (req: Request) => {
           // the sibling batch — inside the checkout transaction, shared with the
           // admin edit that fills a kit (lib/kahati-server.ts closeFullKahati).
           if (isKahatiFull(claimed.claimedSlots, current.totalSlots)) {
-            const rolled = await closeFullKahati(tx, current);
-            if (remaining > 0) {
-              if (!rolled) throw new ApiError(409, `Kahati "${g.name}" just rolled over — please try again.`);
-              current = rolled.opened; // place the overflow into the fresh sibling
+            // A Pasalo that fills has succeeded outright: 10 vials clears any
+            // minimum, so sealing it 'closed' here IS the fulfil outcome
+            // closePasaloStage would reach anyway, arrived at earlier. No
+            // successor, and any remainder is refused rather than rolled.
+            if (isPasaloStage(current.status)) {
+              await sealFullPasalo(tx, current.id);
+              if (remaining > 0) {
+                throw new ApiError(400, `Pasalo "${g.name}" only had ${take} vial(s) left.`);
+              }
+            } else {
+              const rolled = await closeFullKahati(tx, current);
+              if (remaining > 0) {
+                if (!rolled) throw new ApiError(409, `Kahati "${g.name}" just rolled over — please try again.`);
+                current = rolled.opened; // place the overflow into the fresh sibling
+              }
             }
           }
         }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, orders, orderItems, orderStatusHistory, groupBuys, moqCampaigns, moqProducts, products, users } from '@/lib/db';
@@ -10,6 +10,7 @@ import { captureEvent, orderStatusEvent } from '@/lib/posthog';
 import { STATUS_LABEL } from '@/lib/order-status';
 import { PAYMENT_STATUSES, type PaymentStatus } from '@/lib/payment-status';
 import { checkoutLog } from '@/lib/checkout-log';
+import { JOINABLE_KAHATI_STATUSES } from '@/lib/pasalo';
 
 const schema = z.object({
   status: z.enum([...ORDER_STATUS_FLOW, 'cancelled'] as [string, ...string[]]),
@@ -48,7 +49,18 @@ function paymentVerdictFor(
 ): PaymentStatus {
   if (requested) return requested as PaymentStatus;
   if (nextStatus === 'payment_confirmed') return 'confirmed';
-  if (nextStatus === 'cancelled') return 'not_due';
+  // A cancellation is a FULFILMENT fact and must not overwrite a PAYMENT one.
+  // This used to return 'not_due' unconditionally, which is the same conflation
+  // lib/payment-status.ts exists to end: a cancelled order the customer paid
+  // into is still paid into, and reading it as "nothing due" forgets money we
+  // are holding and a refund we owe — on exactly the orders a refund report
+  // exists to find. derivePaymentStatus was corrected for this; the live write
+  // path was not, so it kept minting the rows that migration had to repair.
+  //
+  // Only 'pending' — money owed with no evidence of any — genuinely becomes
+  // "nothing due" when an order is called off. A submitted proof still needs
+  // someone to look at it before we can say whether a refund is owed.
+  if (nextStatus === 'cancelled') return current === 'pending' ? 'not_due' : current as PaymentStatus;
   return current as PaymentStatus;
 }
 
@@ -123,16 +135,26 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
       }
 
       // Kahati vials go back to the counter — a cancelled commitment must not
-      // count toward the 7-vial minimum or hold a slot others could claim. Only
-      // an OPEN hatian is decremented: a terminal one keeps its historical
-      // count of the batch that was (or wasn't) ordered. Clamped at 0.
+      // count toward the minimum or hold a slot others could claim. Only a
+      // counter still SELLING is decremented: a terminal one keeps its
+      // historical count of the batch that was (or wasn't) ordered. Clamped at 0.
+      //
+      // Both selling stages, not just 'open'. A Pasalo counter is live and is
+      // being judged against the same minimum, so a cancellation during the
+      // stage that did not release its vials would leave the batch counting
+      // vials nobody is paying for — and a Pasalo can be RESCUED by a phantom
+      // vial, which is worse than a Kahati being: it goes straight to the
+      // supplier on the strength of it.
       const kahatiLines = await tx.select().from(orderItems)
         .where(and(eq(orderItems.orderId, id), eq(orderItems.kind, 'group_buy')));
       for (const line of kahatiLines) {
         if (line.groupBuyId) {
           await tx.update(groupBuys)
             .set({ claimedSlots: sql`GREATEST(${groupBuys.claimedSlots} - ${line.qty}, 0)` })
-            .where(and(eq(groupBuys.id, line.groupBuyId), eq(groupBuys.status, 'open')));
+            .where(and(
+              eq(groupBuys.id, line.groupBuyId),
+              inArray(groupBuys.status, [...JOINABLE_KAHATI_STATUSES]),
+            ));
         }
       }
 
