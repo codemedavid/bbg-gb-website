@@ -146,15 +146,53 @@ rather than a follow-up. Tests stayed green after it.
 
 ## Coverage
 
-To be recorded below once the coverage run completes.
+`npx vitest run --coverage lib/order-calc.test.ts components/OrderCalc*.test.tsx
+'app/(storefront)/order-calc/page.test.tsx'`
+→ `Test Files 5 passed (5) · Tests 72 passed (72)`
+
+| File | % Stmts | % Branch | % Funcs | % Lines | Uncovered |
+|---|---|---|---|---|---|
+| `lib/order-calc.ts` | 100 | 91.42 | 100 | 100 | 82, 89, 97 |
+| `app/(storefront)/order-calc/page.tsx` | 100 | 85.71 | 100 | 100 | 30 |
+| `components/OrderCalcLines.tsx` | 100 | 100 | 100 | 100 | — |
+| `components/OrderCalcStep.tsx` | 100 | 100 | 100 | 100 | — |
+
+100% line coverage on every file changed, past the 80% floor. The uncovered
+branches are defensive fallbacks that survived this change untouched: the
+optional `code`/`spec` rendering in search and line rows (order-calc.ts 82, 89,
+97) and the `??` on the packing-fee lookup while `usePackingFees()` is in flight
+(page.tsx 30).
 
 ## Whole-suite and types
 
 | Check | Command | Result |
 |---|---|---|
 | Types | `npx tsc --noEmit --pretty false` | exit 0, no output |
-| Calculator specs | `npx vitest run lib/order-calc.test.ts components/OrderCalc* 'app/(storefront)/order-calc/page.test.tsx'` | 5 files, 72 tests, all pass |
-| Full suite | `npx vitest run` | recorded below |
+| Calculator specs | `npx vitest run lib/order-calc.test.ts components/OrderCalc*.test.tsx 'app/(storefront)/order-calc/page.test.tsx'` | `Test Files 5 passed (5) · Tests 72 passed (72)` |
+| Full suite | `npx vitest run` | `Test Files 1 failed \| 272 passed (273) · Tests 2 failed \| 2994 passed (2996)` |
+
+### The two full-suite failures are pre-existing flake, not this change
+
+Both are in `app/api/pasalo/e2e-refund.test.ts` and both read
+`Error: Test timed out in 30000ms` — a timeout, not a wrong answer. That file
+belongs to the Pasalo refund work and contains no reference to `order-calc`,
+`vialPrice`, `groupBuyUnitPrice` or `seededKitPrice`; the `GroupBuyPricing`
+split is type-only and emits no runtime change.
+
+Four runs establish it:
+
+| Run | Result |
+|---|---|
+| `e2e-refund.test.ts` alone @ `14de5a1` (before this work) | 31/31 pass, 92.5s |
+| `e2e-refund.test.ts` alone @ this branch | 31/31 pass, 93.0s |
+| Full suite @ this branch, run 1 | 3 failed — SCENARIOs 7, 8, 9 |
+| Full suite @ this branch, run 2 | 2 failed — SCENARIOs 7, 9 |
+| **Full suite @ `14de5a1`** (scratch worktree, `git worktree add --detach`) | **17 failed / 3 files**, same `e2e-refund.test.ts` timeouts among them |
+
+Identical timings in isolation, a failing set that changes between identical
+runs, and a pre-change baseline that fails *more* than this branch. Those
+scenarios take ~3s each unloaded and exceed the 30s ceiling when 272 other files
+compete for the machine. Not introduced here, and not fixed here either.
 
 ## Known gaps
 
