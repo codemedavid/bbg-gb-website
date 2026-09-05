@@ -1,9 +1,8 @@
 import { z } from 'zod';
-import { and, eq, isNull } from 'drizzle-orm';
-import { getDb, users, passwordResetTokens } from '@/lib/db';
-import {
-  createResetToken, resetOrigin, resetTokenExpiry, resetUrl, RESET_TOKEN_TTL_MINUTES,
-} from '@/lib/password-reset';
+import { eq } from 'drizzle-orm';
+import { getDb, users } from '@/lib/db';
+import { resetOrigin } from '@/lib/password-reset';
+import { issueResetLink } from '@/lib/password-reset-server';
 import { env } from '@/lib/env';
 import { sendEmail, passwordResetEmail } from '@/lib/email';
 import { captureEvent } from '@/lib/posthog';
@@ -24,18 +23,14 @@ export const POST = handler(async (req: Request) => {
   const [user] = await db.select().from(users).where(eq(users.email, email));
   if (!user) return ok(GENERIC);
 
-  // Requesting a new link retires the old ones. Two clicks on "send link" must
-  // not leave two working keys to the account lying in an inbox.
-  await db.update(passwordResetTokens)
-    .set({ usedAt: new Date() })
-    .where(and(eq(passwordResetTokens.userId, user.id), isNull(passwordResetTokens.usedAt)));
-
-  const { token, tokenHash } = createResetToken();
-  await db.insert(passwordResetTokens).values({
-    userId: user.id, tokenHash, expiresAt: resetTokenExpiry(),
+  // Shared with Admin → Accounts' "Issue reset link" (lib/password-reset-server.ts).
+  // Both doors into an account have to carry the same safeguards — expiry, single
+  // use, and retiring any link already outstanding — and one function is the only
+  // way they cannot drift apart.
+  const { resetUrl, expiresInMinutes } = await issueResetLink({
+    userId: user.id,
+    origin: resetOrigin(req.url, env.appUrl),
   });
-
-  const link = resetUrl(resetOrigin(req.url, env.appUrl), token);
 
   // PostHog delivers this mail (docs/posthog-events.md), so the capture *is* the
   // send and the link has to travel as a property or the workflow has nothing to
@@ -47,17 +42,18 @@ export const POST = handler(async (req: Request) => {
     distinctId: user.id,
     email: user.email,
     name: user.name,
-    properties: { resetUrl: link, expiresInMinutes: RESET_TOKEN_TTL_MINUTES },
+    properties: { resetUrl, expiresInMinutes },
   });
 
   await sendEmail({
     to: user.email,
-    ...passwordResetEmail({ name: user.name, resetUrl: link, expiresInMinutes: RESET_TOKEN_TTL_MINUTES }),
+    ...passwordResetEmail({ name: user.name, resetUrl, expiresInMinutes }),
     kind: 'password_reset',
     delivery,
   });
 
   // Still the generic answer even when delivery failed. The customer can retry,
-  // Admin → Emails shows the failure, and a stranger still learns nothing.
+  // Admin → Emails shows the failure, an admin can hand the link over directly,
+  // and a stranger still learns nothing.
   return ok(GENERIC);
 });

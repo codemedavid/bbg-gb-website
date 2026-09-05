@@ -66,6 +66,34 @@ received almost none and retried up to 13 times each, because a person who had
 entered the workflow once could never enter it again. Nothing surfaced the
 failure — see "Seeing whether it worked" below, which is the fix for that half.
 
+**It then failed a second way, on 2026-09-02: `POSTHOG_KEY` was simply not set in
+the production environment.** That is not a reset-specific fault — with no key,
+`captureEvent` sends nothing at all, so *every* customer email stops. Verified in
+prod on 2026-09-05: 167 `email_log` rows since 2026-09-02, every one carrying
+`POSTHOG_KEY is not set, so nothing was sent.` — 69 order receipts, 34 receipt
+updates, 28 settlements, 20 payment confirmations, 6 password resets. Set
+`POSTHOG_KEY` in Vercel → Project Settings → Environment Variables; there is no
+in-app fallback that can substitute for it, because PostHog is the only sender.
+
+### Recovering a customer when the mail does not arrive
+
+Two failures in three weeks, and both times a locked-out customer's only way back
+in was to register a **new email address**, abandoning their order history. So
+account recovery no longer depends solely on this workflow.
+
+**Admin → Accounts** (`/admin/accounts`) has an **"Issue reset link"** button on
+every customer row. It mints the same credential — single use, 60 minutes,
+retiring any link already outstanding — and shows it to the admin to copy, so it
+can be handed over on WhatsApp or Messenger. `POST /api/admin/accounts/[id]/reset-link`,
+sharing `lib/password-reset-server.ts` with the public form so the two doors
+cannot drift apart on their safeguards.
+
+It still fires `password_reset_requested` and still writes the `email_log` row, so
+a customer whose delivery *is* working finishes without waiting for a human, and
+the issuance is recorded either way. It is refused for admin accounts: this
+recovers customers, and minting a credential for another administrator is
+privilege escalation with no support case behind it.
+
 The link's host comes from `APP_URL`; without that set, it falls back to the
 request's Host header, which an attacker can set. Set `APP_URL` in production.
 
@@ -164,7 +192,13 @@ the table should say so.
 `queued` is as far as the app can see. PostHog accepting the event does not prove
 the workflow sent the mail; if `password_reset` rows read `sent` and customers
 still report nothing arriving, the fault is in the workflow's re-entry or
-suppression settings above, not in the app.
+suppression settings above, not in the app. If they read `failed` or `skipped`
+with `POSTHOG_KEY is not set`, the key is missing from the environment and *no*
+customer email is going out — check Admin → Emails for the other kinds before
+assuming it is a reset-only problem.
+
+Either way, an admin can unblock the individual customer immediately with
+"Issue reset link" on Admin → Accounts.
 
 ### Known gap: two kinds nothing delivers
 
