@@ -31,7 +31,8 @@ vi.mock('@/lib/session', () => {
   return { ApiError, getSession: async () => session.current, requireSession, requireAdmin };
 });
 
-const captureEvent = vi.fn(async () => ({ ok: true }) as { ok: boolean; error?: string });
+type Captured = { event: string; distinctId: string; email: string; properties?: Record<string, unknown> };
+const captureEvent = vi.fn(async (_input: Captured) => ({ ok: true }) as { ok: boolean; error?: string });
 vi.mock('@/lib/posthog', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/posthog')>()),
   captureEvent,

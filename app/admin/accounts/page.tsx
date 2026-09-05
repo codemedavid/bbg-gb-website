@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useAdminAccounts } from '@/lib/admin-api';
+import { Fragment, useEffect, useState } from 'react';
+import { useAdminAccounts, useIssueResetLink, type IssuedResetLink } from '@/lib/admin-api';
 import { searchInput } from '@/components/admin-ui';
 import { shortDate } from '@/lib/format';
 import type { AccountRow } from '@/lib/accounts';
@@ -12,6 +12,13 @@ import type { AccountRow } from '@/lib/accounts';
 // was invisible. The "last signed in" column is the activity signal: auth is a
 // stateless JWT, so a stamp written at sign-in (users.last_login_at) is the only
 // evidence that an account is still in use.
+//
+// It is also where a locked-out customer gets recovered. Account recovery runs
+// on a PostHog workflow that has failed twice in three weeks, and each time the
+// customer's only way back in was to register a new email address and abandon
+// their order history. "Issue reset link" is the way back that does not depend
+// on their inbox: the admin hands it over on WhatsApp, where BBG already talks
+// to them.
 const FILTERS = [['', 'All'], ['customer', 'Customers'], ['admin', 'Admins']] as const;
 
 const ROLE_BADGE: Record<AccountRow['role'], string> = {
@@ -45,6 +52,38 @@ export default function AdminAccountsPage() {
   const [typed, setTyped] = useState('');
   const [search, setSearch] = useState('');
   const { data: accounts = [], isLoading, error } = useAdminAccounts(search || undefined, role || undefined);
+  const issueLink = useIssueResetLink();
+  // One at a time. A screenful of live credentials is a screenful to leak, and
+  // the admin is working one customer's chat thread at a time anyway.
+  const [issued, setIssued] = useState<(IssuedResetLink & { id: string }) | null>(null);
+  const [issueError, setIssueError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleIssue = async (account: AccountRow) => {
+    setIssueError(null);
+    setCopied(false);
+    setIssued(null);
+    try {
+      setIssued({ id: account.id, ...await issueLink.mutateAsync(account.id) });
+    } catch (err) {
+      // Named, and with the reason kept: an admin who has just promised a
+      // customer a link needs to know it was never minted, and why.
+      setIssueError(`Could not issue a reset link for ${account.name}. ${
+        err instanceof Error ? err.message : 'Please try again.'}`);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!issued) return;
+    try {
+      await navigator.clipboard.writeText(issued.resetUrl);
+      setCopied(true);
+    } catch {
+      // Clipboard access can be refused outright. The link is on screen and
+      // selectable either way, so this is a downgrade, not a failure.
+      setCopied(false);
+    }
+  };
 
   // Debounced so the list is not re-queried on every keystroke.
   useEffect(() => {
@@ -85,6 +124,12 @@ export default function AdminAccountsPage() {
         </p>
       )}
 
+      {issueError && (
+        <p role="alert" className="rounded-[10px] bg-[#fdeaea] px-3 py-2 text-[13px] text-[#a33]">
+          {issueError}
+        </p>
+      )}
+
       <div className="overflow-x-auto rounded-[16px] bg-white shadow-card">
         <table className="w-full min-w-[720px] text-left text-[13px]">
           <thead className="border-b border-line-soft text-[11.5px] uppercase tracking-wide text-ink-muted">
@@ -95,14 +140,17 @@ export default function AdminAccountsPage() {
               <th className="px-4 py-3">Orders</th>
               <th className="px-4 py-3">Joined</th>
               <th className="px-4 py-3">Last signed in</th>
+              <th className="px-4 py-3 text-right">Recovery</th>
             </tr>
           </thead>
           <tbody>
-            {isLoading ? <tr><td className="px-4 py-6 text-ink-muted" colSpan={6}>Loading…</td></tr> :
+            {isLoading ? <tr><td className="px-4 py-6 text-ink-muted" colSpan={7}>Loading…</td></tr> :
               accounts.length ? accounts.map((a) => {
                 const since = a.lastLoginAt ? relativeSince(a.lastLoginAt) : null;
+                const showing = issued?.id === a.id ? issued : null;
                 return (
-                  <tr key={a.id} className="border-b border-line-soft/60">
+                  <Fragment key={a.id}>
+                  <tr className={`border-b border-line-soft/60 ${showing ? 'bg-brand-green/5' : ''}`}>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-ink">{a.name}</div>
                       <div className="text-[11px] text-ink-muted">{a.email}</div>
@@ -125,9 +173,62 @@ export default function AdminAccountsPage() {
                         </>
                       ) : <span className="text-[12px] font-semibold text-ink-muted">Never</span>}
                     </td>
+                    {/* Customers only. The server refuses to mint a credential
+                        for another administrator, so offering the button would
+                        only invite the error. */}
+                    <td className="px-4 py-3 text-right">
+                      {a.role === 'customer' && (
+                        <button
+                          type="button"
+                          aria-label={`Issue reset link for ${a.name}`}
+                          disabled={issueLink.isPending}
+                          onClick={() => handleIssue(a)}
+                          className="rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-ink-body transition-colors hover:border-brand-greendark hover:bg-brand-greendark hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-greendark disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Issue reset link
+                        </button>
+                      )}
+                    </td>
                   </tr>
+                  {showing && (
+                    <tr className="border-b border-line-soft/60 bg-brand-green/5">
+                      <td colSpan={7} className="px-4 pb-4 pt-0">
+                        <div className="rounded-[12px] border border-brand-greendark/25 bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[12px] font-bold text-brand-greendark">
+                              Reset link for {showing.email}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleCopy}
+                              className="rounded-full bg-brand-greendark px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-greendark"
+                            >
+                              {copied ? 'Copied' : 'Copy link'}
+                            </button>
+                          </div>
+                          {/* Selectable and wrapped rather than truncated: this
+                              is the one thing on the screen the admin has to get
+                              out intact, and a clipboard write can be refused. */}
+                          <code
+                            data-testid={`reset-link-${a.id}`}
+                            className="mt-2 block break-all rounded-[8px] bg-line/40 px-2.5 py-2 font-mono text-[11.5px] text-ink-body"
+                          >
+                            {showing.resetUrl}
+                          </code>
+                          {/* A link with no stated lifetime gets pasted into a
+                              chat and clicked tomorrow, by which point it is
+                              dead and reads as the feature being broken. */}
+                          <p data-testid={`reset-link-note-${a.id}`} className="mt-2 text-[11.5px] text-ink-muted">
+                            Works <strong>once</strong> and expires in <strong>{showing.expiresInMinutes} minutes</strong>.
+                            Send it straight to the customer — anyone who has this link can set the password.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
-              }) : <tr><td className="px-4 py-6 text-ink-muted" colSpan={6}>No accounts match this view.</td></tr>}
+              }) : <tr><td className="px-4 py-6 text-ink-muted" colSpan={7}>No accounts match this view.</td></tr>}
           </tbody>
         </table>
       </div>

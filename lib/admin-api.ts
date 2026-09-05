@@ -52,6 +52,19 @@ export const useAdminAccounts = (search?: string, role?: string) =>
     // previous rows keeps the table from blinking to "Loading…" between them.
     placeholderData: (prev) => prev,
   });
+
+/** A reset link an admin has just minted for one customer. */
+export type IssuedResetLink = { email: string; resetUrl: string; expiresInMinutes: number };
+
+// Recovering a customer whose reset mail never arrived, for Admin → Accounts.
+//
+// No toast on failure: the link belongs to one row, so the screen reports it
+// against that row instead. A toast would leave the admin unsure which of the
+// customers they are working through actually failed.
+export const useIssueResetLink = () =>
+  useMutation({
+    mutationFn: (id: string) => apiSend<IssuedResetLink>(`/admin/accounts/${id}/reset-link`, 'POST'),
+  });
 // What became of every notification the shop composed, for Admin → Emails. The
 // `body` is deliberately absent from the row: for a password_reset it holds a
 // live single-use token, and this screen answers "did it arrive", not "what did
