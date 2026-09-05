@@ -9,17 +9,20 @@ import { buildLines, orderTotals, addEntry, setEntryQty, type CalcEntry } from '
 import { PACKING_FEE_PHP, type PackingMode } from '@/lib/pricing';
 
 // A quote, not an order. Nothing here writes to the cart — the customer builds
-// a number to decide with, and decides where to buy it separately. That is why
-// the fulfilment mode is a control rather than an inference: the same basket
-// costs three different amounts to pack depending on which board it goes
-// through, and the calculator has no way to know which one the customer means.
+// a number to decide with, and decides where to buy it separately.
+//
+// It prices the two SCHEDULED boards, Hatian and Pasabay, at the per-vial rate
+// those boards are opened at (lib/order-calc.ts vialPrice). The ready shelf is
+// a different board at a different price and is not quoted here. The mode is
+// still a control rather than an inference, because the two boards pack at
+// different rates and the calculator cannot know which one the customer means.
 export default function OrderCalcPage() {
   const { data: products = [], isLoading } = useProducts({});
   const { data: fees } = usePackingFees();
 
   const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<CalcEntry[]>([]);
-  const [mode, setMode] = useState<PackingMode>('solo');
+  const [mode, setMode] = useState<PackingMode>('kahati');
 
   const lines = useMemo(() => buildLines(products, entries), [products, entries]);
   // Live fees where they have loaded; the code defaults only while they have
@@ -37,7 +40,8 @@ export default function OrderCalcPage() {
           <div className="min-w-0">
             <h1 className="font-display text-[22px] font-bold leading-tight text-ink">Order Calculator</h1>
             <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">
-              Hanapin ang produkto, i-set ang dami ng vials, at makikita mo agad ang total. Per-vial pricing in PHP.
+              Hanapin ang produkto, i-set ang dami ng vials, at makikita mo agad ang total. Group buy at hatian
+              na presyo, kada vial, in PHP.
             </p>
           </div>
           <span className="flex-none rounded-full border border-brand-green bg-[#e8f5db] px-2.5 py-1 text-[9.5px] font-bold tracking-wider text-brand-greendark">

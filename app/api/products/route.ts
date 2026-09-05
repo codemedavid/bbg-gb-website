@@ -7,8 +7,15 @@ const cols = {
   pricePhp: products.pricePhp, priceUsd: products.priceUsd, categoryId: products.categoryId,
   categorySlug: categories.slug, categoryName: categories.name,
   isOnHand: products.isOnHand, onHandKitPhp: products.onHandKitPhp, onHandPiecePhp: products.onHandPiecePhp,
+  onHandTenVialPhp: products.onHandTenVialPhp,
   stock: products.stock, arrivalGroup: products.arrivalGroup, description: products.description,
   imageEmoji: products.imageEmoji, soldCount: products.soldCount,
+  // What either board charges for this product. The order calculator quotes the
+  // boards, so it needs the same three columns kahatiSeedFor and campaignSeedFor
+  // read; without them it can only see the shop price and cannot tell an
+  // admin-set group buy rate from the list one.
+  gbPricePerKitPhp: products.gbPricePerKitPhp, gbPricePerPiecePhp: products.gbPricePerPiecePhp,
+  gbVialsPerKit: products.gbVialsPerKit,
 };
 
 export const GET = handler(async (req: Request) => {

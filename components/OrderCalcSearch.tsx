@@ -1,17 +1,13 @@
 'use client';
 import { useState } from 'react';
 import { php } from '@/lib/format';
-import { searchProducts, stockState, vialPrice, type CalcProduct, type StockState } from '@/lib/order-calc';
+import { searchProducts, vialPrice, type CalcProduct } from '@/lib/order-calc';
 import { StepCard } from './OrderCalcStep';
 
-// Availability is a badge, not a gate. An out-of-stock vial still has a price,
-// and quoting it is the whole point of reading a pricelist — so every row stays
-// tappable and the badge carries the caveat.
-const BADGE: Record<StockState, { label: string; className: string }> = {
-  in: { label: 'IN STOCK', className: 'bg-[#e8f5db] text-brand-greendark' },
-  low: { label: 'LOW STOCK', className: 'bg-warn-bg text-warn-fg' },
-  out: { label: 'OUT OF STOCK', className: 'bg-surface-mist text-ink-faint' },
-};
+// No availability badge. This list prices the two scheduled boards, where
+// nothing is on a shelf to be in or out of stock — a hatian and a campaign are
+// both orders placed before the vials exist. A band read off the ready-stock
+// column would be describing a board the customer is not on.
 
 export function OrderCalcSearch({ products, query, onQuery, onAdd, loading = false }: {
   products: CalcProduct[];
@@ -48,10 +44,8 @@ export function OrderCalcSearch({ products, query, onQuery, onAdd, loading = fal
               No products match “{query}”. Try a shorter word or a product code.
             </p>
           ) : (
-            results.map((p) => {
-              const badge = BADGE[stockState(p.stock)];
-              return (
-                <button key={p.id} onClick={() => onAdd(p.id)} aria-label={`Add ${p.name} to order`}
+            results.map((p) => (
+              <button key={p.id} onClick={() => onAdd(p.id)} aria-label={`Add ${p.name} to order`}
                   className="flex w-full items-center gap-3 border-b border-line-soft px-3.5 py-3 text-left last:border-b-0 transition-colors hover:bg-surface-mist active:bg-surface-mist">
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="break-words text-[13.5px] font-bold leading-tight text-ink">{p.name}</span>
@@ -60,15 +54,12 @@ export function OrderCalcSearch({ products, query, onQuery, onAdd, loading = fal
                       {p.spec && <span className="truncate">{p.spec}</span>}
                     </span>
                   </span>
-                  <span className="flex flex-none flex-col items-end gap-1">
+                  <span className="flex flex-none flex-col items-end gap-0.5">
                     <span className="whitespace-nowrap font-display text-[13.5px] font-bold text-ink">{php(vialPrice(p))}</span>
-                    <span className={`whitespace-nowrap rounded-full px-2 py-px text-[9.5px] font-bold tracking-wide ${badge.className}`}>
-                      {badge.label}
-                    </span>
+                    <span className="whitespace-nowrap text-[9.5px] font-bold tracking-wide text-ink-faint">PER VIAL</span>
                   </span>
-                </button>
-              );
-            })
+              </button>
+            ))
           )}
         </div>
       )}

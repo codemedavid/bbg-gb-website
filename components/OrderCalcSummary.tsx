@@ -4,14 +4,17 @@ import { php } from '@/lib/format';
 import type { OrderTotals } from '@/lib/order-calc';
 import type { PackingMode } from '@/lib/pricing';
 
-// The four ways to buy, in the words the storefront already uses for them.
-// The fee follows the mode because BBG prices packing per mode — a single flat
-// "shipping fee" would be right for at most one of these four.
+// The two scheduled boards, in the words the storefront already uses for them.
+// The fee follows the mode because BBG prices packing per mode, and a hatian
+// parcel (₱150) is not a pasabay one (₱300).
+//
+// On-hand and MOQ are deliberately absent. This page quotes the group buy vial
+// price, so offering a ready-shelf or MOQ packing fee beside it would put two
+// boards' arithmetic into one total — the customer would be reading a fee for a
+// board whose prices are not the ones on screen.
 const MODES: { mode: PackingMode; label: string }[] = [
-  { mode: 'solo', label: 'On-hand' },
   { mode: 'kahati', label: 'Hatian' },
   { mode: 'group_buy', label: 'Pasabay' },
-  { mode: 'moq', label: 'MOQ' },
 ];
 
 export function OrderCalcSummary({ totals, mode, onMode }: {

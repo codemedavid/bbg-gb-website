@@ -338,10 +338,21 @@ export function validateMoqQty(
 // place is what stops the two boards drifting into different arithmetic.
 // ---------------------------------------------------------------------------
 
-export type GroupBuyConfig = {
-  gbPricePerKitPhp: string | number | null;
-  gbPricePerPiecePhp: string | number | null;
-  gbVialsPerKit: number | null;
+// The three columns that PRICE a product on either board, apart from the two
+// that size a batch. Split out because a surface that only needs to quote — the
+// order calculator asking what one vial costs — should not have to carry two
+// batch-size fields it never reads just to satisfy the type.
+// undefined is accepted alongside null because the storefront's product feeds
+// are narrower than the admin's, so a row can arrive with the column simply not
+// selected. positiveMoney and positiveInt already read both as "not configured",
+// so the type says what the code has always done.
+export type GroupBuyPricing = {
+  gbPricePerKitPhp?: string | number | null;
+  gbPricePerPiecePhp?: string | number | null;
+  gbVialsPerKit?: number | null;
+};
+
+export type GroupBuyConfig = GroupBuyPricing & {
   gbMinVials: number | null;
   gbMaxVialsPerBatch: number | null;
 };
@@ -365,7 +376,7 @@ function positiveMoney(raw: string | number | null | undefined): number | null {
 }
 
 // Vials in one kit of this product, falling back to the global kit size.
-export function groupBuyVialsPerKit(c: GroupBuyConfig): number {
+export function groupBuyVialsPerKit(c: GroupBuyPricing): number {
   return positiveInt(c.gbVialsPerKit) ?? VIALS_PER_KIT;
 }
 
@@ -373,7 +384,7 @@ export function groupBuyVialsPerKit(c: GroupBuyConfig): number {
 // is derived from the kit when the admin has not set one explicitly — the same
 // relationship perVialPrice expresses for a hatian, but against this product's
 // own kit size rather than the global ten.
-export function groupBuyUnitPrice(c: GroupBuyConfig, unit: GroupBuyUnit): number | null {
+export function groupBuyUnitPrice(c: GroupBuyPricing, unit: GroupBuyUnit): number | null {
   const kit = positiveMoney(c.gbPricePerKitPhp);
   if (unit === 'kit') return kit;
   const piece = positiveMoney(c.gbPricePerPiecePhp);
@@ -393,7 +404,7 @@ export function groupBuyUnitPrice(c: GroupBuyConfig, unit: GroupBuyUnit): number
 // Both boards seed through this one function, so a kit cannot cost one thing on
 // the Group Buy board and another on the hatian board.
 export function seededKitPrice(
-  c: GroupBuyConfig,
+  c: GroupBuyPricing,
   shopPricePhp: string | number | null,
 ): number | null {
   return groupBuyUnitPrice(c, 'kit') ?? positiveMoney(shopPricePhp);

@@ -22,8 +22,11 @@ export type Product = {
   // batch. Named exactly as lib/db/schema.ts and pricing.ts's GroupBuyConfig
   // name them, so an admin row satisfies that contract with no adapter.
   //
-  // Optional because the public catalog feeds select a narrower column list —
-  // these are admin-surface fields and the storefront never reads them.
+  // Optional because the public catalog feeds select a narrower column list and
+  // not every feed carries all of them. The three PRICING columns are read by
+  // the storefront — the order calculator quotes the boards from them (see
+  // lib/order-calc.ts vialPrice) and GET /api/products returns them; the two
+  // batch-size columns remain admin-surface only.
   isGroupBuy?: boolean;
   // Group Buy only — not sold per vial, so no hatian counter may exist for it
   // (lib/kahati-eligibility.ts).

@@ -2,6 +2,14 @@
 
 **Date:** 2026-08-19 · **Branch:** `feat/group-buy-page`
 
+> **Partly superseded on 2026-09-05** by
+> [`order-calc-board-pricing.tdd.md`](./order-calc-board-pricing.tdd.md), which
+> repriced the calculator onto the two scheduled boards. Three guarantees below
+> no longer hold and are struck through where they appear: the on-hand piece
+> price is no longer consulted (rows 3, 29), the stock bands are gone (J5, rows
+> 1, 2, 18, 19), and the fee selector offers two modes rather than four (row 27).
+> Everything else in this record still stands.
+
 ## Source plan
 
 No `*.plan.md` file. The plan was produced inline by `/ecc:plan` in this session
@@ -60,8 +68,9 @@ That layout is carried over 1:1. Three things could not be carried over:
 > **J4** As a customer, I pick a fulfilment mode, so the packing fee matches how
 > I will actually buy.
 >
-> **J5** As a customer, I see stock status, so I do not quote something that is
-> out of stock.
+> ~~**J5** As a customer, I see stock status, so I do not quote something that is
+> out of stock.~~ **Withdrawn 2026-09-05** — the calculator quotes the two
+> scheduled boards, where nothing is on a shelf to be in or out of stock.
 
 ## Task report
 
@@ -115,9 +124,9 @@ factored on first write. Tests stayed green throughout.
 
 | # | What is guaranteed | Test | Type | Result |
 |---|---|---|---|---|
-| 1 | A zero or negative stock count reads as out of stock | `lib/order-calc.test.ts:stockState` | unit | PASS |
-| 2 | Stock at or below 10 reads as low, above 10 as in stock | `lib/order-calc.test.ts:stockState` | unit | PASS |
-| 3 | The on-hand piece price wins; the catalogue price is the fallback | `lib/order-calc.test.ts:vialPrice` | unit | PASS |
+| 1 | ~~A zero or negative stock count reads as out of stock~~ | removed 2026-09-05 | — | N/A |
+| 2 | ~~Stock at or below 10 reads as low, above 10 as in stock~~ | removed 2026-09-05 | — | N/A |
+| 3 | ~~The on-hand piece price wins; the catalogue price is the fallback~~ — superseded by the board price | `lib/order-calc.test.ts:vialPrice` | unit | N/A |
 | 4 | A zero or unparseable price yields 0, never NaN | `lib/order-calc.test.ts:vialPrice` | unit | PASS |
 | 5 | Search matches product code case-insensitively (J1) | `lib/order-calc.test.ts:searchProducts` | unit | PASS |
 | 6 | Search matches name and spec, and caps at 60 rows | `lib/order-calc.test.ts:searchProducts` | unit | PASS |
@@ -132,8 +141,8 @@ factored on first write. Tests stayed green throughout.
 | 15 | Typing a code narrows the list to that product (J1) | `components/OrderCalcSearch.test.tsx` | unit | PASS |
 | 16 | Tapping a row adds that product (J2) | `components/OrderCalcSearch.test.tsx` | unit | PASS |
 | 17 | No matches says so and quotes the query back | `components/OrderCalcSearch.test.tsx` | unit | PASS |
-| 18 | Rows badge IN / LOW / OUT OF STOCK (J5) | `components/OrderCalcSearch.test.tsx` | unit | PASS |
-| 19 | An out-of-stock product can still be quoted (J5) | `components/OrderCalcSearch.test.tsx` | unit | PASS |
+| 18 | ~~Rows badge IN / LOW / OUT OF STOCK (J5)~~ | removed 2026-09-05 | — | N/A |
+| 19 | ~~An out-of-stock product can still be quoted (J5)~~ — every row is unconditionally tappable now | — | — | N/A |
 | 20 | An empty order invites a search rather than showing a bare panel | `components/OrderCalcLines.test.tsx` | unit | PASS |
 | 21 | Vial count pluralises correctly | `components/OrderCalcLines.test.tsx` | unit | PASS |
 | 22 | −/+ step the quantity; stepping down from 1 asks for 0 (J2) | `components/OrderCalcLines.test.tsx` | unit | PASS |
@@ -141,9 +150,9 @@ factored on first write. Tests stayed green throughout.
 | 24 | The breakdown stays closed until asked for | `components/OrderCalcSummary.test.tsx` | unit | PASS |
 | 25 | Subtotal + fee reconcile against the displayed total (J3) | `components/OrderCalcSummary.test.tsx` | unit | PASS |
 | 26 | The fee is labelled packing, noting local shipping is included | `components/OrderCalcSummary.test.tsx` | unit | PASS |
-| 27 | All four fulfilment modes are offered, with the active one pressed (J4) | `components/OrderCalcSummary.test.tsx` | unit | PASS |
+| 27 | ~~All four fulfilment modes are offered~~ — two since 2026-09-05, active one still pressed (J4) | `components/OrderCalcSummary.test.tsx` | unit | PASS |
 | 28 | A product tapped in search reaches the order and the total (J2, J3) | `app/(storefront)/order-calc/page.test.tsx` | integration | PASS |
-| 29 | Goods + the real ₱200 solo packing fee totals ₱700 on ₱500 of goods | `app/(storefront)/order-calc/page.test.tsx` | integration | PASS |
+| 29 | ~~Goods + the real ₱200 solo packing fee totals ₱700~~ — ₱150 hatian, ₱650, since 2026-09-05 | `app/(storefront)/order-calc/page.test.tsx` | integration | PASS |
 | 30 | Adding the same product twice makes one line, not two | `app/(storefront)/order-calc/page.test.tsx` | integration | PASS |
 | 31 | Stepping a line to nothing removes it and restores the empty state | `app/(storefront)/order-calc/page.test.tsx` | integration | PASS |
 | 32 | Changing mode re-prices the fee (₱650 hatian / ₱800 pasabay) (J4) | `app/(storefront)/order-calc/page.test.tsx` | integration | PASS |

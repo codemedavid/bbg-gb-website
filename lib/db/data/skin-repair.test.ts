@@ -138,8 +138,6 @@ describe('Skin Repair series — group buy terms', () => {
         gbPricePerKitPhp: product.gbPricePerKitPhp ?? null,
         gbPricePerPiecePhp: null,
         gbVialsPerKit: product.gbVialsPerKit ?? null,
-        gbMinVials: null,
-        gbMaxVialsPerBatch: null,
       }, 'piece')).toBe(395);
     }
   });
