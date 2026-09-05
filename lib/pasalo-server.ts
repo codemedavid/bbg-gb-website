@@ -192,6 +192,28 @@ async function readBatchLines(
   counterIds: string[],
   reasonFor: Map<string, string>,
 ): Promise<{ lines: BatchLine[]; orderFacts: BatchOrderFacts[] }> {
+  // Which orders this batch touches at all — anyone holding a line on a staged
+  // counter.
+  const touched = await tx.selectDistinct({ orderId: orderItems.orderId })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(and(
+      isNotNull(orderItems.groupBuyId),
+      inArray(orderItems.groupBuyId, counterIds),
+      ne(orders.status, 'cancelled'),
+    ));
+  const orderIds = touched.map((t) => t.orderId);
+  if (!orderIds.length) return { lines: [], orderFacts: [] };
+
+  // Then EVERY hatian line those orders hold, not only the ones on staged
+  // counters. The deposit decision turns on "does this customer still have a
+  // parcel coming", and a surviving line is easy to miss: a counter that filled
+  // its kit seals itself the moment it hits ten (sealFullPasalo / closeFullKahati)
+  // and is therefore no longer staged when the stage closes. Scoped to the
+  // staged counters alone, a customer whose GOOD product filled looks like a
+  // customer who lost everything — and gets back a packing fee for a parcel we
+  // are in fact about to pack. Their best outcome funding a refund is the exact
+  // inversion of the rule.
   const rows = await tx.select({
     orderItemId: orderItems.id,
     orderId: orders.id,
@@ -212,7 +234,7 @@ async function readBatchLines(
     .leftJoin(settlements, eq(settlements.id, orders.settlementId))
     .where(and(
       isNotNull(orderItems.groupBuyId),
-      inArray(orderItems.groupBuyId, counterIds),
+      inArray(orderItems.orderId, orderIds),
       ne(orders.status, 'cancelled'),
     ));
 
@@ -331,9 +353,27 @@ async function releaseRefundedLines(
   const touchedOrders = [...new Set(refunds.map((r) => r.orderId))];
   let ordersCancelled = 0;
 
+  // EVERY line of the affected orders, not just the ones on counters this close
+  // staged. `lines` is scoped to the staged counters, and an order can hold a
+  // line on a counter that is not in this stage at all — one still filling on
+  // the Kahati board, or one that filled its kit during Kahati and sealed
+  // early. Judged against `lines` alone those lines are invisible, so an order
+  // whose only VISIBLE line failed reads as an order where everything failed:
+  // it gets cancelled outright and re-billed to zero, taking vials the customer
+  // is still owed down with it. That is the same order-granularity mistake this
+  // whole function was written to end, one level up.
+  const allLines = await tx.select({
+    id: orderItems.id,
+    orderId: orderItems.orderId,
+    qty: orderItems.qty,
+    lineTotalPhp: orderItems.lineTotalPhp,
+  })
+    .from(orderItems)
+    .where(inArray(orderItems.orderId, touchedOrders));
+
   for (const orderId of touchedOrders) {
-    const held = lines.filter((l) => l.orderId === orderId);
-    const survivors = held.filter((l) => !refundedItemIds.has(l.orderItemId));
+    const held = allLines.filter((l) => l.orderId === orderId);
+    const survivors = held.filter((l) => !refundedItemIds.has(l.id));
 
     // Every line of this order failed, so there is no parcel. Cancel it — and
     // leave payment_status alone. `orders.status` already says the order is
@@ -362,7 +402,7 @@ async function releaseRefundedLines(
     const [row] = await tx.select({ packingFeePhp: orders.packingFeePhp })
       .from(orders).where(eq(orders.id, orderId));
     if (!row) continue;
-    const subtotal = round2(survivors.reduce((sum, l) => sum + l.lineTotalPhp, 0));
+    const subtotal = round2(survivors.reduce((sum, l) => sum + Number(l.lineTotalPhp), 0));
     await tx.update(orders).set({
       subtotalPhp: String(subtotal),
       totalPhp: String(round2(subtotal + Number(row.packingFeePhp))),

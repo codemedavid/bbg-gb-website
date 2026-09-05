@@ -41,6 +41,16 @@ export default defineConfig({
       JWT_SECRET: 'test-secret',
       STORAGE_DRIVER: 'local',
       SMTP_HOST: '',
+      // Cleared for the same reason SMTP_HOST is, and it matters MORE. lib/env.ts
+      // does `import 'dotenv/config'`, so a developer's real .env reaches every
+      // test — and PostHog is what actually delivers customer email in this
+      // project (lib/posthog.ts, docs). Left unset, a suite run fires real
+      // production events, addressed to fixture accounts like
+      // user-oecvxlfm@example.com, for every order placed, status changed and
+      // hatian cancelled in the tests. Clearing it makes captureEvent report
+      // `[posthog:skipped]` instead of delivering.
+      POSTHOG_KEY: '',
+      NEXT_PUBLIC_POSTHOG_KEY: '',
       // Cleared so the reset-link tests see the request origin, whatever the
       // developer happens to have in their own .env.
       APP_URL: '',

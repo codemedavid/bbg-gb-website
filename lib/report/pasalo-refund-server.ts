@@ -145,10 +145,19 @@ async function loadSuccessfulItems(db: Db, refunds: RefundRecord[]): Promise<Suc
       inArray(orders.userId, userIds),
       isNotNull(orderItems.groupBuyId),
       ne(orders.status, 'cancelled'),
-      // Counters that went through a Pasalo — kahati_vials is written only when
-      // the stage opens, so it is what marks a counter as belonging to a batch
-      // that has been through this lifecycle rather than to the live board.
-      isNotNull(groupBuys.kahatiVials),
+      // Counters whose outcome has been DECIDED, which is what "successful"
+      // means. Selecting on kahati_vials instead looked equivalent and was not:
+      // that column is written only when a counter ENTERS the stage, and a
+      // counter that filled its kit during Kahati seals itself 'closed' early
+      // and never enters it (openPasaloStage skips a full box — there is
+      // nothing left to sell). Those are the customer's BEST outcomes, and they
+      // silently vanished from the Successful Items sheet and from the batch
+      // summary — which is precisely the sheet that exists to stop an admin
+      // refunding a customer's whole payment.
+      //
+      // A still-'open' or 'pasalo' counter is correctly excluded: it has not
+      // been judged, so it is neither successful nor failed yet.
+      inArray(groupBuys.status, ['closed', 'shipped', 'completed']),
     ))
     .orderBy(asc(users.name), asc(orders.orderNo));
 
