@@ -25,6 +25,11 @@ export const CHECKOUT_EVENTS = [
   // failure whose frequency nobody could estimate, and it decides whether the
   // stale-quote guard is protecting customers or annoying them.
   'price_changed_mid_checkout',
+  // The other end of the same story. A checkout takes money in; closing a
+  // Pasalo decides what goes back out, and marking a refund records that it
+  // did. An unexplained refund total six weeks later is answered from here.
+  'pasalo_stage_closed',
+  'refund_status_changed',
 ] as const;
 
 export type CheckoutEvent = typeof CHECKOUT_EVENTS[number];
@@ -47,6 +52,11 @@ const ALLOWED_FIELDS = [
   'itemCount', 'proofCount', 'splitCount',
   'totalPhp', 'subtotalPhp', 'packingFeePhp', 'downpaymentPhp',
   'quotedPhp', 'actualPhp',
+  // Pasalo close and refund settlement. Counts and money, like everything else
+  // here — who is owed is in the database, not in a log line that leaves the
+  // building.
+  'previousStatus', 'amountPhp', 'refundsWritten', 'refundTotalPhp',
+  'customersOwed', 'ordersCancelled', 'fulfilledCounters', 'failedCounters',
   'httpStatus', 'reason', 'durationMs', 'attempt',
 ] as const;
 

@@ -1,8 +1,8 @@
-import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, orderItems, products, groupBuys, moqCampaigns, moqProducts, users } from '@/lib/db';
+import { getDb, orders, orderItems, orderItemRefunds, products, groupBuys, moqCampaigns, moqProducts, users } from '@/lib/db';
 import type { IncludedProduct } from '@/lib/types';
 import {
   buildDateRangeReport, buildSegmentedDateRangeReport,
@@ -73,7 +73,24 @@ export const GET = handler(async (req: Request) => {
         .leftJoin(kahatiProducts, eq(groupBuys.productId, kahatiProducts.id))
         .leftJoin(moqCampaigns, eq(orderItems.moqCampaignId, moqCampaigns.id))
         .leftJoin(moqProducts, eq(orderItems.moqProductId, moqProducts.id))
-        .where(inArray(orderItems.orderId, ids))
+        // A line the Pasalo close refunded is OUT of the batch order.
+        //
+        // Cancelled ORDERS are already excluded above, and until item-level
+        // refunds existed that was the whole story: a failed hatian took the
+        // customer's entire order with it. It no longer does — a mixed result
+        // leaves the order live and shipping its surviving products, with the
+        // failed line still sitting in order_items for the customer's records.
+        //
+        // Without this the batch sheet would order vials from the supplier for
+        // a product that did not reach its minimum and whose buyers have
+        // already been refunded, and the packing list would ask somebody to
+        // pack them. The refund row is the marker: its presence means the line
+        // failed, whatever amount it carries.
+        .leftJoin(orderItemRefunds, eq(orderItemRefunds.orderItemId, orderItems.id))
+        .where(and(
+          inArray(orderItems.orderId, ids),
+          isNull(orderItemRefunds.id),
+        ))
     : [];
 
   // Campaign order items point at a batch rather than at its catalog products.

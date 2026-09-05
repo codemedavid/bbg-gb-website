@@ -59,9 +59,15 @@ describe('what a checkout event records', () => {
       'order_created',
       'order_creation_failed',
       'order_creation_started',
+      // The other end of the same story: a checkout takes money in, closing a
+      // Pasalo decides what goes back out, and marking a refund records that
+      // it did. Traced in the same drain because "why did this customer get
+      // ₱550" is asked six weeks later, alongside "what did they pay".
+      'pasalo_stage_closed',
       'payment_proof_uploaded',
       'payment_status_changed',
       'price_changed_mid_checkout',
+      'refund_status_changed',
     ]);
   });
 });
