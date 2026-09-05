@@ -11,12 +11,13 @@ import { OrderCalcLines } from './OrderCalcLines';
 
 const product = (o: Partial<CalcProduct> = {}): CalcProduct => ({
   id: 'p1', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial',
-  pricePhp: '695.5', onHandPiecePhp: '695.5', onHandKitPhp: null, stock: 40, ...o,
+  pricePhp: '6955', gbPricePerKitPhp: null, gbPricePerPiecePhp: null, gbVialsPerKit: null, ...o,
 });
 
+// pricePhp is a per-KIT figure, so ₱6,955 a kit is the ₱695.50 vial these rows show.
 const catalogue = [
-  product({ id: 'a', code: 'TR15', name: 'Tirzepatide', onHandPiecePhp: '695.5' }),
-  product({ id: 'b', code: 'BC10', name: 'BPC-157', onHandPiecePhp: '500' }),
+  product({ id: 'a', code: 'TR15', name: 'Tirzepatide', pricePhp: '6955' }),
+  product({ id: 'b', code: 'BC10', name: 'BPC-157', pricePhp: '5000' }),
 ];
 
 const onQty = vi.fn();

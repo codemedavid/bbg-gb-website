@@ -10,15 +10,16 @@ import userEvent from '@testing-library/user-event';
 import type { CalcProduct } from '@/lib/order-calc';
 import { OrderCalcSearch } from './OrderCalcSearch';
 
+// pricePhp is a per-KIT figure, so ₱6,955 a kit is the ₱695.50 vial a row quotes.
 const product = (o: Partial<CalcProduct> = {}): CalcProduct => ({
   id: 'p1', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial',
-  pricePhp: '695.5', onHandPiecePhp: '695.5', onHandKitPhp: null, stock: 40, ...o,
+  pricePhp: '6955', gbPricePerKitPhp: null, gbPricePerPiecePhp: null, gbVialsPerKit: null, ...o,
 });
 
 const catalogue = [
-  product({ id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial', onHandPiecePhp: '695.5', stock: 40 }),
-  product({ id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial', onHandPiecePhp: '565.5', stock: 4 }),
-  product({ id: 'c', code: 'CU50', name: 'GHK-CU', spec: '50 mg/vial', onHandPiecePhp: '357.5', stock: 0 }),
+  product({ id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial', pricePhp: '6955' }),
+  product({ id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial', pricePhp: '5655' }),
+  product({ id: 'c', code: 'CU50', name: 'GHK-CU', spec: '50 mg/vial', pricePhp: '3575' }),
 ];
 
 const onAdd = vi.fn();
@@ -69,26 +70,13 @@ describe('OrderCalcSearch', () => {
     expect(screen.getByText(/zzzz/)).toBeInTheDocument();
   });
 
-  it('bands stock so an out-of-stock item is visibly not available', () => {
-    setup('GHK');
-    expect(screen.getByText('OUT OF STOCK')).toBeInTheDocument();
-  });
-
-  it('flags a scarce item as low rather than simply in stock', () => {
-    setup('BPC');
-    expect(screen.getByText('LOW STOCK')).toBeInTheDocument();
-  });
-
-  it('marks a well-stocked item as in stock', () => {
-    setup('Tirze');
-    expect(screen.getByText('IN STOCK')).toBeInTheDocument();
-  });
-
-  // An out-of-stock vial still has a price, and quoting it is the point of a
-  // pricelist — the badge carries the availability, not a disabled button.
-  it('still lets an out-of-stock product be added to a quote', async () => {
-    setup('GHK');
-    await userEvent.click(screen.getByRole('button', { name: /add ghk-cu/i }));
-    expect(onAdd).toHaveBeenCalledWith('c');
+  // Stock is a ready-shelf idea. Nothing on the two scheduled boards is on a
+  // shelf yet — a hatian and a campaign are both orders placed before the vials
+  // exist — so a stock band here could only ever describe the wrong board.
+  it('shows no stock band, which the boards it quotes have no stock to fill', () => {
+    setup();
+    for (const band of [/in stock/i, /low stock/i, /out of stock/i]) {
+      expect(screen.queryByText(band)).not.toBeInTheDocument();
+    }
   });
 });

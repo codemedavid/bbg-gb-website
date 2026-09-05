@@ -15,9 +15,11 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/order-calc',
 }));
 
+// pricePhp is a per-KIT figure, so these are ₱695.50 and ₱500.00 a vial. TR15
+// also carries an on-hand shelf price, which this page must not quote.
 const products = [
-  { id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial', pricePhp: '695.5', onHandPiecePhp: '695.5', onHandKitPhp: null, stock: 40 },
-  { id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial', pricePhp: '500', onHandPiecePhp: '500', onHandKitPhp: null, stock: 4 },
+  { id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial', pricePhp: '6955', onHandPiecePhp: '900', onHandKitPhp: null, stock: 40, gbPricePerKitPhp: null, gbPricePerPiecePhp: null, gbVialsPerKit: null },
+  { id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial', pricePhp: '5000', onHandPiecePhp: '620', onHandKitPhp: null, stock: 4, gbPricePerKitPhp: null, gbPricePerPiecePhp: null, gbVialsPerKit: null },
 ];
 
 vi.mock('@/lib/queries', () => ({
@@ -62,19 +64,20 @@ describe('Order calculator page', () => {
     expect(screen.getByRole('button', { name: /increase bpc-157/i })).toBeInTheDocument();
   });
 
-  // ₱500 of goods + the ₱200 on-hand packing fee. The fee is the storefront's
-  // real solo rate, not a number invented for the calculator.
-  it('totals the goods plus the on-hand packing fee', async () => {
+  // ₱500 of goods + the ₱150 hatian packing fee. The fee is the storefront's
+  // real hatian rate, not a number invented for the calculator, and hatian is
+  // where the page opens because it is a board this page actually quotes.
+  it('totals the goods plus the hatian packing fee', async () => {
     setup();
     await addByCode('BC10', /add bpc-157/i);
-    expect(screen.getByText('₱700')).toBeInTheDocument();
+    expect(screen.getByText('₱650')).toBeInTheDocument();
   });
 
   it('re-totals when the quantity is stepped up', async () => {
     setup();
     await addByCode('BC10', /add bpc-157/i);
     await userEvent.click(screen.getByRole('button', { name: /increase bpc-157/i }));
-    expect(screen.getByText('₱1,200')).toBeInTheDocument();
+    expect(screen.getByText('₱1,150')).toBeInTheDocument();
   });
 
   it('adds the same product twice as one line, not two', async () => {
@@ -98,16 +101,20 @@ describe('Order calculator page', () => {
     await addByCode('BC10', /add bpc-157/i);
     await userEvent.click(screen.getByRole('button', { name: /estimated total/i }));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Hatian' }));
-    expect(screen.getByText('₱650')).toBeInTheDocument();
-
     await userEvent.click(screen.getByRole('button', { name: 'Pasabay' }));
     expect(screen.getByText('₱800')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hatian' }));
+    expect(screen.getByText('₱650')).toBeInTheDocument();
   });
 
-  it('quotes the catalogue even for a product that is not in stock', async () => {
+  // The point of the whole surface. TR15 is ₱6,955 a kit — ₱695.50 a vial on
+  // either board — and ₱900 a vial on the ready shelf. Quoting ₱900 here priced
+  // a hatian at the on-hand rate, which is a board the customer is not on.
+  it('quotes the board price per vial, not the on-hand shelf price', async () => {
     setup();
     await addByCode('TR15', /add tirzepatide/i);
-    expect(screen.getByText('₱895.50')).toBeInTheDocument();
+    expect(screen.getByText('₱845.50')).toBeInTheDocument();
+    expect(screen.queryByText('₱1,050')).not.toBeInTheDocument();
   });
 });

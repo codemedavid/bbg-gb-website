@@ -5,87 +5,89 @@
 // own arithmetic — a total assembled inline in JSX is a total nobody can test.
 import { describe, it, expect } from 'vitest';
 import {
-  LOW_STOCK_VIALS,
   SEARCH_LIMIT,
   addEntry,
   buildLines,
   orderTotals,
   searchProducts,
   setEntryQty,
-  stockState,
   vialPrice,
   type CalcProduct,
 } from './order-calc';
 
+// pricePhp is a PER-KIT figure throughout — the workbook column is headed
+// "PER KIT (10 VIALS) PRICE" (lib/db/data/catalog.ts) — so a fixture that means
+// ₱695.50 a vial carries ₱6,955 a kit.
 const product = (o: Partial<CalcProduct> = {}): CalcProduct => ({
   id: 'p1', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial',
-  pricePhp: '695.5', onHandPiecePhp: '695.5', onHandKitPhp: null, stock: 40, ...o,
+  pricePhp: '6955', gbPricePerKitPhp: null, gbPricePerPiecePhp: null, gbVialsPerKit: null, ...o,
 });
 
-describe('stockState', () => {
-  it('reads a zero or negative count as out of stock', () => {
-    expect(stockState(0)).toBe('out');
-    expect(stockState(-3)).toBe('out');
-  });
-
-  it('reads a count at or below the low-stock threshold as low', () => {
-    expect(stockState(1)).toBe('low');
-    expect(stockState(LOW_STOCK_VIALS)).toBe('low');
-  });
-
-  it('reads a count above the threshold as in stock', () => {
-    expect(stockState(LOW_STOCK_VIALS + 1)).toBe('in');
-  });
-});
-
+// The calculator quotes the two scheduled boards, so it has to quote what those
+// boards charge. Both seed a kit through seededKitPrice and divide it down; a
+// figure derived any other way is a price no board will honour.
 describe('vialPrice', () => {
-  it('prefers the on-hand per-piece price', () => {
-    expect(vialPrice(product({ onHandPiecePhp: '520', pricePhp: '999' }))).toBe(520);
+  it('uses the group buy per-piece price when the product sets one', () => {
+    expect(vialPrice(product({ gbPricePerPiecePhp: '410', gbPricePerKitPhp: '5000' }))).toBe(410);
   });
 
-  // A product that is not stocked on-hand still belongs on the pricelist — the
-  // calculator quotes the catalogue price rather than pretending it is free.
-  it('falls back to the catalogue price when no piece price is set', () => {
-    expect(vialPrice(product({ onHandPiecePhp: null, pricePhp: '1430' }))).toBe(1430);
+  it('divides the group buy kit price by the kit size', () => {
+    expect(vialPrice(product({ gbPricePerKitPhp: '4500' }))).toBe(450);
   });
 
-  it('falls back when the piece price is zero rather than treating it as free', () => {
-    expect(vialPrice(product({ onHandPiecePhp: '0', pricePhp: '780' }))).toBe(780);
+  // The fallback both seeders take: absent an explicit group buy price, a kit
+  // costs the shop price (lib/campaign-seed.ts, lib/kahati-seed.ts).
+  it('falls back to the shop kit price, per vial', () => {
+    expect(vialPrice(product({ pricePhp: '3200' }))).toBe(320);
   });
 
-  it('is zero, never NaN, when neither price is usable', () => {
-    expect(vialPrice(product({ onHandPiecePhp: null, pricePhp: 'not-a-price' }))).toBe(0);
+  it("honours a product's own vials-per-kit rather than assuming ten", () => {
+    expect(vialPrice(product({ gbPricePerKitPhp: '2500', gbVialsPerKit: 5 }))).toBe(500);
+  });
+
+  // The whole point of this surface: an on-hand shelf price is a different
+  // product on a different board, and quoting it here priced a group buy vial
+  // at the ready-stock rate.
+  it('ignores the on-hand shelf price entirely', () => {
+    const p = { ...product({ pricePhp: '3200' }), onHandPiecePhp: '550', onHandKitPhp: '5000' };
+    expect(vialPrice(p as CalcProduct)).toBe(320);
+  });
+
+  it('ignores a zero group buy price rather than reading it as free', () => {
+    expect(vialPrice(product({ gbPricePerKitPhp: '0', pricePhp: '7800' }))).toBe(780);
+  });
+
+  it('is zero, never NaN, when no price is usable', () => {
+    expect(vialPrice(product({ pricePhp: 'not-a-price' }))).toBe(0);
   });
 });
 
 describe('searchProducts', () => {
   const catalogue = [
     product({ id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial' }),
-    product({ id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial, 10 vials/kits' }),
-    product({ id: 'c', code: 'CU50', name: 'GHK-CU', spec: '50 mg/vial' }),
+    product({ id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial' }),
+    product({ id: 'c', code: null, name: 'GHK-Cu', spec: '50 mg/vial' }),
   ];
 
   it('returns the whole catalogue for a blank query', () => {
     expect(searchProducts(catalogue, '   ')).toHaveLength(3);
   });
 
-  // The products API only filters on name and spec, so code search has to be
-  // done here — a customer reading a pricelist knows the code, not the spelling.
   it('matches on product code, case-insensitively', () => {
-    expect(searchProducts(catalogue, 'bc10').map((p) => p.id)).toEqual(['b']);
+    expect(searchProducts(catalogue, 'tr15').map((p) => p.id)).toEqual(['a']);
   });
 
   it('matches on name', () => {
-    expect(searchProducts(catalogue, 'tirze').map((p) => p.id)).toEqual(['a']);
+    expect(searchProducts(catalogue, 'BPC').map((p) => p.id)).toEqual(['b']);
   });
 
   it('matches on spec', () => {
-    expect(searchProducts(catalogue, 'vials/kits').map((p) => p.id)).toEqual(['b']);
+    expect(searchProducts(catalogue, '50 mg').map((p) => p.id)).toEqual(['c']);
   });
 
   it('tolerates a product with no code', () => {
-    const noCode = [product({ id: 'z', code: null, name: 'Mystery blend' })];
-    expect(searchProducts(noCode, 'mystery').map((p) => p.id)).toEqual(['z']);
+    expect(() => searchProducts(catalogue, 'ghk')).not.toThrow();
+    expect(searchProducts(catalogue, 'ghk').map((p) => p.id)).toEqual(['c']);
   });
 
   it('returns nothing when nothing matches', () => {
@@ -93,7 +95,7 @@ describe('searchProducts', () => {
   });
 
   it('caps the result list so a blank query cannot render the whole catalogue', () => {
-    const many = Array.from({ length: SEARCH_LIMIT + 25 }, (_, i) => product({ id: `p${i}` }));
+    const many = Array.from({ length: SEARCH_LIMIT + 20 }, (_, i) => product({ id: `p${i}` }));
     expect(searchProducts(many, '')).toHaveLength(SEARCH_LIMIT);
   });
 });
@@ -108,13 +110,13 @@ describe('addEntry', () => {
   });
 
   it('appends to the end so the order reads in the sequence it was built', () => {
-    expect(addEntry([{ id: 'a', qty: 1 }], 'b')).toEqual([{ id: 'a', qty: 1 }, { id: 'b', qty: 1 }]);
+    expect(addEntry([{ id: 'a', qty: 1 }], 'b').map((e) => e.id)).toEqual(['a', 'b']);
   });
 
   it('does not mutate the entries it was given', () => {
-    const entries = [{ id: 'a', qty: 1 }];
-    addEntry(entries, 'a');
-    expect(entries).toEqual([{ id: 'a', qty: 1 }]);
+    const before = [{ id: 'a', qty: 1 }];
+    addEntry(before, 'a');
+    expect(before).toEqual([{ id: 'a', qty: 1 }]);
   });
 });
 
@@ -123,27 +125,25 @@ describe('setEntryQty', () => {
     expect(setEntryQty([{ id: 'a', qty: 1 }], 'a', 5)).toEqual([{ id: 'a', qty: 5 }]);
   });
 
-  // Stepping down from one is how the design removes a line, so zero has to
-  // drop it rather than leave a ghost row worth nothing.
   it('removes the line when the quantity reaches zero', () => {
     expect(setEntryQty([{ id: 'a', qty: 1 }, { id: 'b', qty: 2 }], 'a', 0)).toEqual([{ id: 'b', qty: 2 }]);
   });
 
   it('removes the line on a negative quantity too', () => {
-    expect(setEntryQty([{ id: 'a', qty: 1 }], 'a', -4)).toEqual([]);
+    expect(setEntryQty([{ id: 'a', qty: 1 }], 'a', -2)).toEqual([]);
   });
 
   it('does not mutate the entries it was given', () => {
-    const entries = [{ id: 'a', qty: 1 }];
-    setEntryQty(entries, 'a', 9);
-    expect(entries).toEqual([{ id: 'a', qty: 1 }]);
+    const before = [{ id: 'a', qty: 1 }];
+    setEntryQty(before, 'a', 4);
+    expect(before).toEqual([{ id: 'a', qty: 1 }]);
   });
 });
 
 describe('buildLines', () => {
   const catalogue = [
-    product({ id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial', onHandPiecePhp: '695.5' }),
-    product({ id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial', onHandPiecePhp: '565.5' }),
+    product({ id: 'a', code: 'TR15', name: 'Tirzepatide', spec: '15 mg/vial', pricePhp: '6955' }),
+    product({ id: 'b', code: 'BC10', name: 'BPC-157', spec: '10 mg/vial', pricePhp: '5655' }),
   ];
 
   it('prices each line at quantity times the vial price', () => {
@@ -163,11 +163,6 @@ describe('buildLines', () => {
     expect(buildLines(catalogue, [{ id: 'a', qty: 1 }, { id: 'gone', qty: 4 }]).map((l) => l.id)).toEqual(['a']);
   });
 
-  it('carries the stock count through so a line can show its badge', () => {
-    const [line] = buildLines([product({ id: 'a', stock: 4 })], [{ id: 'a', qty: 1 }]);
-    expect(line.stock).toBe(4);
-  });
-
   it('is empty for an empty order', () => {
     expect(buildLines(catalogue, [])).toEqual([]);
   });
@@ -175,7 +170,7 @@ describe('buildLines', () => {
 
 describe('orderTotals', () => {
   const lines = buildLines(
-    [product({ id: 'a', onHandPiecePhp: '500' }), product({ id: 'b', onHandPiecePhp: '250' })],
+    [product({ id: 'a', pricePhp: '5000' }), product({ id: 'b', pricePhp: '2500' })],
     [{ id: 'a', qty: 2 }, { id: 'b', qty: 4 }],
   );
 
@@ -202,7 +197,7 @@ describe('orderTotals', () => {
   });
 
   it('rounds a fractional subtotal to centavos rather than trailing float noise', () => {
-    const odd = buildLines([product({ id: 'a', onHandPiecePhp: '110.5' })], [{ id: 'a', qty: 3 }]);
+    const odd = buildLines([product({ id: 'a', pricePhp: '1105' })], [{ id: 'a', qty: 3 }]);
     expect(orderTotals(odd, 0).subtotal).toBe(331.5);
   });
 });

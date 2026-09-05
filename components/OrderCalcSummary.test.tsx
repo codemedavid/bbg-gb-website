@@ -16,7 +16,7 @@ beforeEach(() => onMode.mockClear());
 const totals = (o: Partial<OrderTotals> = {}): OrderTotals =>
   ({ subtotal: 2000, fee: 200, total: 2200, vials: 6, ...o });
 
-const setup = (t = totals(), mode: 'solo' | 'kahati' | 'group_buy' | 'moq' = 'solo') =>
+const setup = (t = totals(), mode: 'kahati' | 'group_buy' = 'kahati') =>
   render(<OrderCalcSummary totals={t} mode={mode} onMode={onMode} />);
 
 describe('OrderCalcSummary — collapsed', () => {
@@ -45,7 +45,7 @@ describe('OrderCalcSummary — collapsed', () => {
 });
 
 describe('OrderCalcSummary — expanded', () => {
-  const open = async (t = totals(), mode: 'solo' | 'kahati' | 'group_buy' | 'moq' = 'solo') => {
+  const open = async (t = totals(), mode: 'kahati' | 'group_buy' = 'kahati') => {
     setup(t, mode);
     await userEvent.click(screen.getByRole('button', { name: /estimated total/i }));
   };
@@ -71,10 +71,19 @@ describe('OrderCalcSummary — expanded', () => {
     expect(screen.getByText(/may change/i)).toBeInTheDocument();
   });
 
-  it('offers every fulfilment mode', async () => {
+  it('offers the two scheduled boards it quotes', async () => {
     await open();
-    for (const label of ['On-hand', 'Hatian', 'Pasabay', 'MOQ']) {
+    for (const label of ['Hatian', 'Pasabay']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  // The calculator prices the scheduled boards. An on-hand or MOQ packing fee
+  // over a group buy vial price is two boards' arithmetic in one total.
+  it('offers no on-hand or MOQ fee, whose prices it does not quote', async () => {
+    await open();
+    for (const label of ['On-hand', 'MOQ']) {
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
   });
 
@@ -87,7 +96,7 @@ describe('OrderCalcSummary — expanded', () => {
   it('marks the active mode as pressed so the fee is attributable', async () => {
     await open(totals(), 'group_buy');
     expect(screen.getByRole('button', { name: 'Pasabay' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'On-hand' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Hatian' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('owes nothing on an empty quote', async () => {
