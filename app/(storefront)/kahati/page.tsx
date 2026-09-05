@@ -4,7 +4,8 @@ import { SectionHeader } from '@/components/headers';
 import { BoardControls } from '@/components/BoardControls';
 import { GroupBuyCard } from '@/components/GroupBuyCard';
 import { JoinSheet } from '@/components/JoinSheet';
-import { useGroupBuys, useKahatiDownpaymentPolicy } from '@/lib/queries';
+import { useGroupBuys, useKahatiDownpaymentPolicy, usePasaloBoard } from '@/lib/queries';
+import Link from 'next/link';
 import {
   DEFAULT_KAHATI_DOWNPAYMENT_POLICY, describeKahatiDownpayment, refundNoticeFor,
   type KahatiDownpaymentPolicy,
@@ -31,6 +32,15 @@ const searchFields = (g: GroupBuy): (string | null | undefined)[] => [g.name, g.
 export default function KahatiPage() {
   const { data: gbs = [] } = useGroupBuys();
   const { data: policy } = useKahatiDownpaymentPolicy();
+  // Surfaced here rather than as a seventh nav tab: the bar is capped at six on
+  // purpose (components/BottomNav.tsx — an eighth forces sideways scrolling,
+  // and a tab you have to scroll to find is a tab nobody taps). This is also
+  // the better place for it: the customer who cares about hatians is already
+  // on this board, and the banner only exists on the days it has something to
+  // say. Counters still needing help lead, because those are the ones where a
+  // vial changes the outcome rather than adding margin.
+  const { data: pasalo = [] } = usePasaloBoard();
+  const needHelp = pasalo.filter((c) => c.neededToQualify > 0);
   const steps = stepsFor(policy ?? DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
   const [joining, setJoining] = useState<GroupBuy | null>(null);
   const [query, setQuery] = useState('');
@@ -77,6 +87,27 @@ export default function KahatiPage() {
             </div>
           </div>
         </div>
+
+        {pasalo.length > 0 && (
+          <Link
+            href="/pasalo"
+            className="mb-3.5 flex items-center justify-between gap-3 rounded-[14px] border border-warn-softln bg-warn-softbg px-4 py-3.5 transition-colors duration-150 hover:border-brand-green"
+          >
+            <span>
+              <span className="block text-[13px] font-bold text-[#8a6400]">
+                🔥 {needHelp.length > 0
+                  ? `${needHelp.length} batch ang kulang pa — Pasalo/Bunuan`
+                  : `${pasalo.length} batch ang bukas pa sa Pasalo`}
+              </span>
+              <span className="mt-0.5 block text-[12.5px] leading-snug text-[#6b5a24]">
+                {needHelp.length > 0
+                  ? 'Kaunting vial na lang at tuloy na ang batch para sa lahat. Kung hindi maabot, mare-refund ang mga sumali.'
+                  : 'Sigurado nang matutuloy, pero bukas pa hanggang mapuno ang kahon.'}
+              </span>
+            </span>
+            <span aria-hidden className="flex-none text-[18px] text-[#8a6400]">›</span>
+          </Link>
+        )}
 
         <BoardControls
           query={query} onQueryChange={setQuery}

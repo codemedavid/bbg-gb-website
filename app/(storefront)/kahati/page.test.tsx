@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useCart } from '@/lib/store/cart';
-import type { GroupBuy } from '@/lib/types';
+import type { GroupBuy, PasaloCounter } from '@/lib/types';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
@@ -16,10 +16,17 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/useAuth', () => ({ useAuth: () => ({ user: null, loading: false }) }));
 
 let boardState: { data: GroupBuy[] } = { data: [] };
+let pasaloState: { data: PasaloCounter[] } = { data: [] };
 vi.mock('@/lib/queries', () => ({
   // undefined -> the page falls back to the default (packing-fee) policy for its
   // "how it works" steps, which is what these tests were written against.
-  useKahatiDownpaymentPolicy: () => ({ data: undefined, isSuccess: true }), useGroupBuys: () => boardState }));
+  useKahatiDownpaymentPolicy: () => ({ data: undefined, isSuccess: true }),
+  useGroupBuys: () => boardState,
+  // Empty by default: these tests are about the Kahati board's own search and
+  // sort, and the Pasalo banner only appears on the days there is a stage
+  // running. The banner has its own test below.
+  usePasaloBoard: () => pasaloState,
+}));
 
 const KahatiPage = (await import('./page')).default;
 
@@ -38,6 +45,7 @@ const cardNames = (): string[] =>
 
 beforeEach(() => {
   useCart.getState().clear();
+  pasaloState = { data: [] };
   boardState = {
     data: [
       hatian({ id: 'reta20', name: 'Retatrutide 20mg vial', claimedSlots: 9 }),
@@ -176,5 +184,49 @@ describe('KahatiPage — cart shortcut', () => {
     render(<KahatiPage />);
 
     expect(screen.getByRole('link', { name: /^cart,/i })).toHaveTextContent('Cart (2)');
+  });
+});
+
+describe('KahatiPage — the Pasalo banner', () => {
+  const pasalo = (o: Partial<PasaloCounter> = {}): PasaloCounter => ({
+    ...hatian({ status: 'pasalo' }),
+    kahatiVials: 3, pasaloVials: 2, minViableVials: 7,
+    neededToQualify: 2, slotsRemaining: 5, pasaloClosesAt: null, ...o,
+  });
+
+  it('says nothing on a day with no Pasalo running', () => {
+    // The banner is an interruption. On the ordinary day it must not be there.
+    render(<KahatiPage />);
+    expect(screen.queryByRole('link', { name: /pasalo|bunuan/i })).not.toBeInTheDocument();
+  });
+
+  it('leads with the batches that still need help, and links to the board', () => {
+    pasaloState = { data: [pasalo({ id: 'p1', neededToQualify: 2 })] };
+    render(<KahatiPage />);
+
+    const link = screen.getByRole('link', { name: /kulang pa/i });
+    expect(link).toHaveAttribute('href', '/pasalo');
+    expect(link).toHaveTextContent('1 batch ang kulang pa');
+  });
+
+  it('counts only the batches that are actually short', () => {
+    pasaloState = {
+      data: [
+        pasalo({ id: 'p1', neededToQualify: 2 }),
+        pasalo({ id: 'p2', neededToQualify: 0, slotsRemaining: 3 }),
+      ],
+    };
+    render(<KahatiPage />);
+
+    expect(screen.getByRole('link', { name: /kulang pa/i })).toHaveTextContent('1 batch ang kulang pa');
+  });
+
+  it('still points at the board when every batch is already secured', () => {
+    // Worth linking: those counters are topping up, and a customer who wants a
+    // vial can still get one at the Pasalo price.
+    pasaloState = { data: [pasalo({ id: 'p1', neededToQualify: 0, slotsRemaining: 3 })] };
+    render(<KahatiPage />);
+
+    expect(screen.getByRole('link', { name: /bukas pa sa pasalo/i })).toHaveAttribute('href', '/pasalo');
   });
 });

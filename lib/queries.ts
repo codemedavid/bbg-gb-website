@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
 import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY, type KahatiDownpaymentPolicy } from './kahati-downpayment';
-import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, Product, SettlementPreview } from './types';
+import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, PasaloCounter, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -85,6 +85,19 @@ export const useProduct = (id?: string) =>
 // database four times a minute. Mutations still invalidate these queries
 // immediately, and returning to a backgrounded tab refreshes stale data.
 export const KAHATI_POLL_MS = 60_000;
+
+// The Pasalo (Bunuan) board. Polled on the same cadence as the Kahati board —
+// a counter two vials from rescue can be finished by somebody else while the
+// page is open, and a stale card invites a commitment the server then refuses.
+export const usePasaloBoard = () =>
+  useQuery({
+    queryKey: ['pasalo'],
+    queryFn: () => apiGet<PasaloCounter[]>('/pasalo'),
+    staleTime: KAHATI_POLL_MS,
+    refetchInterval: KAHATI_POLL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
 
 export const useGroupBuys = () =>
   useQuery({

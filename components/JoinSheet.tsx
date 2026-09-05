@@ -20,11 +20,22 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
   const { data: policy } = useKahatiDownpaymentPolicy();
   const refundNotice = refundNoticeFor(policy ?? DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
 
-  // Only the per-person minimum bounds a commitment. The 10-vial cap is the
-  // counter's, not the customer's: checkout fills this counter, seals it, opens
-  // a fresh one and keeps rolling for as many kits as the commitment needs, so
-  // clamping the stepper here would refuse quantities the server accepts.
-  const clamp = (n: number) => Math.max(g.minVials, n);
+  // On the KAHATI board only the per-person minimum bounds a commitment. The
+  // 10-vial cap is the counter's, not the customer's: checkout fills this
+  // counter, seals it, opens a fresh one and keeps rolling for as many kits as
+  // the commitment needs, so clamping the stepper there would refuse
+  // quantities the server accepts.
+  //
+  // PASALO is the opposite, and has to be. A Pasalo counter does not roll —
+  // it is the last window this batch gets, so a full box is the end of it and
+  // checkout REFUSES the overflow. Letting the stepper past the remaining
+  // slots would offer a quantity the server rejects, after the customer has
+  // gone to the payment screen.
+  const inPasalo = g.status === 'pasalo';
+  const clamp = (n: number) => {
+    const atLeast = Math.max(g.minVials, n);
+    return inPasalo ? Math.min(atLeast, Math.max(g.remaining, g.minVials)) : atLeast;
+  };
   // Fewer vials open than this hatian's per-person minimum: the server would
   // reject the commit, so don't let the customer attempt it.
   const belowMinimum = g.remaining < g.minVials;
@@ -52,14 +63,20 @@ export function JoinSheet({ g, onClose }: { g: GroupBuy; onClose: () => void }) 
           {/* No packing fee is charged for joining — it is collected once at the
               final checkout that settles every completed hatian. Quoting the fee
               here would contradict the ₱0 the cart then shows. */}
-          {g.remaining} vials open · min {g.minVials} vials · packing fee charged once at final checkout
+          {g.remaining} {g.remaining === 1 ? 'vial' : 'vials'} open · min {g.minVials} vials
+          {inPasalo && ' · huling window na ito'} · packing fee charged once at final checkout
         </div>
         {/* The refund condition belongs where the customer actually commits money. */}
         <div className={`mb-4 rounded-[10px] px-3 py-2 text-[12px] leading-snug ${
           isKahatiViable(g.claimedSlots) ? 'bg-[#f2f8ec] text-brand-greendark' : 'bg-warn-softbg text-[#6b5a24]'}`}>
           {isKahatiViable(g.claimedSlots)
             ? `✓ This hatian already passed the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum, so it is pushing through.`
-            : `Needs ${KAHATI_MIN_VIABLE_VIALS - g.claimedSlots} more vial(s) to reach the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum. If it falls short by the deadline the hatian is cancelled. ${refundNotice}`}
+            : inPasalo
+              // On the Pasalo board the stakes are stated plainly: this is the
+              // last window, and what happens if it closes short is a refund
+              // for everybody already in it — which is the reason to join.
+              ? `Pasalo: ${KAHATI_MIN_VIABLE_VIALS - g.claimedSlots} more vial(s) and the batch pushes through for everyone. This is the last window — if it closes short, every commitment on it is refunded. ${refundNotice}`
+              : `Needs ${KAHATI_MIN_VIABLE_VIALS - g.claimedSlots} more vial(s) to reach the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum. If it falls short by the deadline the hatian is cancelled. ${refundNotice}`}
         </div>
         <div className="mb-4 flex items-center justify-between rounded-[14px] bg-surface-mist px-4 py-3.5">
           <div>

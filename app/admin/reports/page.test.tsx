@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { ConfirmProvider } from '@/components/ConfirmDialog';
 import type { WeeklyReport } from '@/lib/report/build';
 import { mostRecentFullWeekMonday } from '@/lib/report/week';
 import { useToast } from '@/lib/store/toast';
@@ -50,9 +51,13 @@ const { apiGet } = await import('@/lib/api-client');
 const { downloadWeeklyReportXlsx } = await import('@/lib/report/weekly-xlsx');
 const Page = (await import('./page')).default;
 
+// The page now carries the Pasalo panel, whose Close control routes through the
+// shared ConfirmProvider — the same one app/admin/layout.tsx mounts around every
+// admin screen in production. Rendering the page without it throws, so the
+// wrapper mirrors the real tree rather than the page in isolation.
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    {children}
+    <ConfirmProvider>{children}</ConfirmProvider>
   </QueryClientProvider>
 );
 

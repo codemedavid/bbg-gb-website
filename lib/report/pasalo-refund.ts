@@ -92,6 +92,11 @@ export type CounterOutcome = {
 
 export type CustomerRefundRow = {
   userId: string;
+  // The refund rows this one row consolidates. The admin settles a customer
+  // with ONE transfer, so the panel has to be able to mark every one of their
+  // failed lines with that single reference — and the summary row is all it
+  // has in hand. Ids rather than a count: a count cannot be PATCHed.
+  refundIds: string[];
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -146,6 +151,7 @@ export function buildCustomerRefundRows(
 
     return {
       userId,
+      refundIds: rows.map((r) => r.id),
       customerName: first.shipName || first.customerName,
       customerEmail: first.customerEmail,
       customerPhone: first.shipPhone || first.customerPhone,

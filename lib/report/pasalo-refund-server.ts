@@ -96,7 +96,10 @@ export async function loadRefundReport(
   if (!refunds.length) return { refunds: [], successful: [], counters: [] };
 
   const successful = await loadSuccessfulItems(db, refunds);
-  const counters = await loadCounters(db, refunds, successful);
+  const counters = await loadCounters(db, [
+    ...refunds.flatMap((r) => (r.groupBuyId ? [r.groupBuyId] : [])),
+    ...successful.flatMap((s) => (s.groupBuyId ? [s.groupBuyId] : [])),
+  ]);
   return { refunds, successful, counters };
 }
 
@@ -180,8 +183,11 @@ async function loadSuccessfulItems(db: Db, refunds: RefundRecord[]): Promise<Suc
 }
 
 /**
- * The counters this batch was made of — the failed ones the refunds name, plus
- * the successful ones those same customers still have lines on.
+ * Resolve a set of counters into the figures every surface quotes.
+ *
+ * Takes plain ids rather than the rows they came from, so the same function
+ * serves the live Pasalo board and a past close's batch summary — the two have
+ * nothing else in common and neither should have to fake the other's shape.
  *
  * `paymentConfirmedVials` is the honesty column. Vials are counted at CHECKOUT,
  * before anyone verifies a peso (see app/api/orders/route.ts), so a counter can
@@ -190,15 +196,8 @@ async function loadSuccessfulItems(db: Db, refunds: RefundRecord[]): Promise<Suc
  * changing the counting basis would make every board read zero for days while
  * proofs queue — but an admin closing a stage still deserves to see the gap.
  */
-async function loadCounters(
-  db: Db,
-  refunds: RefundRecord[],
-  successful: SuccessfulItem[],
-): Promise<CounterOutcome[]> {
-  const ids = [...new Set([
-    ...refunds.flatMap((r) => (r.groupBuyId ? [r.groupBuyId] : [])),
-    ...successful.flatMap((s) => (s.groupBuyId ? [s.groupBuyId] : [])),
-  ])];
+async function loadCounters(db: Db, counterIds: readonly string[]): Promise<CounterOutcome[]> {
+  const ids = [...new Set(counterIds)];
   if (!ids.length) return [];
 
   const rows = await db.select().from(groupBuys)
@@ -255,9 +254,5 @@ export async function loadPasaloBoard(db: Db): Promise<CounterOutcome[]> {
     .orderBy(asc(groupBuys.name));
   if (!rows.length) return [];
 
-  return loadCounters(
-    db,
-    rows.map((r) => ({ groupBuyId: r.id } as RefundRecord)),
-    [],
-  );
+  return loadCounters(db, rows.map((r) => r.id));
 }

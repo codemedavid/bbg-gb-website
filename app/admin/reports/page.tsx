@@ -11,6 +11,7 @@ import { REPORT_SEGMENTS, SEGMENT_LABEL, SEGMENT_SHORT_LABEL, type ReportSegment
 import type { SegmentedWeeklyReport, WeeklyReport } from '@/lib/report/build';
 import { SegmentReport } from './SegmentReport';
 import { RefundExport } from './RefundExport';
+import { PasaloRefundPanel } from './PasaloRefundPanel';
 
 // Reports hub: pick any inclusive calendar range and read On-Hand, Group Buy,
 // and Kahati independently. Each segment has its own rollups and workbook,
@@ -88,6 +89,11 @@ export default function AdminReportsPage() {
             onPrintPackingList={printPackingList}
           />
         ))}
+
+      {/* The Pasalo stage, above the supplier-shortfall export because it comes
+          first in time: a batch is decided here, and only what could not be
+          filled AFTER that is reconciled against the supplier's sheet below. */}
+      <PasaloRefundPanel from={from} to={to} />
 
       {/* Sits under the segment reports because it answers the question that
           comes after them: the batch was ordered, it arrived short, now who is

@@ -39,11 +39,39 @@ export type CoaFile = { id: string; productId: string; batch: string | null; fil
 export type GroupBuy = {
   id: string; name: string; pricePerKitPhp: string; totalSlots: number; claimedSlots: number;
   minVials: number; repackFeePhp: string;
-  status: 'scheduled' | 'open' | 'closed' | 'shipped' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'open' | 'pasalo' | 'closed' | 'shipped' | 'completed' | 'cancelled';
   // When the counter goes on the board; null means it already is.
   opensAt: string | null;
   closesAt: string | null; arrivalGroup: 'white_powder' | 'salt_liquid'; description: string | null;
   perVialPhp: number; remaining: number; progress: number;
+  // Pasalo (Bunuan) columns, which every counter row now carries. Optional
+  // here because the Kahati board does not compute the derived figures — a
+  // counter on that board has not been through the stage, so there is nothing
+  // for them to say. The Pasalo board's own type below requires them.
+  kahatiVials?: number | null;
+  pasaloClosesAt?: string | null;
+  minViableVials?: number;
+};
+
+/**
+ * A counter on the Pasalo (Bunuan) board.
+ *
+ * A GroupBuy with the stage's arithmetic resolved, and the two figures the
+ * whole feature turns on stated SEPARATELY. At 5/10 a batch needs TWO more
+ * vials to proceed and has FIVE slots left to sell; one number cannot say both,
+ * and quoting the wrong one makes a batch two vials from success look
+ * unreachable — which is precisely how it ends up refunded.
+ *
+ * Computed server-side by lib/kahati-quantity.ts so no surface recomputes them
+ * and drifts from the close that will judge the same counter.
+ */
+export type PasaloCounter = GroupBuy & {
+  kahatiVials: number;
+  pasaloVials: number;
+  minViableVials: number;
+  neededToQualify: number;
+  slotsRemaining: number;
+  pasaloClosesAt: string | null;
 };
 
 // A product on the MOQ shelf — its own surface, distinct from both the Kahati
