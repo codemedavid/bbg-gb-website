@@ -10,8 +10,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCampaigns, useMutate } from '@/lib/admin-api';
 import { useConfirm } from '@/components/ConfirmDialog';
-import { btnPrimary, btnBoardAction } from '@/components/admin-ui';
-import { groupBySeries } from '@/lib/campaign-series';
+import { btnPrimary, btnBoardAction, searchInput } from '@/components/admin-ui';
+import { groupBySeries, type SeriesGroup as Series } from '@/lib/campaign-series';
 import { Breadcrumb } from '../Breadcrumb';
 import { ExtendModal } from './ExtendModal';
 import { SeriesGroup } from './SeriesGroup';
@@ -24,6 +24,7 @@ export default function AdminCampaignsPage() {
   const { deleteCampaign, campaignAction, startCycle } = useMutate();
   const confirm = useConfirm();
   const [extending, setExtending] = useState<MoqCampaign | null>(null);
+  const [search, setSearch] = useState('');
   const busy = campaignAction.isPending || deleteCampaign.isPending || startCycle.isPending;
 
   const handleCancel = async (c: MoqCampaign) => {
@@ -80,8 +81,22 @@ export default function AdminCampaignsPage() {
   };
 
   const groups = groupBySeries(campaigns);
+
+  // One card per group buy and a batch behind it per cycle: past a screenful,
+  // finding the one to edit by eye stops working. Filtered here rather than at
+  // the API, which returns the whole board already.
+  //
+  // Matched against every batch in a series, not just the one fronting the
+  // card: a group buy renamed between batches is still the one the admin
+  // remembers by the name it used to carry.
+  const query = search.trim().toLowerCase();
+  const matches = (g: Series) => [g.current, ...g.past].some((b) => b.name.toLowerCase().includes(query));
+  const shown = query ? groups.filter(matches) : groups;
+
   // Nothing running means nothing to end, so the cycle control stays off the
-  // board rather than sitting there as a no-op.
+  // board rather than sitting there as a no-op. Counted off the whole board,
+  // never off `shown`: the cycle acts on every open batch there is, so an admin
+  // who narrowed the view must still be told how many the button will move.
   const running = campaigns.filter((c) => c.status === 'open');
 
   return (
@@ -113,6 +128,27 @@ export default function AdminCampaignsPage() {
         </div>
       </div>
 
+      {/* Nothing to search means nothing to search through. */}
+      {groups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            aria-label="Search group buys"
+            placeholder="Search by name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className={searchInput}
+          />
+          {/* Said out loud while filtered: the board is the admin's count of
+              how many group buys exist, and a narrowed view contradicts it. */}
+          {query && (
+            <span className="text-[12.5px] text-ink-muted">
+              {shown.length} of {groups.length} group buys
+            </span>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-ink-muted">Loading…</div>
       ) : groups.length === 0 ? (
@@ -121,12 +157,19 @@ export default function AdminCampaignsPage() {
           <div className="mb-1 font-bold text-ink">No campaigns yet</div>
           <div className="text-[13px] text-ink-muted">Create one to open a group buy batch.</div>
         </div>
+      ) : shown.length === 0 ? (
+        /* A typo and an empty board look identical otherwise, so the no-match
+           state names what was searched for rather than showing nothing. */
+        <div className="rounded-[16px] bg-white p-8 text-center shadow-card">
+          <div className="mb-1 font-bold text-ink">No group buy matches &ldquo;{search.trim()}&rdquo;</div>
+          <div className="text-[13px] text-ink-muted">Check the spelling, or clear the search to see the whole board.</div>
+        </div>
       ) : (
         // Breakpoints are one step up from the usual md/lg pair because the
         // admin sidebar eats 14rem before the board gets any width: three
         // columns at 1024px leave a card too narrow for two buttons abreast.
         <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {groups.map((g) => (
+          {shown.map((g) => (
             <SeriesGroup key={g.seriesId} group={g} busy={busy} actions={actions} />
           ))}
         </div>

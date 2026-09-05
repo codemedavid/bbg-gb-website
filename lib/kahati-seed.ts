@@ -9,7 +9,7 @@
 // hatian is vial-native — it fills exactly one kit — so kahatiDefaultsFor
 // applies them directly, bounded by that cap.
 import { kahatiDefaultsFor, seededKitPrice } from './pricing';
-import type { SeedableProduct } from './campaign-seed';
+import { listingName, type SeedableProduct } from './campaign-seed';
 import type { MoqCampaign } from './types';
 
 /** A hatian counter about to be opened. Mirrors the columns POST /api/admin/groupbuys writes. */
@@ -36,9 +36,7 @@ export function kahatiSeedFor(p: SeedableProduct): KahatiSeed | null {
 
   const defaults = kahatiDefaultsFor(p);
   return {
-    // Name and spec together, matching the campaign board — "Retatrutide" alone
-    // does not say which vial the kit holds.
-    name: `${p.name} ${p.spec}`.trim(),
+    name: listingName(p),
     productId: p.id,
     pricePerKitPhp,
     totalSlots: defaults.totalSlots,

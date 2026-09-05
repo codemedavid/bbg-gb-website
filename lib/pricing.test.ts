@@ -3,7 +3,7 @@ import {
   computeTotals, subtotal, packingFeeFor, perVialPrice,
   validateKahatiCommit, hasOnHand, hasKahati, hasGroupBuy,
   validateGroupBuyCommit, groupBuyMoqStatus, hasMoq, validateMoqQty,
-  onHandUnitPrice, vialsFor, validateOnHandQty,
+  onHandUnitPrice, vialsFor, validateOnHandQty, onHandBulkVialPrice, onHandQuote,
   settlementPackingFee,
   groupBuyUnitPrice, groupBuyVialsPerKit, kahatiDefaultsFor, campaignDefaultsFor,
   PACKING_FEE_PHP, KAHATI_MIN_VIALS, VIALS_PER_KIT, KAHATI_MAX_VIALS, MOQ_BATCH_MAX_KITS,
@@ -458,5 +458,89 @@ describe('campaignDefaultsFor', () => {
   it('floors a batch smaller than one kit at one kit rather than at nothing', () => {
     const c = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 4 });
     expect(campaignDefaultsFor(c).moq).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The on-hand bulk rate: buy ten vials or more and every vial drops in price.
+// ---------------------------------------------------------------------------
+const shelf = { onHandPiecePhp: '700', onHandKitPhp: '6500', onHandTenVialPhp: '6500' };
+
+describe('onHandBulkVialPrice', () => {
+  it('reads the stored ten-vial figure as a per-vial rate', () => {
+    expect(onHandBulkVialPrice(shelf)).toBe(650);
+  });
+
+  it('is null when the product states no bulk rate', () => {
+    expect(onHandBulkVialPrice({ ...shelf, onHandTenVialPhp: null })).toBeNull();
+    expect(onHandBulkVialPrice({ ...shelf, onHandTenVialPhp: undefined })).toBeNull();
+  });
+
+  it('is null for zero or negative, which mean "no bulk rate" and never "free"', () => {
+    expect(onHandBulkVialPrice({ ...shelf, onHandTenVialPhp: 0 })).toBeNull();
+    expect(onHandBulkVialPrice({ ...shelf, onHandTenVialPhp: -100 })).toBeNull();
+  });
+
+  it('ignores a rate that is not cheaper than the piece price', () => {
+    // A typo that RAISES the price must not be presented as a discount.
+    expect(onHandBulkVialPrice({ ...shelf, onHandTenVialPhp: '7000' })).toBeNull();
+    expect(onHandBulkVialPrice({ ...shelf, onHandTenVialPhp: '9000' })).toBeNull();
+  });
+
+  it('is null for a product that is not sold per piece at all', () => {
+    expect(onHandBulkVialPrice({ ...shelf, onHandPiecePhp: null })).toBeNull();
+  });
+});
+
+describe('onHandQuote', () => {
+  it('charges the plain piece price below the threshold', () => {
+    const q = onHandQuote(shelf, 'piece', 9)!;
+    expect(q.unitPricePhp).toBe(700);
+    expect(q.lineTotalPhp).toBe(6300);
+    expect(q.bulkApplied).toBe(false);
+    expect(q.savingsPhp).toBe(0);
+  });
+
+  it('says how many more vials unlock the rate', () => {
+    expect(onHandQuote(shelf, 'piece', 9)!.vialsToBulk).toBe(1);
+    expect(onHandQuote(shelf, 'piece', 1)!.vialsToBulk).toBe(9);
+  });
+
+  it('drops every vial to the bulk rate at exactly ten', () => {
+    const q = onHandQuote(shelf, 'piece', 10)!;
+    expect(q.bulkApplied).toBe(true);
+    expect(q.unitPricePhp).toBe(650);
+    expect(q.listUnitPricePhp).toBe(700);
+    expect(q.lineTotalPhp).toBe(6500);
+    expect(q.savingsPhp).toBe(500);
+    expect(q.vialsToBulk).toBe(0);
+  });
+
+  it('keeps the bulk rate on every vial above the threshold', () => {
+    const q = onHandQuote(shelf, 'piece', 23)!;
+    expect(q.unitPricePhp).toBe(650);
+    expect(q.lineTotalPhp).toBe(14950);
+    expect(q.savingsPhp).toBe(1150);
+  });
+
+  it('leaves a kit line on the kit price — a kit already has a rate of its own', () => {
+    const q = onHandQuote(shelf, 'kit', 3)!;
+    expect(q.unitPricePhp).toBe(6500);
+    expect(q.bulkApplied).toBe(false);
+    expect(q.bulkUnitPricePhp).toBeNull();
+    expect(q.vialsToBulk).toBe(0);
+  });
+
+  it('has nothing to unlock when the product states no bulk rate', () => {
+    const plain = { ...shelf, onHandTenVialPhp: null };
+    const q = onHandQuote(plain, 'piece', 4)!;
+    expect(q.bulkUnitPricePhp).toBeNull();
+    expect(q.vialsToBulk).toBe(0);
+    expect(q.lineTotalPhp).toBe(2800);
+  });
+
+  it('is null when the unit is not sold, exactly as onHandUnitPrice is', () => {
+    expect(onHandQuote({ ...shelf, onHandPiecePhp: null }, 'piece', 12)).toBeNull();
+    expect(onHandQuote({ ...shelf, onHandKitPhp: 0 }, 'kit', 1)).toBeNull();
   });
 });

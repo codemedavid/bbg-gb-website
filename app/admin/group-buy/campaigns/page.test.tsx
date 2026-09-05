@@ -253,3 +253,99 @@ describe('archiving finished batches by series', () => {
     expect(screen.queryByTestId('campaign-b-old')).not.toBeInTheDocument();
   });
 });
+
+// The board is one card per group buy and every cycle adds a batch behind it,
+// so once the catalogue passes a screenful the admin scrolls to find the one
+// they came to edit. The Hatian board already answers this with a search box.
+describe('board search', () => {
+  const twoGroupBuys = () => ({
+    data: [
+      campaign({ id: 'reta', name: 'Retatrutide 30mg', seriesId: 'sr', status: 'open' }),
+      campaign({ id: 'bpc', name: 'BPC-157 10mg', seriesId: 'sb', status: 'open' }),
+    ],
+    isLoading: false,
+  });
+
+  it('narrows the board to the group buys whose name matches', async () => {
+    feed = twoGroupBuys();
+    render(<AdminCampaignsPage />);
+    await userEvent.type(screen.getByLabelText(/search/i), 'bpc');
+
+    expect(card('bpc')).toBeInTheDocument();
+    expect(screen.queryByTestId('campaign-reta')).not.toBeInTheDocument();
+  });
+
+  it('matches part of a name, whatever the case', async () => {
+    feed = twoGroupBuys();
+    render(<AdminCampaignsPage />);
+    await userEvent.type(screen.getByLabelText(/search/i), 'TRUT');
+
+    expect(card('reta')).toBeInTheDocument();
+    expect(screen.queryByTestId('campaign-bpc')).not.toBeInTheDocument();
+  });
+
+  // A series renamed between batches is still the group buy the admin
+  // remembers by the name it used to carry.
+  it('finds a series by the name one of its archived batches carried', async () => {
+    feed = {
+      data: [
+        campaign({ id: 'old', name: 'Tirzepatide 15mg', seriesId: 's1', batchNo: 1, status: 'completed' }),
+        campaign({ id: 'live', name: 'Tirze 15mg', seriesId: 's1', batchNo: 2, status: 'open' }),
+      ],
+      isLoading: false,
+    };
+    render(<AdminCampaignsPage />);
+    await userEvent.type(screen.getByLabelText(/search/i), 'tirzepatide');
+
+    expect(card('live')).toBeInTheDocument();
+  });
+
+  // A narrowed board silently contradicts the admin's count of what exists.
+  it('says how much of the board is showing while a search is on', async () => {
+    feed = twoGroupBuys();
+    render(<AdminCampaignsPage />);
+    await userEvent.type(screen.getByLabelText(/search/i), 'bpc');
+
+    expect(screen.getByText(/1 of 2 group buys/i)).toBeInTheDocument();
+  });
+
+  // A typo and an empty board look identical otherwise.
+  it('says so when nothing matches, naming what was searched for', async () => {
+    feed = twoGroupBuys();
+    render(<AdminCampaignsPage />);
+    await userEvent.type(screen.getByLabelText(/search/i), 'zzz');
+
+    expect(screen.getByText(/no group buy matches/i)).toBeInTheDocument();
+    expect(screen.getByText(/zzz/)).toBeInTheDocument();
+    expect(screen.queryByText(/no campaigns yet/i)).not.toBeInTheDocument();
+  });
+
+  it('brings the whole board back when the search is cleared', async () => {
+    feed = twoGroupBuys();
+    render(<AdminCampaignsPage />);
+    const box = screen.getByLabelText(/search/i);
+    await userEvent.type(box, 'bpc');
+    await userEvent.clear(box);
+
+    expect(card('bpc')).toBeInTheDocument();
+    expect(card('reta')).toBeInTheDocument();
+  });
+
+  // The cycle control acts on the BOARD, not on the view: an admin who searched
+  // one name must still be told how many batches the button will end.
+  it('counts the cycle control off the whole board, not the filtered view', async () => {
+    feed = twoGroupBuys();
+    render(<AdminCampaignsPage />);
+    await userEvent.type(screen.getByLabelText(/search/i), 'bpc');
+    await userEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+
+    expect(await screen.findByText(/across 2 batches/i)).toBeInTheDocument();
+  });
+
+  // Nothing to search means nothing to search through.
+  it('hides the search box when the board is empty', () => {
+    feed = { data: [], isLoading: false };
+    render(<AdminCampaignsPage />);
+    expect(screen.queryByLabelText(/search/i)).not.toBeInTheDocument();
+  });
+});

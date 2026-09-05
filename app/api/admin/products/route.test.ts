@@ -34,7 +34,9 @@ vi.mock('@/lib/session', () => {
 
 const { POST } = await import('./route');
 const { PATCH } = await import('./[id]/route');
-const { resetDb, makeUser } = await import('@/lib/test/harness');
+const { resetDb, makeUser, makeGroupBuy } = await import('@/lib/test/harness');
+const { getDb, groupBuys } = await import('@/lib/db');
+const { eq } = await import('drizzle-orm');
 const { groupBuyUnitPrice, kahatiDefaultsFor, campaignDefaultsFor } = await import('@/lib/pricing');
 
 const BASE = { name: 'Retatrutide', spec: '10mg', pricePhp: 3200 };
@@ -189,5 +191,76 @@ describe('admin products — on-hand ten-vial price', () => {
     const { status } = await patch((await create(BASE)).id, { onHandTenVialPhp: -1 });
 
     expect(status).toBe(400);
+  });
+});
+
+// Product management as the source of truth for what is already on the boards.
+//
+// The catalog seeded a listing once and then stopped speaking to it: an admin
+// who corrected a price in product management still saw the old figure on the
+// Group Buy and Kahati boards until the batch ended. These are the tests for the
+// edit reaching the listings — the rules themselves live in lib/listing-sync.ts.
+describe('admin products — edits reach the listings already on the boards', () => {
+  it('reprices the open hatian counter when the group buy price changes', async () => {
+    const product = await create({ ...BASE, isKahati: true, gbPricePerKitPhp: 4800 });
+    await makeGroupBuy({ productId: product.id, pricePerKitPhp: 4800 });
+
+    await patch(product.id, { gbPricePerKitPhp: 4000 });
+
+    const db = await getDb();
+    const [counter] = await db.select().from(groupBuys).where(eq(groupBuys.productId, product.id));
+    expect(counter.pricePerKitPhp).toBe('4000.00');
+  });
+
+  it('reprices the open counter from the shop price when the product states no group buy price', async () => {
+    const product = await create({ ...BASE, isKahati: true });
+    await makeGroupBuy({ productId: product.id, pricePerKitPhp: 3200 });
+
+    await patch(product.id, { pricePhp: 3600 });
+
+    const db = await getDb();
+    const [counter] = await db.select().from(groupBuys).where(eq(groupBuys.productId, product.id));
+    expect(counter.pricePerKitPhp).toBe('3600.00');
+  });
+
+  it('renames the counter when the product name changes', async () => {
+    const product = await create({ ...BASE, isKahati: true });
+    await makeGroupBuy({ productId: product.id, name: 'Retatrutide 10mg' });
+
+    await patch(product.id, { name: 'Retatrutide (Salt Form)' });
+
+    const db = await getDb();
+    const [counter] = await db.select().from(groupBuys).where(eq(groupBuys.productId, product.id));
+    expect(counter.name).toBe('Retatrutide (Salt Form) 10mg');
+  });
+
+  it('leaves the counter alone when the edit was not about anything the board shows', async () => {
+    const product = await create({ ...BASE, isKahati: true, gbPricePerKitPhp: 4800 });
+    await makeGroupBuy({ productId: product.id, pricePerKitPhp: 4200, name: 'Hand-set counter' });
+
+    // Restocking is not a board detail, so the admin's own name and discount on
+    // this counter have to survive it.
+    await patch(product.id, { stock: 250 });
+
+    const db = await getDb();
+    const [counter] = await db.select().from(groupBuys).where(eq(groupBuys.productId, product.id));
+    expect(counter.pricePerKitPhp).toBe('4200.00');
+    expect(counter.name).toBe('Hand-set counter');
+  });
+
+  it('still returns the saved product, so the edit form is unaffected', async () => {
+    const product = await create({ ...BASE, isKahati: true });
+    await makeGroupBuy({ productId: product.id });
+
+    const { status, body } = await patch(product.id, { gbPricePerKitPhp: 4000 });
+
+    expect(status).toBe(200);
+    expect(body.data.gbPricePerKitPhp).toBe('4000.00');
+  });
+
+  it('reports a missing product before touching any listing', async () => {
+    const { status } = await patch('00000000-0000-0000-0000-000000000000', { pricePhp: 1 });
+
+    expect(status).toBe(404);
   });
 });

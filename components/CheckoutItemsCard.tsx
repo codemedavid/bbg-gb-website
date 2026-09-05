@@ -1,5 +1,6 @@
 'use client';
-import { useCart, groupCartByMode } from '@/lib/store/cart';
+import { useCart, groupCartByMode, lineUnitPrice, lineTotalPhp, isBulkPriced } from '@/lib/store/cart';
+import { ON_HAND_BULK_MIN_VIALS } from '@/lib/pricing';
 import { CartEditActions } from '@/components/CartEditActions';
 import { php } from '@/lib/format';
 
@@ -48,10 +49,15 @@ export function CheckoutItemsCard() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13.5px] font-bold text-ink">{item.name}</div>
                     <div className="text-[11.5px] text-ink-muted">
-                      {item.qty} × {php(item.unitPricePhp)}
+                      {item.qty} × {php(lineUnitPrice(item))}
+                      {isBulkPriced(item) && (
+                        <span className="ml-1 font-bold text-brand-greendark">
+                          · {ON_HAND_BULK_MIN_VIALS}-vial price
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <strong className="text-[13.5px] text-ink">{php(item.qty * item.unitPricePhp)}</strong>
+                  <strong className="text-[13.5px] text-ink">{php(lineTotalPhp(item))}</strong>
                   <button type="button" onClick={() => remove(item.key)}
                     aria-label={`Remove ${item.name} from cart`}
                     className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[15px] leading-none text-ink-faint transition-colors hover:bg-[#fdeaea] hover:text-[#a33]">

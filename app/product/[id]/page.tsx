@@ -7,7 +7,8 @@ import { useProduct } from '@/lib/queries';
 import { php } from '@/lib/format';
 import { useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
-import { onHandUnitPrice, vialsFor, VIALS_PER_KIT, type OnHandUnit } from '@/lib/pricing';
+import { onHandQuote, onHandUnitPrice, vialsFor, VIALS_PER_KIT, type OnHandUnit } from '@/lib/pricing';
+import { OnHandBulkPrice } from '@/components/OnHandBulkPrice';
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -20,7 +21,11 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
 
   const piecePrice = p ? onHandUnitPrice(p, 'piece') : null;
   const kitPrice = p ? onHandUnitPrice(p, 'kit') : null;
-  const unitPrice = unit === 'kit' ? kitPrice : piecePrice;
+  // Quantity is part of the price on the shelf: ten vials or more are charged
+  // the product's bulk rate. Recomputed on every step, so the headline figure
+  // and the banner below it move together with the stepper.
+  const quote = p ? onHandQuote(p, unit, qty) : null;
+  const unitPrice = quote?.unitPricePhp ?? (unit === 'kit' ? kitPrice : piecePrice);
   const stock = p?.stock ?? 0;
   // Stock is counted in vials, so a kit costs VIALS_PER_KIT of it.
   const maxQty = Math.floor(stock / vialsFor(unit, 1));
@@ -38,7 +43,12 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
     add({
       key: `product:${p.id}:${unit}`, kind: 'product', refId: p.id, unit,
       name: `${p.name} ${p.spec}`, spec: p.categoryName || '',
-      unitPricePhp: unitPrice, minQty: 1, qty, stock,
+      // The LIST price plus the rate, never the discounted figure alone: the
+      // cart re-prices as the customer steps quantity there too, and a line
+      // added at ₱650 that is then stepped down to nine vials must go back to
+      // ₱700 rather than keep a discount it no longer qualifies for.
+      unitPricePhp: quote?.listUnitPricePhp ?? unitPrice, minQty: 1, qty, stock,
+      bulkUnitPricePhp: quote?.bulkUnitPricePhp ?? undefined,
     });
     toast(`Added: ${p.name} ${p.spec}${unit === 'kit' ? ` · kit of ${VIALS_PER_KIT}` : ''}`);
     router.back();
@@ -65,9 +75,17 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
           <span className="flex-none rounded-md bg-[#e8f5db] px-2.5 py-1 text-[11px] font-bold text-brand-greendark">{p.categoryName}</span>
         </div>
         <div className="my-1 text-[13px] text-ink-muted">{p.spec} · lab-tested</div>
-        <div className="mb-1 font-display text-[26px] font-bold text-ink">
-          {unitPrice != null ? php(unitPrice) : php(p.pricePhp)}
-          <span className="ml-1 font-sans text-[13px] font-semibold text-ink-muted">
+        <div className="mb-1 flex items-baseline gap-2 font-display text-[26px] font-bold text-ink">
+          {quote?.bulkApplied && (
+            <span aria-label={`was ${php(quote.listUnitPricePhp)} per vial`}
+              className="font-sans text-[15px] font-semibold text-ink-faint line-through">
+              {php(quote.listUnitPricePhp)}
+            </span>
+          )}
+          <span className={quote?.bulkApplied ? 'text-brand-greendark' : undefined}>
+            {unitPrice != null ? php(unitPrice) : php(p.pricePhp)}
+          </span>
+          <span className="font-sans text-[13px] font-semibold text-ink-muted">
             {unit === 'kit' ? `/ kit of ${VIALS_PER_KIT}` : '/ piece'}
           </span>
         </div>
@@ -109,6 +127,8 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
           <span className="text-[12px] font-bold text-brand-greendark">Download</span>
         </button>
 
+        {quote && <OnHandBulkPrice quote={quote} />}
+
         <div className="flex items-center gap-3">
           <div className="flex items-center overflow-hidden rounded-[12px] border-[1.5px] border-line">
             <button onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={soldOut} aria-label="Decrease quantity"
@@ -123,6 +143,14 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
             {soldOut ? 'Out of stock' : 'Add to cart'}
           </button>
         </div>
+        {quote && qty > 1 && (
+          <div className="mt-2 flex items-baseline justify-between text-[13px]">
+            <span className="text-ink-muted">
+              {qty} × {php(quote.unitPricePhp)}
+            </span>
+            <strong className="font-display text-[16px] text-ink">{php(quote.lineTotalPhp)}</strong>
+          </div>
+        )}
         {!soldOut && qty >= maxQty && (
           <div className="mt-2 text-[12px] text-ink-muted">
             That&apos;s everything we have on hand{unit === 'kit' ? ` (${maxQty} kit${maxQty === 1 ? '' : 's'})` : ''}.

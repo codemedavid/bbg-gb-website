@@ -11,6 +11,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
     pricePhp: products.pricePhp, priceUsd: products.priceUsd, categoryId: products.categoryId,
     categorySlug: categories.slug, categoryName: categories.name,
     isOnHand: products.isOnHand, onHandKitPhp: products.onHandKitPhp, onHandPiecePhp: products.onHandPiecePhp,
+    onHandTenVialPhp: products.onHandTenVialPhp,
     stock: products.stock, arrivalGroup: products.arrivalGroup, description: products.description,
     imageEmoji: products.imageEmoji, soldCount: products.soldCount,
   }).from(products).leftJoin(categories, eq(products.categoryId, categories.id)).where(eq(products.id, id));

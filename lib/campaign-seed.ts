@@ -23,6 +23,20 @@ export type SeedableProduct = GroupBuyConfig & {
   arrivalGroup: MoqCampaign['arrivalGroup'];
 };
 
+/**
+ * What a listing for this product is called on either board.
+ *
+ * Name and spec together, because a board shows the listing name and
+ * "Retatrutide" alone does not say which vial the kit holds. Stated once
+ * because three callers need the identical string: the two seeders, which name
+ * a listing when they open it, and lib/listing-sync.ts, which decides whether a
+ * product edit renamed it. A second copy of this format is how a renamed
+ * product stops matching its own counter.
+ */
+export function listingName(p: { name: string; spec: string }): string {
+  return `${p.name} ${p.spec}`.trim();
+}
+
 /** A campaign about to be opened. Mirrors the columns POST /api/campaigns writes. */
 export type CampaignSeed = {
   name: string;
@@ -46,9 +60,7 @@ export function campaignSeedFor(p: SeedableProduct): CampaignSeed | null {
   if (pricePerKitPhp == null) return null;
 
   return {
-    // Name and spec together, because the board shows the campaign name and
-    // "Retatrutide" alone does not say which vial the kit holds.
-    name: `${p.name} ${p.spec}`.trim(),
+    name: listingName(p),
     pricePerKitPhp,
     moq: defaults.moq,
     perCustomerMin: defaults.perCustomerMin,

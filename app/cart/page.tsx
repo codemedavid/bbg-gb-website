@@ -5,9 +5,12 @@ import { OverlayShell } from '@/components/OverlayShell';
 import { BackHeader } from '@/components/headers';
 import { OrderSummary } from '@/components/OrderSummary';
 import { CartEditActions } from '@/components/CartEditActions';
-import { useCart, groupCartByMode, maxQtyFor, type CartGroup, type CartItem } from '@/lib/store/cart';
+import {
+  useCart, groupCartByMode, maxQtyFor, lineUnitPrice, lineTotalPhp, isBulkPriced, vialsToBulk,
+  type CartGroup, type CartItem,
+} from '@/lib/store/cart';
 import { php } from '@/lib/format';
-import { VIALS_PER_KIT } from '@/lib/pricing';
+import { ON_HAND_BULK_MIN_VIALS, VIALS_PER_KIT } from '@/lib/pricing';
 import type { PackingMode } from '@/lib/pricing';
 
 // What each section is, in one line. The cart is where a customer reconciles
@@ -45,6 +48,24 @@ function CartLine({ item }: { item: CartItem }) {
         <div className="text-[11.5px] text-ink-muted">
           {item.unit === 'kit' ? `Kit of ${VIALS_PER_KIT}` : item.unit === 'piece' ? 'Per piece' : item.spec}
         </div>
+        {/* The bulk rate is won and lost at this stepper, so it is reported at
+            this stepper. A total that drops with no explanation reads as a bug,
+            and one that quietly climbs back reads as a worse one. */}
+        {isBulkPriced(item) && (
+          <div className="text-[11.5px] font-bold text-brand-greendark">
+            🎉 {ON_HAND_BULK_MIN_VIALS}-vial price ·{' '}
+            <span aria-label={`was ${php(item.unitPricePhp)} each`} className="font-semibold text-ink-faint line-through">
+              {php(item.unitPricePhp)}
+            </span>{' '}
+            {php(lineUnitPrice(item))} each
+          </div>
+        )}
+        {vialsToBulk(item) > 0 && (
+          <div className="text-[11.5px] text-ink-muted">
+            {vialsToBulk(item)} more {vialsToBulk(item) === 1 ? 'vial' : 'vials'} for{' '}
+            {php(item.bulkUnitPricePhp!)} each
+          </div>
+        )}
       </div>
       <div className="flex items-center overflow-hidden rounded-[9px] border border-line">
         <button onClick={() => dec(item.key)} aria-label={`Remove one ${item.name}`}
@@ -66,7 +87,7 @@ function CartLine({ item }: { item: CartItem }) {
         <button onClick={() => inc(item.key)} disabled={item.qty >= maxQtyFor(item)} aria-label={`Add one ${item.name}`}
           className="flex h-[30px] w-7 items-center justify-center font-bold text-ink-body disabled:text-ink-faint">+</button>
       </div>
-      <strong className="w-[70px] text-right text-[13.5px] text-ink">{php(item.qty * item.unitPricePhp)}</strong>
+      <strong className="w-[70px] text-right text-[13.5px] text-ink">{php(lineTotalPhp(item))}</strong>
       {/* Stepping down to zero already drops the line, but that takes as many
           taps as the quantity. A customer removing a 10-vial commitment should
           not have to press "−" ten times. */}

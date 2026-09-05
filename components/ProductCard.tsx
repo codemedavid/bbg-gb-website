@@ -6,7 +6,7 @@ import type { VariantGroup } from '@/lib/product-variants';
 import { php } from '@/lib/format';
 import { useCart } from '@/lib/store/cart';
 import { useToast } from '@/lib/store/toast';
-import { onHandUnitPrice } from '@/lib/pricing';
+import { onHandBulkVialPrice, onHandUnitPrice } from '@/lib/pricing';
 import { VariantPicker } from './VariantPicker';
 
 // One card per peptide, not one per strength.
@@ -35,6 +35,10 @@ export function ProductCard({ group }: { group: VariantGroup<Product> }) {
   const p = group.variants.find((v) => v.id === selectedId) ?? group.variants[0];
 
   const piecePrice = onHandUnitPrice(p, 'piece');
+  // Carried onto the line so a quick-added vial stepped up to ten in the CART
+  // gets the same rate the server is going to charge for it. Without it the
+  // cart quotes ₱700 a vial on an order checkout prices at ₱650.
+  const bulkVialPrice = onHandBulkVialPrice(p);
   const soldOut = p.stock <= 0;
   const canQuickAdd = !soldOut && piecePrice != null;
   const open = () => router.push(`/product/${p.id}`);
@@ -45,6 +49,7 @@ export function ProductCard({ group }: { group: VariantGroup<Product> }) {
       key: `product:${p.id}:piece`, kind: 'product', refId: p.id, unit: 'piece',
       name: `${p.name} ${p.spec}`, spec: p.categoryName || '',
       unitPricePhp: piecePrice, minQty: 1, stock: p.stock,
+      bulkUnitPricePhp: bulkVialPrice ?? undefined,
     });
     toast(`Added: ${p.name} ${p.spec}`);
   };

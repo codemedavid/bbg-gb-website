@@ -15,7 +15,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDb, orders, orderItems, products, groupBuys, moqCampaigns, moqProducts } from '@/lib/db';
 import { ApiError } from '@/lib/session';
 import { vialsForOrderLine } from '@/lib/kahati-server';
-import { VIALS_PER_KIT, onHandUnitPrice, vialsFor, type OnHandUnit } from '@/lib/pricing';
+import { onHandQuote, onHandSpecSnapshot, vialsFor, type OnHandUnit } from '@/lib/pricing';
 
 /**
  * One line as it should stand after the edit.
@@ -156,11 +156,15 @@ export async function applyOrderItemEdit(
       if (!product) throw new ApiError(400, 'That product no longer exists.');
 
       const unit: OnHandUnit = item.unit ?? 'piece';
-      const unitPricePhp = onHandUnitPrice(product, unit);
+      // Priced through the same quote checkout uses, bulk rate included: an
+      // admin adding ten vials to an order must land on the same figure the
+      // customer would have been charged buying them themselves.
+      const quote = onHandQuote(product, unit, item.qty);
       // An unset or zero price means "not sold this way", never free.
-      if (unitPricePhp == null) {
+      if (quote == null) {
         throw new ApiError(400, `${product.name} ${product.spec} is not sold by the ${unit}.`);
       }
+      const unitPricePhp = quote.unitPricePhp;
 
       // Draw the vials down inside the UPDATE, guard in the WHERE clause — the
       // same reason checkout does: two concurrent writes must not both pass a
@@ -182,7 +186,7 @@ export async function applyOrderItemEdit(
         kind: 'product',
         productId: product.id,
         nameSnapshot: `${product.name} ${product.spec}`,
-        specSnapshot: unit === 'kit' ? `On-hand · kit of ${VIALS_PER_KIT}` : 'On-hand · per piece',
+        specSnapshot: onHandSpecSnapshot(unit, quote.bulkApplied),
         qty: item.qty,
         unitPricePhp: String(unitPricePhp),
         // The USD column prices a single vial; a kit line is worth a kit's worth.

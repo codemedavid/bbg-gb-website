@@ -4,7 +4,7 @@
 // EVERY mode. It previously only threaded through the on-hand fee, so editing the
 // Hatian packing fee in the admin panel left the cart quoting the code constant.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useCart, packingFeeFor, maxQtyFor, type CartItem } from './cart';
+import { useCart, packingFeeFor, maxQtyFor, lineUnitPrice, lineTotalPhp, groupCartByMode, type CartItem } from './cart';
 import { PACKING_FEE_PHP } from '@/lib/pricing';
 
 const onHand = (o: Partial<CartItem> = {}): CartItem => ({
@@ -251,3 +251,51 @@ describe('MOQ cart lines', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// The on-hand bulk rate re-prices a line as its quantity crosses the threshold.
+// The cart is where a customer steps quantity, so the discount has to appear and
+// disappear there — a price fixed at add-to-cart time would show ₱700 a vial on
+// a ten-vial line the server then charges ₱650 for.
+// ---------------------------------------------------------------------------
+const bulk = (o: Partial<CartItem> = {}): CartItem =>
+  onHand({ unitPricePhp: 700, bulkUnitPricePhp: 650, ...o });
+
+describe('on-hand lines with a bulk rate', () => {
+  beforeEach(() => useCart.setState({ items: [], note: '' }));
+
+  it('charges the list price below the threshold', () => {
+    expect(lineUnitPrice(bulk({ qty: 9 }))).toBe(700);
+    expect(lineTotalPhp(bulk({ qty: 9 }))).toBe(6300);
+  });
+
+  it('charges the bulk rate at and above the threshold', () => {
+    expect(lineUnitPrice(bulk({ qty: 10 }))).toBe(650);
+    expect(lineTotalPhp(bulk({ qty: 10 }))).toBe(6500);
+    expect(lineTotalPhp(bulk({ qty: 23 }))).toBe(14950);
+  });
+
+  it('leaves a line with no bulk rate alone', () => {
+    expect(lineUnitPrice(onHand({ unitPricePhp: 700, qty: 12 }))).toBe(700);
+    expect(lineTotalPhp(onHand({ unitPricePhp: 700, qty: 12 }))).toBe(8400);
+  });
+
+  it('re-prices the cart subtotal when stepping up to ten', () => {
+    useCart.setState({ items: [bulk({ qty: 9 })] });
+    expect(useCart.getState().subtotal()).toBe(6300);
+    useCart.getState().inc('product:p1:piece');
+    expect(useCart.getState().subtotal()).toBe(6500);
+  });
+
+  it('re-prices back to the list price when stepping below ten', () => {
+    useCart.setState({ items: [bulk({ qty: 10 })] });
+    expect(useCart.getState().subtotal()).toBe(6500);
+    useCart.getState().dec('product:p1:piece');
+    expect(useCart.getState().subtotal()).toBe(6300);
+  });
+
+  it('prices the On-hand group the same way the subtotal does', () => {
+    const [group] = groupCartByMode([bulk({ qty: 10 })]);
+    expect(group.subtotal).toBe(6500);
+  });
+});

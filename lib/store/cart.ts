@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PACKING_FEE_PHP, vialsFor, type OnHandUnit, type PackingFees, type PackingMode } from '@/lib/pricing';
+import {
+  ON_HAND_BULK_MIN_VIALS, PACKING_FEE_PHP, round2, vialsFor,
+  type OnHandUnit, type PackingFees, type PackingMode,
+} from '@/lib/pricing';
 import type { MoqCampaign, MoqProduct } from '@/lib/types';
 
 // `kind` is the wire contract with POST /api/orders: app/checkout/page.tsx
@@ -22,6 +25,13 @@ export type CartItem = {
   // none — they are uncapped (see maxQtyFor).
   unit?: OnHandUnit;
   stock?: number;
+  // On-hand piece lines only: the shelf's discounted per-vial rate, which takes
+  // over once the line reaches ON_HAND_BULK_MIN_VIALS. Carried on the line so
+  // the cart re-prices as the customer steps quantity, rather than freezing
+  // whatever the price happened to be when they hit Add — a line stuck at the
+  // list price is a cart that disagrees with the checkout the server writes.
+  // Absent means the product offers no bulk rate.
+  bulkUnitPricePhp?: number;
   // Group buy lines only: the batch series this commitment belongs to. The
   // packing fee is waived per SERIES, not per batch — a batch that fills seals
   // and opens a successor carrying the same terms, and to the customer that is
@@ -29,6 +39,28 @@ export type CartItem = {
   // the same way the server does (lib/campaign-commitment.ts).
   seriesId?: string;
 };
+
+// What one unit of this line actually costs at its CURRENT quantity. Every
+// figure the cart, the checkout card and the summary show runs through here, so
+// there is one answer to "what is this vial worth" rather than one per surface.
+// Mirrors onHandQuote in lib/pricing.ts, which is what the server charges.
+export const lineUnitPrice = (item: CartItem): number =>
+  item.bulkUnitPricePhp != null && item.qty >= ON_HAND_BULK_MIN_VIALS
+    ? item.bulkUnitPricePhp
+    : item.unitPricePhp;
+
+/** What the whole line costs at its current quantity. */
+export const lineTotalPhp = (item: CartItem): number => round2(lineUnitPrice(item) * item.qty);
+
+/** True when this line is currently getting the shelf's bulk rate. */
+export const isBulkPriced = (item: CartItem): boolean =>
+  item.bulkUnitPricePhp != null && item.qty >= ON_HAND_BULK_MIN_VIALS;
+
+/** Vials this line still needs to unlock the bulk rate; 0 when reached or not offered. */
+export const vialsToBulk = (item: CartItem): number =>
+  item.bulkUnitPricePhp == null || item.qty >= ON_HAND_BULK_MIN_VIALS
+    ? 0
+    : ON_HAND_BULK_MIN_VIALS - Math.max(0, item.qty);
 
 // Largest qty of this line the remaining stock allows. A line without a known
 // stock figure is uncapped here — the server is the real gate.
@@ -110,7 +142,7 @@ export const useCart = create<CartState>()(
       // checkout's instructions to whatever the customer buys next.
       clear: () => set({ items: [], note: '' }),
       count: () => get().items.reduce((a, i) => a + i.qty, 0),
-      subtotal: () => get().items.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
+      subtotal: () => round2(get().items.reduce((a, i) => a + lineTotalPhp(i), 0)),
       hasOnHand: () => get().items.some((i) => i.kind === 'product'),
       hasKahati: () => get().items.some((i) => i.kind === 'group_buy'),
       hasGroupBuy: () => get().items.some((i) => i.kind === 'moq_campaign'),
@@ -191,7 +223,7 @@ export const groupCartByMode = (items: readonly CartItem[]): CartGroup[] =>
         label: CART_MODE_LABEL[mode],
         items: inMode,
         count: inMode.reduce((a, i) => a + i.qty, 0),
-        subtotal: inMode.reduce((a, i) => a + i.qty * i.unitPricePhp, 0),
+        subtotal: round2(inMode.reduce((a, i) => a + lineTotalPhp(i), 0)),
       };
     })
     .filter((g) => g.items.length > 0);

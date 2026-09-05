@@ -281,26 +281,30 @@ describe('AdminProductsPage — on-hand ten-vial price', () => {
 
     // Hidden with the rest of the on-hand block: a product not sold from stock
     // has no shelf price of any kind.
-    expect(screen.queryByLabelText(/on-hand price \/ 10 vials/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/discounted price \/ vial/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('On-Hand'));
 
-    expect(screen.getByLabelText(/on-hand price \/ 10 vials/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/discounted price \/ vial/i)).toBeInTheDocument();
   });
 
-  it('sends the ten-vial price under the name the database uses', async () => {
+  // The admin quotes the bulk deal the way they think about it — "₱650 a vial
+  // if you take ten" — while the column has always stored what ten vials cost.
+  // The form does the ×10 so neither the admin nor the database has to change
+  // the way it counts.
+  it('sends a per-vial rate as the ten-vial figure the database stores', async () => {
     await openNewProduct();
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Retatrutide' } });
     fireEvent.click(screen.getByLabelText('On-Hand'));
-    fireEvent.change(screen.getByLabelText(/on-hand price \/ 10 vials/i), { target: { value: '7000' } });
+    fireEvent.change(screen.getByLabelText(/discounted price \/ vial/i), { target: { value: '650' } });
 
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
     await waitFor(() => expect(saveMutate).toHaveBeenCalled());
-    expect(saveMutate.mock.calls[0][0]).toMatchObject({ onHandTenVialPhp: 7000 });
+    expect(saveMutate.mock.calls[0][0]).toMatchObject({ onHandTenVialPhp: 6500 });
   });
 
-  it('loads the saved ten-vial price when the product is edited again', async () => {
+  it('loads a stored ten-vial figure back as a per-vial rate', async () => {
     catalog.rows = [{
       id: 'p1', name: 'Retatrutide', spec: '10mg', pricePhp: '3200', stock: 5,
       isActive: true, isOnHand: true, onHandKitPhp: '7200', onHandPiecePhp: '750',
@@ -310,10 +314,31 @@ describe('AdminProductsPage — on-hand ten-vial price', () => {
     fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
     await screen.findByText('Edit product');
 
-    expect(screen.getByLabelText(/on-hand price \/ 10 vials/i)).toHaveValue(7000);
+    expect(screen.getByLabelText(/discounted price \/ vial/i)).toHaveValue(700);
   });
 
-  it('clears a blanked ten-vial price rather than sending it as zero', async () => {
+  it('shows what ten vials come to, so the admin can check the deal', async () => {
+    await openNewProduct();
+    fireEvent.click(screen.getByLabelText('On-Hand'));
+    fireEvent.change(screen.getByLabelText(/on-hand price \/ piece/i), { target: { value: '700' } });
+    fireEvent.change(screen.getByLabelText(/discounted price \/ vial/i), { target: { value: '650' } });
+
+    expect(screen.getByText(/₱6,500/)).toBeInTheDocument();
+  });
+
+  // A rate at or above the piece price is not a discount, and the storefront
+  // refuses to present it as one (lib/pricing.ts onHandBulkVialPrice). Saying so
+  // in the form is what stops an admin typing it and believing it took.
+  it('warns when the rate is not cheaper than the piece price', async () => {
+    await openNewProduct();
+    fireEvent.click(screen.getByLabelText('On-Hand'));
+    fireEvent.change(screen.getByLabelText(/on-hand price \/ piece/i), { target: { value: '700' } });
+    fireEvent.change(screen.getByLabelText(/discounted price \/ vial/i), { target: { value: '750' } });
+
+    expect(screen.getByText(/not cheaper than the piece price/i)).toBeInTheDocument();
+  });
+
+  it('clears a blanked rate rather than sending it as zero', async () => {
     catalog.rows = [{
       id: 'p1', name: 'Retatrutide', spec: '10mg', pricePhp: '3200', stock: 5,
       isActive: true, isOnHand: true, onHandTenVialPhp: '7000',
@@ -322,11 +347,11 @@ describe('AdminProductsPage — on-hand ten-vial price', () => {
     fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
     await screen.findByText('Edit product');
 
-    fireEvent.change(screen.getByLabelText(/on-hand price \/ 10 vials/i), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText(/discounted price \/ vial/i), { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
-    // Null is "this product states no bundle rate". A zero would read as ten
-    // free vials — the same distinction onHandKitPhp already makes.
+    // Null is "this product states no bulk rate". A zero would read as ten free
+    // vials — the same distinction onHandKitPhp already makes.
     await waitFor(() => expect(saveMutate).toHaveBeenCalled());
     expect(saveMutate.mock.calls[0][0].onHandTenVialPhp).toBeNull();
   });
