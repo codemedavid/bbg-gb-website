@@ -5,6 +5,7 @@
 // an admin may reach any of it; closing twice does not pay anybody twice; and
 // downloading a report never marks money as sent.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { manilaYmd } from '@/lib/report/week';
 
 const session = { current: null as { sub: string; role: 'customer' | 'admin'; email: string } | null };
 vi.mock('@/lib/session', () => {
@@ -55,7 +56,7 @@ const xlsxReq = (from: string, to: string, batchLabel?: string) =>
   new Request(`http://localhost/api/admin/report/pasalo-refund/xlsx?from=${from}&to=${to}`
     + (batchLabel ? `&batchLabel=${encodeURIComponent(batchLabel)}` : ''));
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => manilaYmd(new Date());
 
 async function seedFailingCounterWithBuyer(userId: string) {
   const db = await getDb();

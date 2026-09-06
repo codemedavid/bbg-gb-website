@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Workbook } from 'exceljs';
 import type { TestSession } from '@/lib/test/pasalo-e2e';
+import { manilaYmd } from '@/lib/report/week';
 
 const session = { current: null as TestSession };
 vi.mock('@/lib/session', () => {
@@ -81,7 +82,7 @@ async function confirmPayment(orderId: string) {
   );
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => manilaYmd(new Date());
 
 async function workbook(): Promise<Workbook> {
   await asAdmin();

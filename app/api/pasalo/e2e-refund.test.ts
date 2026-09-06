@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Workbook } from 'exceljs';
 import type { TestSession } from '@/lib/test/pasalo-e2e';
+import { manilaYmd } from '@/lib/report/week';
 
 const session = { current: null as TestSession };
 vi.mock('@/lib/session', () => {
@@ -101,7 +102,7 @@ const openPasalo = async () => {
 };
 const closePasalo = async () => { await asAdmin(); return CLOSE_PASALO(); };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => manilaYmd(new Date());
 
 async function refundReport() {
   await asAdmin();
