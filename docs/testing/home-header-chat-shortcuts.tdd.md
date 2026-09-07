@@ -151,17 +151,36 @@ The /kahati page has a 6px horizontal overflow at 320px (`document.scrollWidth`
 326). It is the bottom nav, not the header — it measures the same with the chat
 marks removed from the DOM — and it is untouched by this work.
 
+## Round 3 — the auth screens
+
+**Ask:** "ilagay din po sa login screen."
+
+`components/AuthShell.tsx` carries the pair in its navy hero, beside the
+wordmark — which covers /login, /register, /forgot-password and
+/reset-password in one place.
+
+This is where being unreachable costs the most. Someone locked out of their
+account cannot use any storefront header, because all of them sit behind this
+screen, and a BBG password reset is handed over on chat in the first place
+(Admin → Accounts mints the link, an admin sends it). The hero wraps the
+wordmark and the marks in a `flex-wrap` row, so a narrow screen drops the marks
+to a second line instead of squeezing the wordmark.
+
+- RED: `npx vitest run components/AuthShell.test.tsx` → 2 failed / 1 passed,
+  `Unable to find an accessible element with the role "link" and name /whatsapp/i`.
+- GREEN: same command → 3 passed.
+- Browser: /login and /forgot-password at 320 and 390 — both marks present,
+  wordmark on one line, `document.scrollWidth` equal to `clientWidth`.
+
 ## Coverage and known gaps
 
-- Whole suite after the second round: `npx vitest run` → **276 files, 3035
-  tests, all passed**. (The first round's run reported one failure,
+- Whole suite after the third round: `npx vitest run` → **277 files, 3038
+  tests, all passed**. (Second round: 276 files, 3035 tests, all passed.) (The first round's run reported one failure,
   `app/api/pasalo/e2e-refund.test.ts` timing out at 30s under parallel load; it
   passes 31/31 on its own and did not recur here.)
-- Every storefront header carries the links. The admin panel and the login /
-  register shell (`components/AuthShell.tsx`) do not: admin is BBG's own staff,
-  and the auth screens are a different shell rather than a header. The login
-  screen is arguably the strongest remaining case — a customer locked out of
-  their account currently has to reach BBG some other way to get a reset link.
+- Every storefront header and the auth shell carry the links. The admin panel
+  does not, and should not: it is BBG's own staff, who are the other end of
+  those chats.
 - Deep links are not exercised end to end: a headless browser has neither
   WhatsApp nor Viber installed, so the tests assert the URLs, and the URLs
   themselves were checked against each app's documented format.
@@ -174,3 +193,4 @@ marks removed from the DOM — and it is untouched by this work.
 - GREEN `50b642b` — `feat: put BBG's WhatsApp and Viber beside the wordmark on the home header`
 - RED `00273c3` — `test: require the board and back headers to offer WhatsApp and Viber`
 - GREEN `0d30d16` — `feat: carry the WhatsApp and Viber marks on every storefront header`
+- RED `f1d09f4` — `test: require the auth screens to offer WhatsApp and Viber`

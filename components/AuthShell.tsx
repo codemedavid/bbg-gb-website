@@ -1,11 +1,19 @@
 'use client';
 import type { ReactNode } from 'react';
+import { ChatShortcuts } from './ChatShortcuts';
 
 export function AuthShell({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {
   return (
     <div className="mx-auto flex min-h-screen max-w-app flex-col bg-surface-mist sm:max-w-[480px]">
+      {/* The chat marks matter more here than anywhere else: someone locked
+          out of their account cannot reach the storefront headers, which all
+          sit behind this screen, and a BBG password reset is handed over on
+          chat in the first place. */}
       <div className="bg-gradient-to-br from-brand-navy to-brand-blue px-6 pb-8 pt-14 text-white">
-        <div className="font-display text-[26px] font-bold">BBG<span className="text-brand-green"> Peptides</span></div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="font-display text-[26px] font-bold">BBG<span className="text-brand-green"> Peptides</span></div>
+          <ChatShortcuts />
+        </div>
         <div className="mt-1 text-[13px] opacity-85">Kahati tayo — research peptides, delivered PH-wide.</div>
       </div>
       <div className="-mt-4 flex-1 rounded-t-[20px] bg-surface-mist px-5 pt-6">
