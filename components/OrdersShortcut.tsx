@@ -21,7 +21,7 @@ export function OrdersShortcut() {
     <Link
       href="/orders"
       aria-label="My orders"
-      className="flex flex-none items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] font-bold text-ink-body transition-colors hover:border-brand-green hover:text-brand-greendark"
+      className="flex flex-none items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1.5 text-[12.5px] font-bold text-ink-body transition-colors hover:border-brand-green hover:text-brand-greendark xs:gap-1.5 xs:px-3"
     >
       <span aria-hidden className="text-[14px] leading-none">📦</span>
       {/* The word is what makes the shortcut findable — an emoji alone has to

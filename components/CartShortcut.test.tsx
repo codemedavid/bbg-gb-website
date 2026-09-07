@@ -65,6 +65,22 @@ describe('CartShortcut', () => {
     expect(screen.getByRole('link', { name: /cart/i })).toHaveTextContent('Cart (0)');
   });
 
+  // The board headers now carry the two chat shortcuts as well, and at 320px
+  // the row cannot seat the word "Cart" and a readable board title at the same
+  // time — the title is what loses, truncating to "🤝 Kahati B…". The count is
+  // the part that carries information, so the word is what goes, on the same
+  // breakpoint and for the same reason the Orders shortcut drops its label.
+  it('keeps the count at every width but drops the word below 400px', () => {
+    render(<CartShortcut />);
+
+    const spans = [...screen.getByRole('link', { name: /cart/i }).querySelectorAll('span')];
+    const word = spans.find((s) => s.textContent?.includes('Cart'));
+    const count = spans.find((s) => s.textContent?.includes('(0)'));
+    expect(word?.className).toContain('hidden');
+    expect(word?.className).toContain('xs:inline');
+    expect(count?.className ?? '').not.toContain('hidden');
+  });
+
   it('names the count for screen readers rather than leaving a bare number', () => {
     act(() => useCart.getState().add(line({ qty: 1 })));
 
