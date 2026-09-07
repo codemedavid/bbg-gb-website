@@ -4,10 +4,13 @@ import { useRouter } from 'next/navigation';
 import { CartButton } from './BottomNav';
 import { CartShortcut } from './CartShortcut';
 import { OrdersShortcut } from './OrdersShortcut';
+import { ChatShortcuts } from './ChatShortcuts';
 import { useAuth } from '@/lib/useAuth';
 
+// flex-none + nowrap: the header row is full at 320px, and a shrinkable
+// wordmark is the first thing flexbox breaks — "BBG" over "Peptides".
 const Logo = () => (
-  <span className="font-display text-[17px] font-bold tracking-tight text-brand-navy">
+  <span className="flex-none whitespace-nowrap font-display text-[16px] font-bold tracking-tight text-brand-navy xs:text-[17px]">
     BBG<span className="text-brand-green"> Peptides</span>
   </span>
 );
@@ -33,8 +36,9 @@ function AuthControl() {
 
 export function AppHeader({ greeting }: { greeting?: string }) {
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-3 border-b-2 border-brand-green bg-white px-4 py-2.5 md:px-6">
+    <header className="sticky top-0 z-10 flex items-center gap-1.5 border-b-2 border-brand-green bg-white px-2.5 py-2.5 xs:gap-3 xs:px-4 md:px-6">
       <Logo />
+      <ChatShortcuts />
       <div className="ml-auto flex items-center gap-2">
         {greeting && <span className="hidden text-[13px] font-semibold text-ink-body xs:inline">{greeting}</span>}
         <CartButton />
