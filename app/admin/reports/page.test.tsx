@@ -114,6 +114,26 @@ describe('AdminReportsPage', () => {
     expect(within(onHandSection).queryByText('BBG-2600')).not.toBeInTheDocument();
   });
 
+  it('states the covered dates in every section header', async () => {
+    // The section says how many orders and products it holds; without the dates
+    // beside them, the figures read as "the current state of the board" rather
+    // than as one range.
+    render(<Page />, { wrapper });
+
+    const kahatiSection = await screen.findByRole('region', { name: /^kahati$/i });
+    expect(within(kahatiSection).getByText('Mon May 25 – Sun May 31 · 1 order · 1 product')).toBeInTheDocument();
+  });
+
+  it('names the dates even in a section with no orders', async () => {
+    vi.mocked(apiGet).mockResolvedValue({
+      monday: '2025-05-25', report: onhand, segments: { onhand, groupbuy: emptyHalf, kahati },
+    });
+    render(<Page />, { wrapper });
+
+    const groupBuySection = await screen.findByRole('region', { name: /^group buy$/i });
+    expect(within(groupBuySection).getByText('No orders in Mon May 25 – Sun May 31.')).toBeInTheDocument();
+  });
+
   it('downloads each half as its own workbook, stamped with the range it covers', async () => {
     const user = userEvent.setup();
     render(<Page />, { wrapper });

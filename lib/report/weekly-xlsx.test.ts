@@ -7,7 +7,7 @@
 // see and a byte-length check would not.
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
-import { buildWeeklyReport, type ReportOrderInput } from './build';
+import { buildDateRangeReport, buildWeeklyReport, type ReportOrderInput } from './build';
 import {
   buildWeeklyWorkbook,
   GROUP_BUY_PRODUCT_TOTALS_HEADERS,
@@ -44,6 +44,36 @@ async function roundTrip(orders: ReportOrderInput[], monday = '2026-05-25') {
   await reopened.xlsx.load(buffer);
   return { sheet: reopened.worksheets[0], workbook: reopened, report };
 }
+
+// A workbook built for an arbitrary From/To range, which is what the Reports
+// page actually sends. The week round-trip above is the older caller that names
+// only its Monday.
+async function rangeRoundTrip(
+  orders: ReportOrderInput[],
+  from: string,
+  to: string,
+  segment?: 'onhand' | 'groupbuy' | 'kahati',
+) {
+  const report = buildDateRangeReport(from, to, orders);
+  const workbook = await buildWeeklyWorkbook(report, from, segment, to);
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  const reopened = new ExcelJS.Workbook();
+  await reopened.xlsx.load(buffer);
+  return { sheet: reopened.worksheets[0], workbook: reopened, report };
+}
+
+// Every sheet now closes with a coverage note, so "the last row" is that note
+// and the TOTAL row has to be found by its label.
+const totalRowOf = (sheet: ExcelJS.Worksheet) => {
+  for (let n = 1; n <= sheet.rowCount; n++) {
+    if (sheet.getRow(n).getCell(1).value === 'TOTAL') return sheet.getRow(n);
+  }
+  throw new Error('sheet has no TOTAL row');
+};
+
+const lastLine = (sheet: ExcelJS.Worksheet): string =>
+  String(sheet.getRow(sheet.rowCount).getCell(1).value);
 
 async function groupBuyRoundTrip(orders: ReportOrderInput[], monday = '2026-05-25') {
   const report = buildWeeklyReport(monday, orders);
@@ -158,7 +188,7 @@ describe('buildWeeklyWorkbook', () => {
       order({ status: 'cancelled', totalPhp: '9999.00', totalUsd: '99.00' }),
     ]);
 
-    const totalRow = sheet.getRow(sheet.rowCount);
+    const totalRow = totalRowOf(sheet);
     expect(totalRow.getCell(columnOf('PHP')).value).toBe(report.totals.php);
     expect(report.totals.php).toBe(560);
   });
@@ -169,13 +199,39 @@ describe('buildWeeklyWorkbook', () => {
       order({ packingFeePhp: '200.00' }),
     ]);
 
-    const totalRow = sheet.getRow(sheet.rowCount);
+    const totalRow = totalRowOf(sheet);
     expect(String(totalRow.getCell(columnOf('Order Status')).value)).toContain('Packing fees: ₱350.00');
   });
 
   it('names the sheet after the reporting week', async () => {
     const { sheet } = await roundTrip([order({})]);
     expect(sheet.name).toContain('22'); // ISO week of 2026-05-25
+  });
+
+  it('closes the order sheet with the period it covers', async () => {
+    const { sheet } = await roundTrip([order({})]);
+    const note = lastLine(sheet);
+
+    expect(note).toContain('Mon May 25 – Sun May 31');
+    // Cancelled orders are LISTED on this sheet — only the totals leave them
+    // out — so it must not repeat the Product Totals wording.
+    expect(note).toMatch(/listed but left out of the totals/i);
+  });
+
+  it('names the sheet for its dates when the range is not one Mon–Sun week', async () => {
+    // "Week 35" on a tab holding Aug 30 - Sep 5 is the same false claim the
+    // filename used to make.
+    const { sheet } = await rangeRoundTrip([order({})], '2026-08-30', '2026-09-05');
+
+    expect(sheet.name).not.toMatch(/week/i);
+    expect(sheet.name).toContain('08-30');
+    expect(sheet.name).toContain('09-05');
+  });
+
+  it('keeps the week name when the range is exactly that Mon–Sun week', async () => {
+    const { sheet } = await rangeRoundTrip([order({})], '2026-05-25', '2026-05-31');
+
+    expect(sheet.name).toContain('22');
   });
 
   it('handles a week with no orders without throwing', async () => {
@@ -201,19 +257,6 @@ describe('buildWeeklyWorkbook — Product Totals sheet', () => {
     if (!sheet) throw new Error(`workbook has no "${PRODUCT_TOTALS_SHEET}" sheet`);
     return { sheet, report };
   };
-
-  type Sheet = Awaited<ReturnType<typeof totalsSheet>>['sheet'];
-
-  // The TOTAL row no longer closes the sheet — a coverage note does — so it is
-  // found by its label rather than by position.
-  const totalRowOf = (sheet: Sheet) => {
-    for (let n = 1; n <= sheet.rowCount; n++) {
-      if (sheet.getRow(n).getCell(1).value === 'TOTAL') return sheet.getRow(n);
-    }
-    throw new Error('Product Totals sheet has no TOTAL row');
-  };
-
-  const lastLine = (sheet: Sheet): string => String(sheet.getRow(sheet.rowCount).getCell(1).value);
 
   it('adds the product rollup as a second sheet, keeping the order sheet first', async () => {
     const { workbook } = await roundTrip([twoProducts()]);
@@ -321,6 +364,12 @@ describe('buildWeeklyWorkbook — Batch 6 Group Buy format', () => {
     expect(GROUP_BUY_PRODUCT_TOTALS_HEADERS.map((_, i) => sheet.getRow(3).getCell(i + 1).value))
       .toEqual([...GROUP_BUY_PRODUCT_TOTALS_HEADERS]);
     expect(sheet.getCell('G3').value).toBeNull();
+  });
+
+  it('drops the week number from the caption when the range is not a single week', async () => {
+    const { sheet } = await rangeRoundTrip([twoProducts()], '2026-08-30', '2026-09-05', 'groupbuy');
+
+    expect(sheet.getCell('A1').value).toBe('# BBG Product Totals - Aug 30, 2026 – Sep 5, 2026');
   });
 
   it('matches the Batch 6 column widths and hidden helper columns', async () => {
@@ -525,8 +574,16 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
     expect(report.buyerSummary.totals).toEqual({ qty: 20, amountPhp: 11000 });
   });
 
+  it('closes with the period the buyers were totalled over', async () => {
+    const { sheet } = await summarySheet([order({})]);
+
+    expect(lastLine(sheet)).toContain('Mon May 25 – Sun May 31');
+  });
+
   it('still emits a headed sheet with a zero Grand Total for an empty range', async () => {
     const { sheet } = await summarySheet([]);
-    expect(rowsOf(sheet)).toEqual([[...SUMMARY_HEADERS], ['Grand Total', 0, 0]]);
+
+    expect(rowsOf(sheet).slice(0, 2)).toEqual([[...SUMMARY_HEADERS], ['Grand Total', 0, 0]]);
+    expect(lastLine(sheet)).toContain('Mon May 25 – Sun May 31');
   });
 });
