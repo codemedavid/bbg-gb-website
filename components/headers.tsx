@@ -57,6 +57,9 @@ export function AppHeader({ greeting }: { greeting?: string }) {
 export function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <header className="sticky top-0 z-10 flex items-center gap-1.5 border-b-2 border-brand-green bg-white px-3 py-3.5 xs:gap-3 xs:px-4 md:px-6">
+      {/* Below 400px the title steps down to 15px and truncates rather than
+          wrapping: with the chat marks in the row a long board title would
+          otherwise take a second line and make a sticky header twice as tall. */}
       <div className="min-w-0">
         <div className="truncate font-display text-[15px] font-bold text-ink xs:text-[18px]">{title}</div>
         {sub && <div className="truncate text-[12px] text-ink-muted">{sub}</div>}

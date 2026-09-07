@@ -1,4 +1,4 @@
-# WhatsApp and Viber beside the wordmark on the home header
+# WhatsApp and Viber on every storefront header
 
 **Branch:** `main`
 **Date:** 2026-09-07
@@ -96,14 +96,72 @@ against a 320 viewport with the wordmark compressed to 74px.
 | 7 | WhatsApp opens in its own tab without handing over the referrer | `components/headers.test.tsx:opens WhatsApp in its own tab without handing it the referrer` | component | PASS |
 | 8 | Signing in does not take the chat links away | `components/headers.test.tsx:stays put once the customer is signed in` | component | PASS |
 
+## Round 2 — every other header
+
+**Ask:** "ilagay din po sa lahat ng ibang header."
+
+`SectionHeader` (Kahati, Group Buy, MOQ, Search, Pasalo, Account, My Orders,
+Final checkout, Recon Calculator) and `BackHeader` (cart, checkout, product,
+order details, order calculator) now carry the same pair, in the same place —
+straight after the title, before the controls.
+
+- RED: `npx vitest run components/headers.test.tsx` → 4 failed / 12 passed,
+  `Unable to find an accessible element with the role "link" and name /whatsapp/i`.
+- GREEN: same command → 16 passed.
+
+### What the row had to give up
+
+The board header was already full: title + sub on the left, then a "🛒 Cart (0)"
+pill, the Orders pill and the avatar. Adding 66px of chat marks took it out of
+the title — measured at 360px signed in, "🤝 Kahati Board" needed 123px and had
+102px, so it clipped to "🤝 Kahati Boa…".
+
+So below 400px every control in the row tightens: the cart pill drops the word
+and keeps the count (`components/CartShortcut.tsx`, on the same breakpoint and
+for the same reason the Orders shortcut already drops "Orders"), both pills lose
+2px of horizontal padding, the avatar goes 36px → 32px, the header gaps go 8px →
+6px, and the board title steps 16px → 15px. Titles are `truncate`d rather than
+allowed to wrap, so a long one shortens instead of doubling the height of a
+sticky header.
+
+- RED for the cart pill: `npx vitest run components/CartShortcut.test.tsx` →
+  `expected '' to contain 'hidden'`.
+- GREEN: `npx vitest run components/{headers,CartShortcut,OrdersShortcut,BottomNav}.test.tsx`
+  → 45 passed.
+
+### Board titles after the tightening pass
+
+Full text shown (not clipped), measured in headless Chrome — "in" injects the
+signed-in controls (Orders pill + avatar) in place of Log in:
+
+| Page | 320 out / in | 360 out / in | 375 out / in | 390 out / in |
+|------|--------------|--------------|--------------|--------------|
+| 🤝 Kahati Board | ✗ / ✗ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ |
+| 🔎 Search | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ |
+| 🧮 Recon Calculator | ✗ / ✗ | ✓ / ✗ | ✓ / ✗ | ✓ / ✓ |
+| Order Calculator (back header) | ✗ / ✗ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ |
+| Cart · 0 (back header) | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ |
+
+At 320px the long titles ellipsis — the row cannot seat a full board title, two
+chat marks, a cart, an Orders pill and an avatar in 320px, and the marks were
+judged the more useful of the two. "🧮 Recon Calculator" is the one title long
+enough to still clip at 360-375 when signed in.
+
+The /kahati page has a 6px horizontal overflow at 320px (`document.scrollWidth`
+326). It is the bottom nav, not the header — it measures the same with the chat
+marks removed from the DOM — and it is untouched by this work.
+
 ## Coverage and known gaps
 
-- Whole suite: `npx vitest run` — see the run recorded in the commit for this
-  change.
-- The links are on the home header (`AppHeader`) only, which is what was asked
-  for. The board headers (`SectionHeader` on Kahati, Group Buy, MOQ, Search,
-  Account) and `BackHeader` are unchanged; adding them there is a one-line
-  change to each if BBG wants the same reach from every tab.
+- Whole suite after the second round: `npx vitest run` → **276 files, 3035
+  tests, all passed**. (The first round's run reported one failure,
+  `app/api/pasalo/e2e-refund.test.ts` timing out at 30s under parallel load; it
+  passes 31/31 on its own and did not recur here.)
+- Every storefront header carries the links. The admin panel and the login /
+  register shell (`components/AuthShell.tsx`) do not: admin is BBG's own staff,
+  and the auth screens are a different shell rather than a header. The login
+  screen is arguably the strongest remaining case — a customer locked out of
+  their account currently has to reach BBG some other way to get a reset link.
 - Deep links are not exercised end to end: a headless browser has neither
   WhatsApp nor Viber installed, so the tests assert the URLs, and the URLs
   themselves were checked against each app's documented format.
@@ -114,3 +172,5 @@ against a 320 viewport with the wordmark compressed to 74px.
 
 - RED `665ec97` — `test: require the home header to offer WhatsApp and Viber`
 - GREEN `50b642b` — `feat: put BBG's WhatsApp and Viber beside the wordmark on the home header`
+- RED `00273c3` — `test: require the board and back headers to offer WhatsApp and Viber`
+- GREEN `0d30d16` — `feat: carry the WhatsApp and Viber marks on every storefront header`
