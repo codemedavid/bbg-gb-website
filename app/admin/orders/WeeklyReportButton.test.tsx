@@ -10,9 +10,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { WeeklyReport } from '@/lib/report/build';
-import { mostRecentFullWeekMonday } from '@/lib/report/week';
+import { addDays, mostRecentFullWeekMonday } from '@/lib/report/week';
 
 const SELECTED_MONDAY = mostRecentFullWeekMonday(new Date());
+// This button carries its own From/To pickers, so the range end has to travel
+// with the download the same way it does on the Reports page — otherwise every
+// workbook is filed under "BBG-Week-<from>" whatever range produced it.
+const SELECTED_END = addDays(SELECTED_MONDAY, 6);
 
 const half = (invoice: string, buyType: 'solo' | 'group_buy' | 'kahati'): WeeklyReport => ({
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 1,
@@ -82,7 +86,7 @@ describe('WeeklyReportButton', () => {
 
     await user.click(screen.getByRole('button', { name: /on-hand/i }));
 
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(onhand, SELECTED_MONDAY, 'onhand');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(onhand, SELECTED_MONDAY, 'onhand', SELECTED_END);
   });
 
   it('downloads the group-buy half under its own segment', async () => {
@@ -91,7 +95,7 @@ describe('WeeklyReportButton', () => {
 
     await user.click(screen.getByRole('button', { name: /group buy/i }));
 
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(groupbuy, SELECTED_MONDAY, 'groupbuy');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(groupbuy, SELECTED_MONDAY, 'groupbuy', SELECTED_END);
   });
 
   it('downloads Kahati under its own segment', async () => {
@@ -100,7 +104,7 @@ describe('WeeklyReportButton', () => {
 
     await user.click(screen.getByRole('button', { name: /kahati/i }));
 
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(kahati, SELECTED_MONDAY, 'kahati');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(kahati, SELECTED_MONDAY, 'kahati', SELECTED_END);
   });
 
   it('says which half was empty instead of downloading a blank workbook', async () => {
