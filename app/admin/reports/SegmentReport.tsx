@@ -30,10 +30,12 @@ export function SegmentReport({ segment, report, isBusy, onDownload, onPrintPack
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft pb-3">
         <div>
           <h2 id={headingId} className="m-0 font-display text-[20px] font-bold">{label}</h2>
+          {/* The dates lead: the counts underneath are for one range, and a
+              board that is always "now" is what they get compared against. */}
           <p className="mt-0.5 text-[13px] text-ink-muted">
             {isEmpty
-              ? 'No orders this week.'
-              : `${report.orderCount} order${report.orderCount === 1 ? '' : 's'} · ${report.productTotals.rows.length} product${report.productTotals.rows.length === 1 ? '' : 's'}`}
+              ? `No orders in ${report.rangeLabel}.`
+              : `${report.rangeLabel} · ${report.orderCount} order${report.orderCount === 1 ? '' : 's'} · ${report.productTotals.rows.length} product${report.productTotals.rows.length === 1 ? '' : 's'}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

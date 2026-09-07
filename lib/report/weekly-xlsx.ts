@@ -13,7 +13,7 @@
 import type { Workbook, Worksheet } from 'exceljs';
 import { REPORT_COLORS } from './constants';
 import { SEGMENT_SHORT_LABEL, type ReportSegment } from './segment';
-import { weekFilename } from './week';
+import { addDays, mondayOf, weekFilename } from './week';
 import type { WeeklyReport } from './build';
 
 export const XLSX_HEADERS = [
@@ -70,13 +70,26 @@ export async function buildWeeklyWorkbook(
   report: WeeklyReport,
   mondayYmd: string,
   segment?: ReportSegment,
+  toYmd?: string,
 ): Promise<Workbook> {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'BBG Peptides';
 
+  // "Week 35" is only true when the range IS that Mon-Sun week. The Reports
+  // page sends any From/To, and a batch runs on its own cycle rather than on
+  // the calendar — so a workbook covering Aug 30 - Sep 5 must not file itself
+  // under the week its first day happens to fall in.
+  const coversOneWeek = !toYmd
+    || (mondayYmd === mondayOf(mondayYmd) && toYmd === addDays(mondayYmd, 6));
+  // Tab names are capped at 31 characters, so the range form drops the years.
+  const periodTab = coversOneWeek ? `Week ${report.weekNo}` : `${mondayYmd.slice(5)}–${toYmd!.slice(5)}`;
+  const periodCaption = coversOneWeek
+    ? `Week ${report.weekNo} · ${report.rangeLabel}`
+    : report.rangeLabel;
+
   if (segment === 'groupbuy') {
-    addGroupBuyProductTotalsSheet(workbook, report);
+    addGroupBuyProductTotalsSheet(workbook, report, periodCaption);
     // The supplier sheet says what to ORDER; the summary says who it is for and
     // what each of them owes. The team's own Batch 7 workbook carries both tabs,
     // and packing day needs the second one.
@@ -84,9 +97,7 @@ export async function buildWeeklyWorkbook(
     return workbook;
   }
 
-  const title = segment
-    ? `${SEGMENT_SHORT_LABEL[segment]} · Week ${report.weekNo}`
-    : `Week ${report.weekNo}`;
+  const title = segment ? `${SEGMENT_SHORT_LABEL[segment]} · ${periodTab}` : periodTab;
   const sheet = workbook.addWorksheet(title, {
     views: [{ state: 'frozen', ySplit: 1 }],
   });
@@ -146,6 +157,10 @@ export async function buildWeeklyWorkbook(
   totalRow.getCell(packingFeeCol).numFmt = MONEY_FORMAT;
   totalRow.getCell(phpCol).numFmt = MONEY_FORMAT;
 
+  // Cancelled orders are LISTED on this sheet — only the totals leave them out —
+  // so the note says that rather than repeating the Product Totals wording.
+  addCoverageNote(sheet, report, 'Cancelled orders are listed but left out of the totals.');
+
   // Filters over the data range let the team slice by status without setup.
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
@@ -159,7 +174,7 @@ export async function buildWeeklyWorkbook(
 }
 
 /** Build the one-tab supplier workbook matching BBG-ProductTotals Batch 6. */
-function addGroupBuyProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
+function addGroupBuyProductTotalsSheet(workbook: Workbook, report: WeeklyReport, periodCaption: string): void {
   const sheet = workbook.addWorksheet(GROUP_BUY_PRODUCT_TOTALS_SHEET, {
     views: [{ state: 'normal', activeCell: 'B2' }],
     pageSetup: {
@@ -177,7 +192,7 @@ function addGroupBuyProductTotalsSheet(workbook: Workbook, report: WeeklyReport)
     column.hidden = i >= 5;
   });
 
-  sheet.addRow([`# BBG Product Totals - Week ${report.weekNo} · ${report.rangeLabel}`]);
+  sheet.addRow([`# BBG Product Totals - ${periodCaption}`]);
   sheet.addRow([`# Orders: ${report.orderCount}  Units: ${report.productTotals.totals.qty}`]);
   sheet.addRow([...GROUP_BUY_PRODUCT_TOTALS_HEADERS, null]);
 
@@ -264,6 +279,8 @@ function addBuyerSummarySheet(workbook: Workbook, report: WeeklyReport): void {
 
   sheet.getColumn(SUMMARY_HEADERS.indexOf('Sum of Quantity') + 1).numFmt = QTY_FORMAT;
   sheet.getColumn(SUMMARY_HEADERS.indexOf('Sum of Amount') + 1).numFmt = MONEY_FORMAT;
+
+  addCoverageNote(sheet, report, 'Cancelled orders are excluded.');
 }
 
 function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
@@ -301,7 +318,8 @@ function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
   totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.totalFill) } };
   totalRow.getCell(usdCol).numFmt = MONEY_FORMAT;
 
-  addCoverageNote(sheet, report);
+  addCoverageNote(sheet, report, 'Cancelled orders are excluded. '
+    + "Kits = Total Qty ÷ the product's kit size (10 vials for most).");
 
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
@@ -319,12 +337,9 @@ function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
 // Written BELOW the TOTAL row rather than above the header: row 1 is a frozen,
 // filtered header the team already works, and pushing it down would break every
 // saved filter and formula pointed at this sheet.
-function addCoverageNote(sheet: Worksheet, report: WeeklyReport): void {
+function addCoverageNote(sheet: Worksheet, report: WeeklyReport, exclusion: string): void {
   const note = sheet.addRow([]);
-  note.getCell(1).value =
-    `Covers orders placed ${report.rangeLabel} (Manila time). `
-    + 'Cancelled orders are excluded. '
-    + "Kits = Total Qty ÷ the product's kit size (10 vials for most).";
+  note.getCell(1).value = `Covers orders placed ${report.rangeLabel} (Manila time). ${exclusion}`;
   note.font = { italic: true, size: 10, color: { argb: argb(REPORT_COLORS.headerFill) } };
 }
 
@@ -341,7 +356,7 @@ export async function downloadWeeklyReportXlsx(
   segment?: ReportSegment,
   toYmd?: string,
 ): Promise<void> {
-  const workbook = await buildWeeklyWorkbook(report, mondayYmd, segment);
+  const workbook = await buildWeeklyWorkbook(report, mondayYmd, segment, toYmd);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

@@ -512,6 +512,16 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
     return rows;
   };
 
+  // The pivot itself: everything above the coverage note that closes the sheet.
+  const pivotRowsOf = (sheet: ExcelJS.Worksheet) => rowsOf(sheet).slice(0, -1);
+
+  const grandTotalRowOf = (sheet: ExcelJS.Worksheet) => {
+    for (let n = 1; n <= sheet.rowCount; n++) {
+      if (sheet.getRow(n).getCell(1).value === 'Grand Total') return sheet.getRow(n);
+    }
+    throw new Error('SUMMARY sheet has no Grand Total row');
+  };
+
   it('names the pivot columns the way the circulated sheet does', async () => {
     const { sheet } = await summarySheet([order({})]);
     expect((sheet.getRow(1).values as unknown[]).slice(1)).toEqual([...SUMMARY_HEADERS]);
@@ -527,7 +537,7 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
       ],
     })]);
 
-    expect(rowsOf(sheet)).toEqual([
+    expect(pivotRowsOf(sheet)).toEqual([
       [...SUMMARY_HEADERS],
       ['Abba Gaspar', 2, 5950],
       ['RJ HB', 1, 2500],
@@ -545,7 +555,7 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
       items: [{ nameSnapshot: 'Tirzepatide', code: 'TR30', qty: 1, unitPriceUsd: null, unitPricePhp: '4850' }],
     })]);
 
-    expect(rowsOf(sheet)).toEqual([
+    expect(pivotRowsOf(sheet)).toEqual([
       [...SUMMARY_HEADERS],
       ['Venice Gaa', 1, 5000],
       ['TR30', 1, 4850],
@@ -568,9 +578,9 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
       order({ shipName: 'Jam', packingFeePhp: '0', items: [{ nameSnapshot: 'RT20', code: 'RT20', qty: 10, unitPriceUsd: null, unitPricePhp: '600' }] }),
     ]);
 
-    const last = sheet.getRow(sheet.rowCount);
-    expect((last.values as unknown[]).slice(1)).toEqual(['Grand Total', 20, 11000]);
-    expect(last.font?.bold).toBe(true);
+    const grandTotal = grandTotalRowOf(sheet);
+    expect((grandTotal.values as unknown[]).slice(1)).toEqual(['Grand Total', 20, 11000]);
+    expect(grandTotal.font?.bold).toBe(true);
     expect(report.buyerSummary.totals).toEqual({ qty: 20, amountPhp: 11000 });
   });
 
@@ -583,7 +593,7 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
   it('still emits a headed sheet with a zero Grand Total for an empty range', async () => {
     const { sheet } = await summarySheet([]);
 
-    expect(rowsOf(sheet).slice(0, 2)).toEqual([[...SUMMARY_HEADERS], ['Grand Total', 0, 0]]);
+    expect(pivotRowsOf(sheet)).toEqual([[...SUMMARY_HEADERS], ['Grand Total', 0, 0]]);
     expect(lastLine(sheet)).toContain('Mon May 25 – Sun May 31');
   });
 });
