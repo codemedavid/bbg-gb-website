@@ -202,6 +202,19 @@ describe('buildWeeklyWorkbook — Product Totals sheet', () => {
     return { sheet, report };
   };
 
+  type Sheet = Awaited<ReturnType<typeof totalsSheet>>['sheet'];
+
+  // The TOTAL row no longer closes the sheet — a coverage note does — so it is
+  // found by its label rather than by position.
+  const totalRowOf = (sheet: Sheet) => {
+    for (let n = 1; n <= sheet.rowCount; n++) {
+      if (sheet.getRow(n).getCell(1).value === 'TOTAL') return sheet.getRow(n);
+    }
+    throw new Error('Product Totals sheet has no TOTAL row');
+  };
+
+  const lastLine = (sheet: Sheet): string => String(sheet.getRow(sheet.rowCount).getCell(1).value);
+
   it('adds the product rollup as a second sheet, keeping the order sheet first', async () => {
     const { workbook } = await roundTrip([twoProducts()]);
 
@@ -247,13 +260,35 @@ describe('buildWeeklyWorkbook — Product Totals sheet', () => {
     expect(usd.numFmt).toContain('0.00');
   });
 
-  it('closes with a TOTAL row summing USD and quantity', async () => {
+  it('closes with a TOTAL row summing USD, quantity and kits', async () => {
     const { sheet, report } = await totalsSheet([twoProducts()]);
-    const totalRow = sheet.getRow(sheet.rowCount);
+    const totalRow = totalRowOf(sheet);
 
     expect(totalRow.getCell(1).value).toBe('TOTAL');
     expect(totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total USD') + 1).value).toBe(report.productTotals.totals.usd);
     expect(totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total Qty') + 1).value).toBe(303);
+    // 270 vials at 10 to a kit, plus 33 pieces at 1 to a kit. The Kits column
+    // is what gets ordered from the supplier, and it had no total to check.
+    expect(totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Kits') + 1).value).toBe(60);
+  });
+
+  // The client read 3.1 kits off this sheet, went to the hatian board, counted
+  // every closed counter for that product and got 8.2 — because the board holds
+  // every counter ever opened and the workbook never said which days its own
+  // figures came from. The sheet has to state its own scope.
+  it('closes with a line stating the period the figures cover and what is excluded', async () => {
+    const { sheet } = await totalsSheet([twoProducts()]);
+    const note = lastLine(sheet);
+
+    expect(note).toContain('Mon May 25 – Sun May 31');
+    expect(note).toMatch(/cancelled/i);
+    expect(note).toMatch(/kit size/i);
+  });
+
+  it('states the period even when the range produced no rows', async () => {
+    const { sheet } = await totalsSheet([]);
+
+    expect(lastLine(sheet)).toContain('Mon May 25 – Sun May 31');
   });
 
   it('still produces the sheet when the week has no orders', async () => {

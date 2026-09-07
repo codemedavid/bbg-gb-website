@@ -5,12 +5,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
 import type { WeeklyReport } from '@/lib/report/build';
-import { mostRecentFullWeekMonday } from '@/lib/report/week';
+import { addDays, mostRecentFullWeekMonday } from '@/lib/report/week';
 import { useToast } from '@/lib/store/toast';
 
 // The page picks the week itself and defaults to the most recent full one, so
 // that — not the mocked response — is the Monday it exports under.
 const SELECTED_MONDAY = mostRecentFullWeekMonday(new Date());
+// …and the end date the page defaults to, six days later. The filename carries
+// both: "BBG-Week-<from>" on a workbook whose range was not a week is what let a
+// one-week batch sheet be reconciled against months of counters.
+const SELECTED_END = addDays(SELECTED_MONDAY, 6);
 
 const half = (invoice: string, code: string, name: string, buyType: 'solo' | 'group_buy' | 'kahati'): WeeklyReport => ({
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 1,
@@ -110,18 +114,18 @@ describe('AdminReportsPage', () => {
     expect(within(onHandSection).queryByText('BBG-2600')).not.toBeInTheDocument();
   });
 
-  it('downloads each half as its own workbook', async () => {
+  it('downloads each half as its own workbook, stamped with the range it covers', async () => {
     const user = userEvent.setup();
     render(<Page />, { wrapper });
 
     await user.click(await screen.findByRole('button', { name: /on-hand excel/i }));
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(onhand, SELECTED_MONDAY, 'onhand');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(onhand, SELECTED_MONDAY, 'onhand', SELECTED_END);
 
     await user.click(screen.getByRole('button', { name: /group buy excel/i }));
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(groupbuy, SELECTED_MONDAY, 'groupbuy');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(groupbuy, SELECTED_MONDAY, 'groupbuy', SELECTED_END);
 
     await user.click(screen.getByRole('button', { name: /kahati excel/i }));
-    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(kahati, SELECTED_MONDAY, 'kahati');
+    expect(downloadWeeklyReportXlsx).toHaveBeenCalledWith(kahati, SELECTED_MONDAY, 'kahati', SELECTED_END);
   });
 
   it('disables only the button for a half with no orders', async () => {

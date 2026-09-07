@@ -142,7 +142,7 @@ describe('buildProductTotals', () => {
     expect(r.rows[0].qty).toBe(3);
   });
 
-  it('totals USD and qty across every row', () => {
+  it('totals USD, qty and kits across every row', () => {
     const r = buildProductTotals([
       order({
         items: [
@@ -152,13 +152,40 @@ describe('buildProductTotals', () => {
       }),
     ]);
 
-    expect(r.totals).toEqual({ usd: 35, qty: 15 });
+    expect(r.totals).toEqual({ usd: 35, qty: 15, kits: 1.5 });
+  });
+
+  // Kits is the column the batch order is placed in, so the sheet's TOTAL row
+  // has to be able to state it — and it is NOT the vial total divided by one
+  // kit size: a per-piece product (kit size 1) is one kit per unit. Summing the
+  // rows is the only figure that cannot disagree with the column above it.
+  it('sums kits from the rows rather than dividing the vial total by a single kit size', () => {
+    const r = buildProductTotals([
+      order({
+        items: [
+          item({ productId: 'p-vial', code: 'TR30', qty: 31, kitSize: 10 }),
+          item({ productId: 'p-piece', code: 'LB50', qty: 33, kitSize: 1 }),
+        ],
+      }),
+    ]);
+
+    expect(r.totals.kits).toBe(36.1);
+    // What a single kit size would have claimed, for contrast.
+    expect(r.totals.qty / 10).toBe(6.4);
+  });
+
+  it('rounds the kits total instead of carrying float noise into the sheet', () => {
+    const r = buildProductTotals([
+      order({ items: [item({ productId: 'p-third', qty: 1, kitSize: 3 })] }),
+    ]);
+
+    expect(r.totals.kits).toBe(0.33);
   });
 
   it('returns an empty rollup when the week has no orders', () => {
     const r = buildProductTotals([]);
 
     expect(r.rows).toEqual([]);
-    expect(r.totals).toEqual({ usd: 0, qty: 0 });
+    expect(r.totals).toEqual({ usd: 0, qty: 0, kits: 0 });
   });
 });
