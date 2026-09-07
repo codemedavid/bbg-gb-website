@@ -74,11 +74,69 @@ nor the workbook, and the flake is the known single-writer PGlite contention.
 | 6 | The period is stated even when the range produced no rows | `lib/report/weekly-xlsx.test.ts:states the period even when the range produced no rows` | integration | PASS |
 | 7 | Each segment downloads with the selected end date, so the filename carries the real range | `app/admin/reports/page.test.tsx:downloads each half as its own workbook, stamped with the range it covers` | component | PASS |
 
+## Follow-up 1 — dates on every report surface
+
+Client: "so i think its best to have a certain details of dates also for the
+reports." RED `9a8150a` (7 failing), GREEN `3786ec7` (497 passing, tsc clean).
+
+| # | What is guaranteed | Test | Result |
+|---|---|---|---|
+| 8 | The order sheet closes with its own coverage line, worded for a sheet that LISTS cancelled orders and only leaves them out of the totals | `weekly-xlsx.test.ts:closes the order sheet with the period it covers` | PASS |
+| 9 | The SUMMARY pivot closes with the period the buyers were totalled over | `weekly-xlsx.test.ts:closes with the period the buyers were totalled over` | PASS |
+| 10 | A tab claims "Week N" only when the range is exactly that Mon–Sun week; otherwise it names its dates | `weekly-xlsx.test.ts:names the sheet for its dates when the range is not one Mon–Sun week` | PASS |
+| 11 | The Batch 6 caption makes the same distinction | `weekly-xlsx.test.ts:drops the week number from the caption when the range is not a single week` | PASS |
+| 12 | Each on-screen section leads with its range, and an empty half says "No orders in <range>." | `page.test.tsx:states the covered dates in every section header` | PASS |
+
+## Follow-up 2 — the batch, not a typed range
+
+Prompted by a second client question: "is this report the correct report of qty
+for this batch?" It was not, by 8 vials.
+
+The sheet had been pulled with an end date of Sep 6 or later, sweeping in
+**KH-2829** (Sep 6, 00:51 Manila) — the first order of the NEXT cycle, carrying
+3 vials of Retatrutide (Saltform) 30mg and 5 of BAC Water 3ml. That is the
+fingerprint: the sheet reads 11 for Retatrutide (Saltform) 30mg where the batch
+holds 8.
+
+| Figure | Value |
+|---|---|
+| Cycle `2026-08-29` (the batch) | 87 orders, **542** live vials, Aug 30 00:13 → Sep 4 22:33 |
+| The downloaded sheet | **550** vials |
+| Correct range for it | **Aug 30 → Sep 5** |
+
+No refunded lines exist in either cycle, so nothing else moves the totals.
+
+RED `26d779a`, GREEN `389fb96`.
+
+| # | What is guaranteed | Test | Result |
+|---|---|---|---|
+| 13 | Orders group into batches by cycle key, newest first | `lib/report/cycles.test.ts:groups orders into batches, newest batch first` | PASS |
+| 14 | A batch is dated by its own orders in Manila — 16:30Z on Aug 29 is Aug 30 there, and dating off UTC would open the range a day early into the previous batch | `cycles.test.ts:dates a batch by its own orders, in Manila` | PASS |
+| 15 | Every order counts (cancelled included, matching the report header) but only live vials total | `cycles.test.ts:counts every order but totals only the vials still being ordered` | PASS |
+| 16 | The endpoint returns each batch with its span, newest first | `app/api/admin/report/cycles/route.test.ts:lists each batch with the dates its own orders span, newest first` | PASS |
+| 17 | Vials count group-buy lines only, not on-hand lines on the same order | `route.test.ts:counts group-buy vials only, not the on-hand items on the same order` | PASS |
+| 18 | Picking a batch fills From/To; typing a date drops back to Custom range | `page.test.tsx:fills the range from a batch instead of making the admin type it` | PASS |
+
+Bug caught during implementation: the vial query chained two `.where()` calls,
+and drizzle's second call REPLACES the first rather than adding to it — every
+on-hand line on a kahati order counted as vials (103 where 4 was right). Test 17
+was written against that and now pins the `and()`.
+
+Whole suite after both follow-ups: `npx vitest run` → **276 files, 3030 tests,
+all passing**; `tsc --noEmit` exit 0.
+
 ## Known gaps
 
 - The Hatian board still lists every counter ever opened with no batch or date
   on the card. Counting closed counters there remains an all-time figure; the
   fix chosen here makes the sheet self-describing instead.
+- The batch picker fills a From/To, so it inherits that shape's one blind spot:
+  a cycle boundary falls at 22:00, and an order placed between 22:00 and
+  midnight shares a calendar date with the batch before it. The preset is dated
+  from the batch's own orders, which avoids it in every case seen so far, and
+  the label carries the batch's order count so a mismatch against the section
+  header is visible. Filtering the report by `cycle_key` outright would remove
+  the blind spot entirely.
 - The Group Buy supplier workbook (`BBG-ProductTotals`) already carries a
   `# BBG Product Totals - Week N · <range>` caption and was left as is.
 - A counter that fills across a range boundary still splits across two sheets,
