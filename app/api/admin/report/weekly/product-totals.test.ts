@@ -131,7 +131,7 @@ describe('weekly report product totals', () => {
     const report = await fetchReport();
 
     expect(report.productTotals.rows).toEqual([]);
-    expect(report.productTotals.totals).toEqual({ usd: 0, qty: 0 });
+    expect(report.productTotals.totals).toEqual({ usd: 0, qty: 0, kits: 0 });
     expect(buildProductTotals([])).toEqual(report.productTotals);
   });
 
