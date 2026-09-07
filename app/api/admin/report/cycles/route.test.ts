@@ -4,6 +4,7 @@
 // opens at 22:00 Manila, so no calendar rule reproduces it, and typing the
 // range by hand is what put another batch's order into a supplier sheet.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 
 const session = { current: null as { sub: string; role: 'admin'; email: string } | null };
 
@@ -38,7 +39,8 @@ async function seedKahatiOrder(opts: {
 }
 
 const fetchCycles = async () => {
-  const res = await GET(new Request('http://localhost/api/admin/report/cycles'));
+  // The route reads no query — the batches are whatever the orders say.
+  const res = await GET();
   const body = await res.json();
   expect(body.success).toBe(true);
   return body.data.cycles as { cycleKey: string; from: string; to: string; orderCount: number; vials: number }[];
@@ -73,6 +75,20 @@ describe('GET /api/admin/report/cycles', () => {
     expect(await fetchCycles()).toEqual([
       { cycleKey: AUG, from: '2026-08-30', to: '2026-08-30', orderCount: 2, vials: 5 },
     ]);
+  });
+
+  it('counts group-buy vials only, not the on-hand items on the same order', async () => {
+    // A kahati order can carry an on-hand line too. Counting it would inflate
+    // the batch's vial figure, which is the number the picker is checked by.
+    await seedKahatiOrder({ orderNo: 'KH-6', cycleKey: AUG, createdAt: '2026-08-30T02:00:00Z', qty: 4 });
+    const db = await getDb();
+    const [order] = await db.select().from(orders).where(eq(orders.orderNo, 'KH-6'));
+    await db.insert(orderItems).values({
+      orderId: order.id, kind: 'product', nameSnapshot: 'Lemon Bottle',
+      unitPricePhp: '1000', qty: 99, lineTotalPhp: '99000',
+    });
+
+    expect((await fetchCycles())[0].vials).toBe(4);
   });
 
   it('leaves out orders placed before batches were stamped', async () => {

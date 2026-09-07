@@ -132,10 +132,9 @@ describe('AdminReportsPage', () => {
     const user = userEvent.setup();
     render(<Page />, { wrapper });
 
-    await user.selectOptions(
-      await screen.findByLabelText(/report batch/i),
-      '2026-08-29T14:00:00.000Z',
-    );
+    // The picker renders before its batches land, so wait for the option itself.
+    await screen.findByRole('option', { name: /^This batch/ });
+    await user.selectOptions(screen.getByLabelText(/report batch/i), '2026-08-29T14:00:00.000Z');
 
     expect(screen.getByLabelText(/report start date/i)).toHaveValue('2026-08-30');
     expect(screen.getByLabelText(/report end date/i)).toHaveValue('2026-09-04');

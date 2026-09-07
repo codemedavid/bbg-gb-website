@@ -8,6 +8,7 @@ import { addDays, mostRecentFullWeekMonday } from '@/lib/report/week';
 import { downloadWeeklyReportXlsx } from '@/lib/report/weekly-xlsx';
 import { buildPackingList, openPackingListPrint } from '@/lib/report/packing-list';
 import { REPORT_SEGMENTS, SEGMENT_LABEL, SEGMENT_SHORT_LABEL, type ReportSegment } from '@/lib/report/segment';
+import { reportCycleLabel, type ReportCycle } from '@/lib/report/cycles';
 import type { SegmentedWeeklyReport, WeeklyReport } from '@/lib/report/build';
 import { SegmentReport } from './SegmentReport';
 import { RefundExport } from './RefundExport';
@@ -21,7 +22,31 @@ export default function AdminReportsPage() {
   const [from, setFrom] = useState(initial);
   const [to, setTo] = useState(() => addDays(initial, 6));
   const [busySegment, setBusySegment] = useState<ReportSegment | null>(null);
+  // Which batch preset is showing. Cleared the moment either date is typed by
+  // hand, so the picker can never claim a range the admin has since edited.
+  const [cycleKey, setCycleKey] = useState('');
   const showToast = useToast((s) => s.show);
+
+  // The batches themselves, dated by their own orders. A cycle opens at 22:00
+  // Manila, so no From/To a person types reproduces one — picking it here is
+  // what keeps the next batch's orders out of this batch's supplier sheet.
+  const { data: cycleData } = useQuery({
+    queryKey: ['admin', 'report', 'cycles'],
+    queryFn: () => apiGet<{ cycles: ReportCycle[] }>('/admin/report/cycles'),
+  });
+  const cycles = cycleData?.cycles ?? [];
+
+  const pickCycle = (key: string) => {
+    setCycleKey(key);
+    const cycle = cycles.find((c) => c.cycleKey === key);
+    if (!cycle) return;
+    setFrom(cycle.from);
+    setTo(cycle.to);
+  };
+
+  // A hand-typed date is a custom range by definition, whatever the picker said.
+  const typeFrom = (value: string) => { setCycleKey(''); setFrom(value); };
+  const typeTo = (value: string) => { setCycleKey(''); setTo(value); };
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'report', 'range', from, to],
@@ -68,14 +93,23 @@ export default function AdminReportsPage() {
           <h1 className="m-0 font-display text-[24px] font-bold">Reports</h1>
           <p className="mt-1 text-[13px] text-ink-muted">On-hand, Group Buy, and Kahati reported separately.</p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-[11px] font-semibold text-ink-muted">Batch
+            <select aria-label="Report batch" className={`${field} mt-1 w-auto`} value={cycleKey}
+              onChange={(e) => pickCycle(e.target.value)}>
+              <option value="">Custom range</option>
+              {cycles.map((cycle, index) => (
+                <option key={cycle.cycleKey} value={cycle.cycleKey}>{reportCycleLabel(cycle, index)}</option>
+              ))}
+            </select>
+          </label>
           <label className="text-[11px] font-semibold text-ink-muted">From
             <input aria-label="Report start date" type="date" className={`${field} mt-1 w-auto`} value={from}
-              onChange={(e) => setFrom(e.target.value)} />
+              onChange={(e) => typeFrom(e.target.value)} />
           </label>
           <label className="text-[11px] font-semibold text-ink-muted">To
             <input aria-label="Report end date" type="date" className={`${field} mt-1 w-auto`} min={from} value={to}
-              onChange={(e) => setTo(e.target.value)} />
+              onChange={(e) => typeTo(e.target.value)} />
           </label>
         </div>
       </div>
