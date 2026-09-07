@@ -39,7 +39,9 @@ export function WeeklyReportButton() {
         showToast(`No ${SEGMENT_LABEL[segment]} orders in that week.`);
         return;
       }
-      await downloadWeeklyReportXlsx(report, from, segment);
+      // With the end date, so the file is named for the range it holds rather
+      // than for the week the start date happens to fall in.
+      await downloadWeeklyReportXlsx(report, from, segment, to);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not generate the report.');
     } finally {
