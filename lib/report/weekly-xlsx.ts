@@ -10,7 +10,7 @@
 // top-level `import ExcelJS from 'exceljs'` here would be pulled into the admin
 // page chunk on load. The type-only import erases at compile time and costs
 // nothing. weekly-xlsx-download.test.ts pins both halves of that.
-import type { Workbook } from 'exceljs';
+import type { Workbook, Worksheet } from 'exceljs';
 import { REPORT_COLORS } from './constants';
 import { SEGMENT_SHORT_LABEL, type ReportSegment } from './segment';
 import { weekFilename } from './week';
@@ -294,14 +294,38 @@ function addProductTotalsSheet(workbook: Workbook, report: WeeklyReport): void {
     `${report.productTotals.rows.length} products · ${report.orderCount} orders`;
   totalRow.getCell(usdCol).value = report.productTotals.totals.usd;
   totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Total Qty') + 1).value = report.productTotals.totals.qty;
+  // Kits is the column the supplier order is placed in, so it gets a total for
+  // the same reason USD and quantity do: it is the figure that gets checked.
+  totalRow.getCell(PRODUCT_TOTALS_HEADERS.indexOf('Kits') + 1).value = report.productTotals.totals.kits;
   totalRow.font = { bold: true };
   totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(REPORT_COLORS.totalFill) } };
   totalRow.getCell(usdCol).numFmt = MONEY_FORMAT;
+
+  addCoverageNote(sheet, report);
 
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: PRODUCT_TOTALS_HEADERS.length },
   };
+}
+
+// What these figures cover, said on the sheet itself.
+//
+// The Kits column is the batch order, and it gets reconciled — against the
+// hatian board, which holds every counter ever opened, not just this range's.
+// A client read 3.1 kits here and counted 8.2 on the board; both were right,
+// and nothing in the workbook said the two were measuring different periods.
+//
+// Written BELOW the TOTAL row rather than above the header: row 1 is a frozen,
+// filtered header the team already works, and pushing it down would break every
+// saved filter and formula pointed at this sheet.
+function addCoverageNote(sheet: Worksheet, report: WeeklyReport): void {
+  const note = sheet.addRow([]);
+  note.getCell(1).value =
+    `Covers orders placed ${report.rangeLabel} (Manila time). `
+    + 'Cancelled orders are excluded. '
+    + "Kits = Total Qty ÷ the product's kit size (10 vials for most).";
+  note.font = { italic: true, size: 10, color: { argb: argb(REPORT_COLORS.headerFill) } };
 }
 
 // The segment suffix is not decoration: both halves of a week are downloaded

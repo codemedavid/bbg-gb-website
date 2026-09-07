@@ -9,7 +9,7 @@ const productTotals: ProductTotals = {
     { index: 2, name: 'Lemon Bottle', code: 'LB50', spec: '50ml', usd: 594, qty: 33, kits: 33 },
     { index: 3, name: 'Tirzepatide', code: 'TR15', spec: '15mg', usd: 476, qty: 7, kits: 0.7 },
   ],
-  totals: { usd: 1340, qty: 310 },
+  totals: { usd: 1340, qty: 310, kits: 60.7 },
 };
 
 describe('ProductTotalsReport', () => {
@@ -55,7 +55,7 @@ describe('ProductTotalsReport', () => {
   });
 
   it('shows an empty state when no products sold that week', () => {
-    render(<ProductTotalsReport productTotals={{ rows: [], totals: { usd: 0, qty: 0 } }} />);
+    render(<ProductTotalsReport productTotals={{ rows: [], totals: { usd: 0, qty: 0, kits: 0 } }} />);
 
     expect(screen.getByText(/no products sold in this period/i)).toBeInTheDocument();
   });

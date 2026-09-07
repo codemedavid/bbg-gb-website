@@ -50,7 +50,10 @@ export default function AdminReportsPage() {
     if (!report?.rows.length) { showToast(`No ${SEGMENT_LABEL[segment]} orders in that date range.`); return; }
     setBusySegment(segment);
     try {
-      await downloadWeeklyReportXlsx(report, from, segment);
+      // The end date goes with it: without it every workbook is named
+      // "BBG-Week-<from>" whatever range was picked, and a batch sheet that
+      // covers one week reads as one that covers any of them.
+      await downloadWeeklyReportXlsx(report, from, segment, to);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not generate the report.');
     } finally {

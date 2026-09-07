@@ -20,7 +20,7 @@ const report: WeeklyReport = {
   ],
   productTotals: {
     rows: [{ index: 1, name: 'Retatrutide', code: 'RT30', spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
-    totals: { usd: 100, qty: 5 },
+    totals: { usd: 100, qty: 5, kits: 0.5 },
   },
   buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 };

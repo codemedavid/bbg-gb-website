@@ -24,7 +24,12 @@ export type ProductTotalRow = {
 
 export type ProductTotals = {
   rows: ProductTotalRow[];
-  totals: { usd: number; qty: number };
+  /**
+   * `kits` is summed from the rows, never derived as qty / 10: a per-piece
+   * product has a kit size of 1, so the two figures disagree the moment the
+   * range holds anything that is not sold by the vial.
+   */
+  totals: { usd: number; qty: number; kits: number };
 };
 
 type Group = Omit<ProductTotalRow, 'index' | 'kits'> & { kitSize: number };
@@ -84,6 +89,9 @@ export function buildProductTotals(orders: ReportOrderInput[]): ProductTotals {
     totals: {
       usd: round2(rows.reduce((sum, r) => sum + r.usd, 0)),
       qty: rows.reduce((sum, r) => sum + r.qty, 0),
+      // Rounded because a kit size that does not divide the quantity leaves
+      // float noise (0.30000000000000004) that would print into the sheet.
+      kits: round2(rows.reduce((sum, r) => sum + r.kits, 0)),
     },
   };
 }

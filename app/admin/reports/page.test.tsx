@@ -27,7 +27,7 @@ const half = (invoice: string, code: string, name: string, buyType: 'solo' | 'gr
   }],
   productTotals: {
     rows: [{ index: 1, name, code, spec: '30mg', usd: 100, qty: 5, kits: 0.5 }],
-    totals: { usd: 100, qty: 5 },
+    totals: { usd: 100, qty: 5, kits: 0.5 },
   },
   buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 });
@@ -39,7 +39,7 @@ const kahati = half('BBG-2700', 'RT30', 'Retatrutide', 'kahati');
 const emptyHalf: WeeklyReport = {
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 0,
   counts: { paid: 0, pending: 0, cancelled: 0 }, totals: { usd: 0, php: 0, packingFee: 0 },
-  rows: [], productTotals: { rows: [], totals: { usd: 0, qty: 0 } },
+  rows: [], productTotals: { rows: [], totals: { usd: 0, qty: 0, kits: 0 } },
   buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
 };
 
