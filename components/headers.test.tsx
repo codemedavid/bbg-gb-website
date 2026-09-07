@@ -96,3 +96,56 @@ describe('Orders shortcut in the headers', () => {
     expect(screen.queryByRole('link', { name: 'My orders' })).not.toBeInTheDocument();
   });
 });
+
+// BBG's customers ask their questions on chat, not email — the whole kahati
+// runs on WhatsApp and Viber threads. The number was only ever handed out in
+// those threads, so a visitor who lands on the site cold has no way to start
+// one. It rides beside the wordmark because that is the first thing read on
+// the page, and it is there for signed-out visitors too: the people most
+// likely to need to ask something before they commit a vial.
+describe('Chat shortcuts in the home header', () => {
+  it('offers WhatsApp and Viber links to the BBG number', () => {
+    render(<AppHeader />);
+
+    expect(screen.getByRole('link', { name: /whatsapp/i })).toHaveAttribute(
+      'href',
+      'https://wa.me/639914462762',
+    );
+    expect(screen.getByRole('link', { name: /viber/i })).toHaveAttribute(
+      'href',
+      'viber://chat?number=%2B639914462762',
+    );
+  });
+
+  it('sits after the wordmark and before the cart controls', () => {
+    const { container } = render(<AppHeader greeting="Hi, BBG 👋" />);
+
+    const wordmark = screen.getByText(/Peptides/);
+    const whatsapp = screen.getByRole('link', { name: /whatsapp/i });
+    const viber = screen.getByRole('link', { name: /viber/i });
+    const cart = container.querySelector('a[href="/cart"]')!;
+
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(wordmark, whatsapp)).toBe(true);
+    expect(follows(whatsapp, viber)).toBe(true);
+    expect(follows(viber, cart)).toBe(true);
+  });
+
+  it('opens WhatsApp in its own tab without handing it the referrer', () => {
+    render(<AppHeader />);
+
+    const whatsapp = screen.getByRole('link', { name: /whatsapp/i });
+    expect(whatsapp).toHaveAttribute('target', '_blank');
+    expect(whatsapp).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
+  });
+
+  it('stays put once the customer is signed in', () => {
+    auth = { user: signedIn, loading: false };
+
+    render(<AppHeader greeting="Hi, Yna 👋" />);
+
+    expect(screen.getByRole('link', { name: /whatsapp/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /viber/i })).toBeInTheDocument();
+  });
+});
