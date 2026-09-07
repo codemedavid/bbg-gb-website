@@ -45,8 +45,19 @@ const emptyHalf: WeeklyReport = {
 
 const segments = { onhand, groupbuy, kahati };
 
+// The batch the Reports page offers as a preset, with the dates its own orders
+// span — deliberately NOT a Mon-Sun week.
+const BATCH = {
+  cycleKey: '2026-08-29T14:00:00.000Z', from: '2026-08-30', to: '2026-09-04',
+  orderCount: 87, vials: 542,
+};
+
+const respondTo = (path: string) => (path.startsWith('/admin/report/cycles')
+  ? { cycles: [BATCH] }
+  : { monday: '2025-05-25', report: onhand, segments });
+
 vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(async () => ({ monday: '2025-05-25', report: onhand, segments })),
+  apiGet: vi.fn(async (path: string) => respondTo(path)),
   qs: () => '?week=2025-05-25',
 }));
 vi.mock('@/lib/report/weekly-xlsx', () => ({ downloadWeeklyReportXlsx: vi.fn() }));
@@ -67,7 +78,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 beforeEach(() => {
   vi.mocked(downloadWeeklyReportXlsx).mockClear();
-  vi.mocked(apiGet).mockResolvedValue({ monday: '2025-05-25', report: onhand, segments });
+  vi.mocked(apiGet).mockImplementation(async (path: string) => respondTo(path) as never);
 });
 
 describe('AdminReportsPage', () => {
@@ -114,6 +125,29 @@ describe('AdminReportsPage', () => {
     expect(within(onHandSection).queryByText('BBG-2600')).not.toBeInTheDocument();
   });
 
+  it('fills the range from a batch instead of making the admin type it', async () => {
+    // A batch runs 22:00 to 22:00, so no calendar preset reproduces it. Typing
+    // the dates is what swept one order of the next batch into a supplier
+    // sheet for the previous one.
+    const user = userEvent.setup();
+    render(<Page />, { wrapper });
+
+    await user.selectOptions(
+      await screen.findByLabelText(/report batch/i),
+      '2026-08-29T14:00:00.000Z',
+    );
+
+    expect(screen.getByLabelText(/report start date/i)).toHaveValue('2026-08-30');
+    expect(screen.getByLabelText(/report end date/i)).toHaveValue('2026-09-04');
+  });
+
+  it('names each batch by its dates and size so the right one is picked', async () => {
+    render(<Page />, { wrapper });
+
+    expect(await screen.findByRole('option', { name: 'This batch · Aug 30, 2026 – Sep 4, 2026 · 87 orders' }))
+      .toBeInTheDocument();
+  });
+
   it('states the covered dates in every section header', async () => {
     // The section says how many orders and products it holds; without the dates
     // beside them, the figures read as "the current state of the board" rather
@@ -125,9 +159,9 @@ describe('AdminReportsPage', () => {
   });
 
   it('names the dates even in a section with no orders', async () => {
-    vi.mocked(apiGet).mockResolvedValue({
-      monday: '2025-05-25', report: onhand, segments: { onhand, groupbuy: emptyHalf, kahati },
-    });
+    vi.mocked(apiGet).mockImplementation(async (path: string) => (path.startsWith('/admin/report/cycles')
+      ? { cycles: [BATCH] }
+      : { monday: '2025-05-25', report: onhand, segments: { onhand, groupbuy: emptyHalf, kahati } }) as never);
     render(<Page />, { wrapper });
 
     const groupBuySection = await screen.findByRole('region', { name: /^group buy$/i });
@@ -149,9 +183,9 @@ describe('AdminReportsPage', () => {
   });
 
   it('disables only the button for a half with no orders', async () => {
-    vi.mocked(apiGet).mockResolvedValue({
-      monday: '2025-05-25', report: onhand, segments: { onhand, groupbuy: emptyHalf, kahati },
-    });
+    vi.mocked(apiGet).mockImplementation(async (path: string) => (path.startsWith('/admin/report/cycles')
+      ? { cycles: [BATCH] }
+      : { monday: '2025-05-25', report: onhand, segments: { onhand, groupbuy: emptyHalf, kahati } }) as never);
     render(<Page />, { wrapper });
 
     expect(await screen.findByRole('button', { name: /on-hand excel/i })).toBeEnabled();
