@@ -52,6 +52,16 @@ named `BBG-Week-<from>.xlsx` whatever range was picked.
 RED evidence (commit `4465352`): `Test Files 3 failed (3) · Tests 8 failed | 56 passed (64)`.
 GREEN evidence (commit `2b36939`): `Test Files 18 passed (18) · Tests 224 passed (224)`, `tsc --noEmit` exit 0.
 
+The same pair ran again for the Orders screen's own report button, which drops
+the range end the same way (RED `3 failed | 4 passed`, commit `99f213d`; GREEN
+`7 passed`, commit `e9dffae`).
+
+Whole suite on the final tree: `npx vitest run` → **273 files, 3000 tests, all
+passing**. An earlier run of the same tree failed three `app/api/pasalo/e2e-*`
+tests that pass in isolation and passed on re-run; they touch neither the rollup
+nor the workbook, and the flake is the known single-writer PGlite contention.
+
+
 ## Test specification
 
 | # | What is guaranteed | Test | Type | Result |
