@@ -149,3 +149,56 @@ describe('Chat shortcuts in the home header', () => {
     expect(screen.getByRole('link', { name: /viber/i })).toBeInTheDocument();
   });
 });
+
+// The board tabs and the pages outside the nav carry the same two links. A
+// customer stuck at checkout, or looking at a hatian that has not moved, is
+// exactly who needs to ask something — and asking should not cost them a trip
+// back to the homepage to find the buttons.
+describe('Chat shortcuts on the other headers', () => {
+  const links = () => ({
+    whatsapp: screen.getByRole('link', { name: /whatsapp/i }),
+    viber: screen.getByRole('link', { name: /viber/i }),
+  });
+
+  it('rides the board headers, after the title and before the cart', () => {
+    const { container } = render(<SectionHeader title="🤝 Kahati Board" sub="Shared orders" />);
+
+    const { whatsapp, viber } = links();
+    expect(whatsapp).toHaveAttribute('href', 'https://wa.me/639914462762');
+    expect(viber).toHaveAttribute('href', 'viber://chat?number=%2B639914462762');
+
+    const title = screen.getByText('🤝 Kahati Board');
+    const cart = container.querySelector('a[href="/cart"]')!;
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(title, whatsapp)).toBe(true);
+    expect(follows(viber, cart)).toBe(true);
+  });
+
+  it('rides a board header for a signed-in customer too', () => {
+    auth = { user: signedIn, loading: false };
+
+    render(<SectionHeader title="📦 My Orders" />);
+
+    expect(links().whatsapp).toBeInTheDocument();
+    expect(links().viber).toBeInTheDocument();
+  });
+
+  it('rides the back header without displacing the back control or Home', () => {
+    render(<BackHeader title="Checkout" showHome />);
+
+    const { whatsapp, viber } = links();
+    expect(whatsapp).toHaveAttribute('href', 'https://wa.me/639914462762');
+    expect(viber).toHaveAttribute('href', 'viber://chat?number=%2B639914462762');
+    expect(screen.getByRole('button', { name: /go back/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /home/i })).toHaveAttribute('href', '/');
+  });
+
+  it('rides a back header that has no Home link', () => {
+    render(<BackHeader title="Cart · 2" />);
+
+    expect(links().whatsapp).toBeInTheDocument();
+    expect(links().viber).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /home/i })).not.toBeInTheDocument();
+  });
+});
