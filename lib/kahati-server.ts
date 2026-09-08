@@ -14,10 +14,10 @@
 // never ordered, so every participant's order is cancelled, any on-hand stock in
 // that order is returned, and the customer is emailed about their refund. An
 // admin cancelling a hatian outright runs the same release flow (cancelKahati).
-import { and, asc, eq, gte, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, users } from '@/lib/db';
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
-import { VIALS_PER_KIT } from './pricing';
+import { round2, VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail } from './email';
 import { cancellationRefundNoticeFor, DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from './kahati-downpayment';
 import { getKahatiDownpaymentPolicy } from './settings';
@@ -39,6 +39,15 @@ export type KahatiSweepResult = {
 export type CancellationNotice = {
   userId: string; name: string; email: string; orderId: string; orderNo: string;
   kahatiId: string; kahatiName: string; claimedSlots: number; downpayment: number;
+  /**
+   * Whether the whole order went, or only this hatian's lines.
+   *
+   * An order that joined several hatians survives on the ones that made their
+   * minimum, so the customer is told their batch fell through WITHOUT being
+   * told their order is gone — and `downpayment` is 0, because the deposit is
+   * still holding the place their surviving vials have in the parcel.
+   */
+  orderCancelled: boolean;
 };
 
 export type KahatiCancellation = { row: GroupBuyRow; notices: CancellationNotice[] };
@@ -376,11 +385,30 @@ export async function rollOpenKahatis(db: Db, now: Date = new Date()): Promise<K
   return { rolled, skippedEmpty, leftForCancellation, failed };
 }
 
-// Cancels every live order holding a line on a failed hatian and returns the
-// details needed to notify each customer.
+// Releases every live commitment on a failed hatian and returns the details
+// needed to notify each customer.
+//
+// LINE-granular, not order-granular. Checkout splits a cart by mode, so every
+// hatian a customer joined in one go shares a single order
+// (lib/order-modes.ts) — and cancelling that order because one of its counters
+// fell short takes the batches that DID make their minimum down with it. The
+// customer then gets a different outcome from the same purchase depending only
+// on how many times they pressed checkout.
+//
+// So an order survives on its other counters and is re-billed to what is left.
+// It is cancelled only when nothing of it is going to be ordered at all. This
+// is the rule lib/pasalo-server.ts:releaseRefundedLines already applies at the
+// Pasalo close, stated here for the stage before it.
+//
+// A surviving line is a line on ANOTHER counter. An on-hand line does not keep
+// the order alive: a legacy pre-split order carrying both kinds is cancelled
+// and its stock returned, which is the behaviour that path was given
+// deliberately and is tested for.
 async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<CancellationNotice[]> {
   const affected = await db.selectDistinct({
-    id: orders.id, orderNo: orders.orderNo, userId: orders.userId, downpaymentPhp: orders.downpaymentPhp,
+    id: orders.id, orderNo: orders.orderNo, userId: orders.userId,
+    status: orders.status, downpaymentPhp: orders.downpaymentPhp,
+    packingFeePhp: orders.packingFeePhp,
   })
     .from(orders)
     .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
@@ -394,11 +422,53 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
   const notices: CancellationNotice[] = [];
 
   for (const order of affected) {
+    // Every line of this order, not just the ones on this counter: what decides
+    // the order's fate is what it holds ELSEWHERE.
+    const held = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+
+    // A line only survives if ITS counter is still going. A sweep resolving a
+    // whole board cancels several counters in one pass, and an order holding
+    // lines on two of them would otherwise be kept alive by each one on the
+    // strength of the other — surviving a sweep in which nothing it holds was
+    // ordered.
+    const otherCounterIds = [...new Set(
+      held.map((line) => line.groupBuyId).filter((id): id is string => id != null && id !== g.id),
+    )];
+    const liveCounters = new Set(otherCounterIds.length
+      ? (await db.select({ id: groupBuys.id }).from(groupBuys)
+          .where(and(inArray(groupBuys.id, otherCounterIds), ne(groupBuys.status, 'cancelled'))))
+        .map((row) => row.id)
+      : []);
+
+    // On-hand lines ride along with whatever the order still ships; they do not
+    // themselves keep it alive (see the legacy note above).
+    const survivors = held.filter((line) =>
+      line.groupBuyId == null || liveCounters.has(line.groupBuyId));
+    const keepsOrderAlive = survivors.some((line) => line.groupBuyId != null);
+
     await db.transaction(async (tx) => {
-      // The whole order is cancelled, so any on-hand vials it drew go back to
-      // stock rather than being silently lost.
-      const onHandLines = await tx.select().from(orderItems)
-        .where(and(eq(orderItems.orderId, order.id), eq(orderItems.kind, 'product')));
+      if (keepsOrderAlive) {
+        // A mixed result. The order lives, ships its survivors, and is re-billed
+        // for those alone — a customer must never be charged for a vial that was
+        // never ordered from the supplier. The packing fee is NOT re-derived:
+        // the parcel is still being packed, and lib/order-edit-server.ts
+        // declines to move it for exactly the same reason.
+        const subtotal = round2(survivors.reduce((sum, l) => sum + Number(l.lineTotalPhp), 0));
+        await tx.update(orders).set({
+          subtotalPhp: String(subtotal),
+          totalPhp: String(round2(subtotal + Number(order.packingFeePhp))),
+          updatedAt: new Date(),
+        }).where(eq(orders.id, order.id));
+        // Recorded against the status the order KEEPS: it did not change state,
+        // and writing 'cancelled' here would put a cancellation in the trail of
+        // an order that is still shipping.
+        await tx.insert(orderStatusHistory).values({ orderId: order.id, status: order.status, note });
+        return;
+      }
+
+      // Nothing of this order is being ordered, so there is no parcel. Any
+      // on-hand vials it drew go back to stock rather than being silently lost.
+      const onHandLines = held.filter((line) => line.kind === 'product');
       for (const line of onHandLines) {
         if (!line.productId) continue;
         const vials = vialsForOrderLine(line.specSnapshot, line.qty);
@@ -420,7 +490,10 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
         userId: order.userId, name: customer.name, email: customer.email,
         orderId: order.id, orderNo: order.orderNo,
         kahatiId: g.id, kahatiName: g.name, claimedSlots: g.claimedSlots,
-        downpayment: Number(order.downpaymentPhp),
+        // Nothing is refunded while the order lives: the deposit is still
+        // holding the place its surviving vials have in the parcel.
+        downpayment: keepsOrderAlive ? 0 : Number(order.downpaymentPhp),
+        orderCancelled: !keepsOrderAlive,
       });
     }
   }
