@@ -27,6 +27,18 @@ export type ReportItem = {
    * before that split omit it.
    */
   kind?: string | null;
+  /**
+   * order_items.group_buy_id — the hatian counter a commitment claimed from.
+   * Optional like the rest: only counter lines have one, and callers written
+   * before the stage split omit it.
+   */
+  groupBuyId?: string | null;
+  /**
+   * That counter's frozen group_buys.kahati_vials — the vials on it when Kahati
+   * closed. Null while Kahati never closed, which means Pasalo never ran and
+   * every vial on the counter is a Kahati vial (lib/report/kahati-stage.ts).
+   */
+  counterKahatiVials?: number | null;
 };
 
 export type ReportOrderInput = {
