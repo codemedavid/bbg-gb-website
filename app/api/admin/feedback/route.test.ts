@@ -34,7 +34,7 @@ vi.mock('@/lib/session', () => {
 });
 
 const { GET: ADMIN_FOLDERS, POST: CREATE_FOLDER } = await import('./folders/route');
-const { PATCH: PATCH_FOLDER, DELETE: DELETE_FOLDER } = await import('./folders/[id]/route');
+const { GET: ADMIN_FOLDER, PATCH: PATCH_FOLDER, DELETE: DELETE_FOLDER } = await import('./folders/[id]/route');
 const { POST: CREATE_ITEM } = await import('./items/route');
 const { PATCH: PATCH_ITEM, DELETE: DELETE_ITEM } = await import('./items/[id]/route');
 const { GET: PUBLIC_FOLDERS } = await import('../../feedback/route');
@@ -166,6 +166,43 @@ describe('PATCH /api/admin/feedback/folders/[id]', () => {
   it('404s on a folder that does not exist', async () => {
     const res = await PATCH_FOLDER(
       jsonReq({ name: 'Ghost' }, 'PATCH'),
+      ctx('00000000-0000-0000-0000-000000000000'),
+    );
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /api/admin/feedback/folders/[id]', () => {
+  it('includes the hidden screenshots, which is the whole difference from the public view', async () => {
+    const id = await makeFolder();
+    await makeItem(id, { caption: 'Shown' });
+    await makeItem(id, { caption: 'Pulled', isActive: 'false' });
+
+    const b = await body(await ADMIN_FOLDER(new Request('http://localhost'), ctx(id)));
+
+    expect(b.data.items.map((i: any) => i.caption)).toEqual(['Shown', 'Pulled']);
+    expect(b.data.items.map((i: any) => i.isActive)).toEqual([true, false]);
+  });
+
+  it('opens a hidden folder, so an admin can review what they pulled', async () => {
+    const id = await makeFolder({ isActive: false });
+
+    const res = await ADMIN_FOLDER(new Request('http://localhost'), ctx(id));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses a customer', async () => {
+    const id = await makeFolder();
+    asCustomer();
+
+    expect((await ADMIN_FOLDER(new Request('http://localhost'), ctx(id))).status).toBe(403);
+  });
+
+  it('404s on a folder that does not exist', async () => {
+    const res = await ADMIN_FOLDER(
+      new Request('http://localhost'),
       ctx('00000000-0000-0000-0000-000000000000'),
     );
 
