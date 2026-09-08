@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { AdminSettlement, CampaignPayload, Category, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
+import type { AdminSettlement, CampaignPayload, Category, FeedbackFolder, FeedbackItem, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 import type { AccountRow } from './accounts';
 import type { StatsRange } from './analytics-range';
@@ -106,6 +106,26 @@ export const useAdminGroupBuyCommitments = (id: string | null) =>
     enabled: !!id,
   });
 
+// What the folder form sends. A folder carries no file, so unlike the
+// payment-method and MOQ saves this is a plain object rather than FormData.
+export type FeedbackFolderPayload = {
+  name: string; description: string | null; isActive: boolean; sortOrder: number;
+};
+
+// Every feedback folder, hidden ones included — the admin list is the only
+// place a pulled folder can be found and put back.
+export const useAdminFeedbackFolders = () =>
+  useQuery({ queryKey: ['admin', 'feedback', 'folders'], queryFn: () => apiGet<FeedbackFolder[]>('/admin/feedback/folders') });
+
+// One folder with its screenshots, hidden ones included. Keyed on the id so
+// switching folders in the sidebar does not show the previous folder's items.
+export const useAdminFeedbackFolder = (id: string | null) =>
+  useQuery({
+    queryKey: ['admin', 'feedback', 'folder', id],
+    queryFn: () => apiGet<FeedbackFolder & { items: FeedbackItem[] }>(`/admin/feedback/folders/${id}`),
+    enabled: !!id,
+  });
+
 export const useAdminPaymentMethods = () => useQuery({ queryKey: ['admin', 'payment-methods'], queryFn: () => apiGet<PaymentMethod[]>('/admin/payment-methods') });
 // The MOQ shelf, admin view — includes archived rows, unlike the public list.
 export const useAdminMoqProducts = () =>
@@ -177,6 +197,12 @@ export function useMutate() {
     setSettlementStatus: useMutation({ mutationFn: (v: { id: string; status: 'proof_review' | 'paid' | 'cancelled'; notes?: string }) => apiSend(`/admin/settlements/${v.id}`, 'PATCH', v), onSuccess: invalidate, onError: toastError('Could not update the settlement.') }),
     savePaymentMethod: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/payment-methods/${v.id}`, 'PATCH', v.body) : apiSend('/admin/payment-methods', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save payment method.') }),
     deletePaymentMethod: useMutation({ mutationFn: (id: string) => apiSend(`/admin/payment-methods/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete payment method.') }),
+    // A folder carries no file, so this one is plain JSON.
+    saveFeedbackFolder: useMutation({ mutationFn: (v: { id?: string; body: FeedbackFolderPayload }) => v.id ? apiSend(`/admin/feedback/folders/${v.id}`, 'PATCH', v.body) : apiSend('/admin/feedback/folders', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save the folder.') }),
+    deleteFeedbackFolder: useMutation({ mutationFn: (id: string) => apiSend(`/admin/feedback/folders/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete the folder.') }),
+    // Multipart so the screenshot rides along with the fields.
+    saveFeedbackItem: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/feedback/items/${v.id}`, 'PATCH', v.body) : apiSend('/admin/feedback/items', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save the feedback.') }),
+    deleteFeedbackItem: useMutation({ mutationFn: (id: string) => apiSend(`/admin/feedback/items/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete the feedback.') }),
     // Multipart so the product image rides along with the fields.
     saveMoqProduct: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/moq-products/${v.id}`, 'PATCH', v.body) : apiSend('/admin/moq-products', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save MOQ product.') }),
     deleteMoqProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/moq-products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete MOQ product.') }),

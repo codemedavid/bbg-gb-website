@@ -5,6 +5,17 @@ import { getDb, feedbackFolders } from '@/lib/db';
 import { getFolderWithItems } from '@/lib/feedback-server';
 import { parseFolderBody } from '../route';
 
+// One folder with everything filed in it, hidden screenshots included. That
+// inclusion is the entire difference from the public route of the same shape —
+// an admin has to be able to see and unhide what they pulled.
+export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const { id } = await ctx.params;
+  await requireAdmin();
+  const folder = await getFolderWithItems(id, { activeOnly: false });
+  if (!folder) throw new ApiError(404, 'Feedback folder not found.');
+  return ok(folder);
+});
+
 export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   await requireAdmin();
