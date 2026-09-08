@@ -16,6 +16,7 @@ const TABLES = [
   'order_item_refunds',
   'order_status_history', 'order_items', 'order_payment_proofs', 'orders',
   'settlement_payment_proofs', 'settlements',
+  'feedback_items', 'feedback_folders',
   'email_log', 'coa_files', 'group_buys', 'moq_campaigns', 'moq_products', 'payment_methods', 'products', 'categories',
   'password_reset_tokens', 'users',
   'settings',

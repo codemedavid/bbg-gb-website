@@ -678,6 +678,53 @@ export const emailLog = pgTable('email_log', {
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---- Customer feedback -------------------------------------------------
+//
+// Screenshots of what customers actually said, filed into folders the admin
+// creates — one per batch, per product line, whatever the admin needs. The
+// storefront reads folders first and items second, which is why this is two
+// tables and not one with a text `folder` column: a folder has to exist, be
+// renamed, be reordered and be hidden while it is still EMPTY, and a column on
+// the items cannot represent a folder that has no items in it yet.
+export const feedbackFolders = pgTable('feedback_folders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 80 }).notNull(),
+  // Optional line under the folder name, e.g. "August batch, GLP-1 orders".
+  description: text('description'),
+  // Hidden rather than deleted. Pulling a folder that turns out to contain a
+  // customer's phone number has to be one click and has to be reversible —
+  // deleting it would take the screenshots with it (see the cascade below).
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  activeIdx: index('feedback_folders_active_idx').on(t.isActive),
+}));
+
+export const feedbackItems = pgTable('feedback_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // Every feedback lives in exactly one folder. There is no unfiled state, so
+  // there is no screen for one — which is the whole point of the folders.
+  folderId: uuid('folder_id').notNull().references(() => feedbackFolders.id, { onDelete: 'cascade' }),
+  // Storage key of the screenshot, opaque exactly like paymentMethods.qrKey.
+  imageKey: text('image_key').notNull(),
+  // What the customer said, typed by the admin so the words are searchable and
+  // readable even where the screenshot itself is small on a phone. Nullable:
+  // most screenshots speak for themselves.
+  caption: text('caption'),
+  // How the customer is credited, e.g. "Ate Jen, Cavite". Nullable, and
+  // deliberately free text rather than a users FK — the person in a Messenger
+  // screenshot may not have an account, and a real name must never be joined
+  // out of the accounts table by accident.
+  customerName: varchar('customer_name', { length: 80 }),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  folderIdx: index('feedback_items_folder_idx').on(t.folderId),
+  activeIdx: index('feedback_items_active_idx').on(t.isActive),
+}));
+
 // ---- Relations ---------------------------------------------------------
 export const usersRelations = relations(users, ({ many }) => ({ orders: many(orders) }));
 export const categoriesRelations = relations(categories, ({ many }) => ({ products: many(products) }));
@@ -703,3 +750,8 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
 // Ordered status list mirrored by the client timeline
 export const ORDER_STATUS_FLOW = ['proof_review', 'payment_confirmed', 'batch_filling', 'shipped', 'delivered'] as const;
 export type OrderStatus = typeof orderStatusEnum.enumValues[number];
+
+export const feedbackFoldersRelations = relations(feedbackFolders, ({ many }) => ({ items: many(feedbackItems) }));
+export const feedbackItemsRelations = relations(feedbackItems, ({ one }) => ({
+  folder: one(feedbackFolders, { fields: [feedbackItems.folderId], references: [feedbackFolders.id] }),
+}));

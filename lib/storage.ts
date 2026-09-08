@@ -29,7 +29,7 @@ export async function ensureBuckets(): Promise<void> {
   }
   if (env.storageDriver !== 'supabase') return;
   const client = supabase();
-  for (const bucket of [BUCKETS.proofs, BUCKETS.coa, BUCKETS.qr]) {
+  for (const bucket of [BUCKETS.proofs, BUCKETS.coa, BUCKETS.qr, BUCKETS.feedback]) {
     await ensureBucket(client, bucket);
   }
 }

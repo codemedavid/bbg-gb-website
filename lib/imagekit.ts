@@ -7,7 +7,8 @@
 //   /bbg-groupbuy/
 //     ├── payment-proofs/   private  — bank-transfer screenshots (signed URLs only)
 //     ├── payment-qr/       public   — checkout QR codes
-//     └── coa-files/        public   — certificate-of-analysis documents
+//     ├── coa-files/        public   — certificate-of-analysis documents
+//     └── feedback/         public   — customer feedback screenshots
 //
 // The `key` handed in/out stays an opaque filename (e.g. `<uuid>.jpg`) exactly like
 // the local/supabase drivers, so no call site or DB column changes.
@@ -78,7 +79,7 @@ export function imagekitUrl(bucket: string, key: string, expiresSec: number): st
 // `parentFolderPath` auto-creates the missing root folder as well.
 export async function provisionImageKitFolders(): Promise<void> {
   const c = ik();
-  for (const bucket of [BUCKETS.proofs, BUCKETS.qr, BUCKETS.coa]) {
+  for (const bucket of [BUCKETS.proofs, BUCKETS.qr, BUCKETS.coa, BUCKETS.feedback]) {
     try {
       await c.folders.create({ folderName: bucket, parentFolderPath: `/${IMAGEKIT_ROOT}` });
     } catch (err) {
