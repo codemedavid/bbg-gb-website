@@ -283,3 +283,81 @@ describe('closeFullKahati returns both the sealed counter and the opened sibling
     });
   });
 });
+
+// One checkout, several hatians.
+//
+// splitCartIntoOrders splits a cart by MODE, not by product (lib/order-modes.ts),
+// so joining five hatians in one go produces ONE kahati order with five lines.
+// releaseKahatiOrders cancelled the whole ORDER when any one of its counters
+// failed, so a customer lost the four batches that reached their minimum
+// because the fifth did not — and got a different outcome from the same
+// purchase depending only on how many times they pressed checkout.
+//
+// lib/pasalo-server.ts:releaseRefundedLines already ends this at the Pasalo
+// close, and says so: "the same order-granularity mistake this whole function
+// was written to end, one level up". This is that level up.
+describe('a hatian that fails inside a multi-counter order', () => {
+  const joinBoth = async (failingId: string, healthyId: string) =>
+    joinKahati(failingId, 3, [{ kind: 'group_buy', refId: healthyId, qty: 2 }]);
+
+  it('leaves the order alive when another of its counters survived', async () => {
+    const failing = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1, name: 'Bioglutide' });
+    const healthy = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1, name: 'Retatrutide' });
+    const { order } = await joinBoth(failing.id, healthy.id);
+
+    await expire(failing.id);
+    await sweepKahatis(await getDb());
+
+    expect(await statusOf(failing.id)).toBe('cancelled');
+    expect(await orderStatus(order.id)).not.toBe('cancelled');
+  });
+
+  it('keeps the surviving counter holding its vials', async () => {
+    const failing = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const healthy = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    await joinBoth(failing.id, healthy.id);
+
+    await expire(failing.id);
+    const db = await getDb();
+    await sweepKahatis(db);
+
+    const [row] = await db.select().from(groupBuys).where(eq(groupBuys.id, healthy.id));
+    expect(row.claimedSlots).toBe(2);
+    expect(row.status).not.toBe('cancelled');
+  });
+
+  // A customer must never be charged for a vial that was never ordered from the
+  // supplier. The packing fee is NOT re-derived — the parcel is still being
+  // packed — which is the same rule the Pasalo close applies.
+  it('re-bills the order to the lines that survived', async () => {
+    const failing = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const healthy = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const { order } = await joinBoth(failing.id, healthy.id);
+
+    const db = await getDb();
+    const before = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+    const survivingTotal = before
+      .filter((l) => l.groupBuyId === healthy.id)
+      .reduce((sum, l) => sum + Number(l.lineTotalPhp), 0);
+
+    await expire(failing.id);
+    await sweepKahatis(db);
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id));
+    expect(Number(row.subtotalPhp)).toBe(survivingTotal);
+    expect(Number(row.totalPhp)).toBe(survivingTotal + Number(row.packingFeePhp));
+  });
+
+  // Nothing survived, so there is no parcel — the order goes, exactly as before.
+  it('still cancels an order whose every counter failed', async () => {
+    const a = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const b = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const { order } = await joinBoth(a.id, b.id);
+
+    await expire(a.id);
+    await expire(b.id);
+    await sweepKahatis(await getDb());
+
+    expect(await orderStatus(order.id)).toBe('cancelled');
+  });
+});
