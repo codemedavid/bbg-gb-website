@@ -57,6 +57,10 @@ const ALLOWED_FIELDS = [
   // building.
   'previousStatus', 'amountPhp', 'refundsWritten', 'refundTotalPhp',
   'customersOwed', 'ordersCancelled', 'fulfilledCounters', 'failedCounters',
+  // Counters a scoped close deliberately left in the stage. Logged because a
+  // batch that stays open is the failure mode this scoping introduces, and six
+  // weeks later "why was this never closed" is answered from here.
+  'skippedOutOfRange',
   'httpStatus', 'reason', 'durationMs', 'attempt',
 ] as const;
 

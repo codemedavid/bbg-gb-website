@@ -106,3 +106,43 @@ export function pasaloSecuredNotice(
 }
 
 export { vials as pasaloVialsLabel };
+
+/**
+ * The date a counter's Kahati started — which is what decides the batch it
+ * belongs to.
+ *
+ * `opens_at` is the scheduled start and the truthful answer whenever it is set:
+ * a counter written weeks early for this cycle was CREATED in the last one, and
+ * judging it by created_at would file it under a batch it never traded in.
+ * Null means "already on the board" — every counter written before scheduling
+ * existed — and those are exactly the old rows this filter has to keep out, so
+ * created_at is the fallback rather than a reason to include them.
+ */
+export function counterStartedAt(counter: { opensAt: Date | null; createdAt: Date }): Date {
+  return counter.opensAt ?? counter.createdAt;
+}
+
+/** The batch an admin has selected, as the half-open range dateRangeBounds returns. */
+export type BatchWindow = { start: Date; end: Date };
+
+/**
+ * Is this counter part of the batch the admin is acting on?
+ *
+ * `null` means no window was given and every counter qualifies — the unscoped
+ * sweep both controls used to be, kept so a caller with no date range in hand
+ * behaves as it always did.
+ *
+ * The end bound is EXCLUSIVE, matching dateRangeBounds: it is the next day's
+ * midnight in Manila, so a counter opening at that instant belongs to the next
+ * batch. A cycle opens at 22:00 Manila and no From/To a person types reproduces
+ * one exactly, which is why the Reports page offers the batch picker — this
+ * function is only as precise as the range it is handed.
+ */
+export function isCounterInBatchWindow(
+  counter: { opensAt: Date | null; createdAt: Date },
+  window: BatchWindow | null | undefined,
+): boolean {
+  if (!window) return true;
+  const startedAt = counterStartedAt(counter).getTime();
+  return startedAt >= window.start.getTime() && startedAt < window.end.getTime();
+}

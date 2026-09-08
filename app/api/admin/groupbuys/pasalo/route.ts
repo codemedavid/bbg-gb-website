@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import { requireAdmin } from '@/lib/session';
+import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb } from '@/lib/db';
 import { openPasaloStage } from '@/lib/pasalo-server';
+import { dateRangeBounds, isValidYmd } from '@/lib/report/week';
 
 // Admin: end Kahati and open Pasalo (Bunuan) across the board.
 //
@@ -27,6 +28,12 @@ const bodySchema = z.object({
   // happens to anybody's money is settled by POST ./close. A stage with no
   // deadline simply runs until the admin closes it.
   closesAt: z.string().datetime().nullable().optional(),
+  // The batch being opened, as the Reports page has it. Optional and, when
+  // absent, the whole board moves exactly as it always did — but the panel
+  // always sends it, because a counter left behind by an earlier cycle is
+  // otherwise dragged into this batch and refunded with it.
+  from: z.string().refine(isValidYmd, 'Start date must be YYYY-MM-DD.').optional(),
+  to: z.string().refine(isValidYmd, 'End date must be YYYY-MM-DD.').optional(),
 });
 
 export const POST = handler(async (req: Request) => {
@@ -34,11 +41,13 @@ export const POST = handler(async (req: Request) => {
   // An empty body is a valid request — "open Pasalo, no deadline yet" — so a
   // missing or unparseable body must not be a 400.
   const raw = await req.json().catch(() => ({}));
-  const { closesAt } = bodySchema.parse(raw ?? {});
+  const { closesAt, from, to } = bodySchema.parse(raw ?? {});
+  if (from && to && to < from) throw new ApiError(400, 'Batch end date must be on or after the start date.');
 
   const db = await getDb();
   const result = await openPasaloStage(db, {
     pasaloClosesAt: closesAt ? new Date(closesAt) : null,
+    window: from && to ? dateRangeBounds(from, to) : null,
   });
 
   return ok({
@@ -46,5 +55,6 @@ export const POST = handler(async (req: Request) => {
     counterIds: result.opened,
     skippedEmpty: result.skippedEmpty,
     skippedFull: result.skippedFull,
+    skippedOutOfRange: result.skippedOutOfRange,
   });
 });

@@ -23,7 +23,10 @@ import {
   getDb, groupBuys, orders, orderItems, orderItemRefunds, orderStatusHistory, settlements, users,
 } from '@/lib/db';
 import { counterQuantities } from './kahati-quantity';
-import { pasaloEligibility, pasaloOutcome, pasaloFailureReason } from './pasalo';
+import {
+  pasaloEligibility, pasaloOutcome, pasaloFailureReason, isCounterInBatchWindow,
+  type BatchWindow,
+} from './pasalo';
 import {
   buildPasaloRefunds, pasaloRefundTotals,
   type BatchLine, type BatchOrderFacts, type PasaloRefundRow,
@@ -42,6 +45,12 @@ export type PasaloOpenResult = {
   skippedEmpty: number;
   /** Counters already holding a complete kit; a full box has nothing to sell. */
   skippedFull: number;
+  /**
+   * Counters left alone because their Kahati started outside the selected
+   * batch. Reported rather than dropped: an admin who picked the wrong range
+   * has to see that a counter they expected to move did not.
+   */
+  skippedOutOfRange: number;
 };
 
 /**
@@ -62,15 +71,21 @@ export type PasaloOpenResult = {
  */
 export async function openPasaloStage(
   db: Db,
-  opts: { pasaloClosesAt?: Date | null } = {},
+  opts: { pasaloClosesAt?: Date | null; window?: BatchWindow | null } = {},
 ): Promise<PasaloOpenResult> {
   const running = await db.select().from(groupBuys).where(eq(groupBuys.status, 'open'));
 
   const opened: string[] = [];
   let skippedEmpty = 0;
   let skippedFull = 0;
+  let skippedOutOfRange = 0;
 
   for (const counter of running) {
+    // Judged before eligibility, and counted apart from it. A counter from
+    // last cycle is not "empty" or "full" — it is not this batch's business at
+    // all, and folding it into either figure would tell the admin the board
+    // contains something it does not.
+    if (!isCounterInBatchWindow(counter, opts.window)) { skippedOutOfRange += 1; continue; }
     const q = counterQuantities(counter);
     const verdict = pasaloEligibility({ status: counter.status, ...q });
     if (verdict === 'skip_empty') { skippedEmpty += 1; continue; }
@@ -92,7 +107,7 @@ export async function openPasaloStage(
     if (moved) opened.push(moved.id);
   }
 
-  return { opened, skippedEmpty, skippedFull };
+  return { opened, skippedEmpty, skippedFull, skippedOutOfRange };
 }
 
 export type PasaloCloseResult = {
@@ -106,6 +121,13 @@ export type PasaloCloseResult = {
   customersOwed: number;
   /** Orders cancelled outright because every line they held failed. */
   ordersCancelled: number;
+  /**
+   * Counters left in the stage because their Kahati started outside the
+   * selected batch. Nobody on them was refunded and nothing of theirs was
+   * decided — they are still waiting for the close that belongs to them, and
+   * the panel says so rather than leaving them to be discovered next cycle.
+   */
+  skippedOutOfRange: number;
 };
 
 /**
@@ -116,18 +138,26 @@ export type PasaloCloseResult = {
  * could reason about — some counters decided, some not, and refunds written for
  * a batch whose surviving lines are still unknown.
  */
-export async function closePasaloStage(db: Db): Promise<PasaloCloseResult> {
+export async function closePasaloStage(
+  db: Db,
+  opts: { window?: BatchWindow | null } = {},
+): Promise<PasaloCloseResult> {
   // Read before the transaction: a settings failure must not roll back a close,
   // and the policy is one value for the whole batch — re-reading per counter
   // would let a mid-close edit refund two customers under different terms.
   const policy = await getKahatiDownpaymentPolicy().catch(() => DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
 
   return db.transaction(async (tx) => {
-    const staged = await tx.select().from(groupBuys).where(eq(groupBuys.status, 'pasalo'));
+    const inStage = await tx.select().from(groupBuys).where(eq(groupBuys.status, 'pasalo'));
+    // Scoped BEFORE anything is decided, so an out-of-range counter is not
+    // merely spared the status flip — its lines never reach the refund
+    // arithmetic, and its customers' money is never part of this batch's sums.
+    const staged = inStage.filter((c) => isCounterInBatchWindow(c, opts.window));
+    const skippedOutOfRange = inStage.length - staged.length;
     if (!staged.length) {
       return {
         fulfilled: [], failed: [], refundsWritten: 0,
-        refundTotalPhp: 0, customersOwed: 0, ordersCancelled: 0,
+        refundTotalPhp: 0, customersOwed: 0, ordersCancelled: 0, skippedOutOfRange,
       };
     }
 
@@ -170,6 +200,7 @@ export async function closePasaloStage(db: Db): Promise<PasaloCloseResult> {
       refundTotalPhp: totals.totalPhp,
       customersOwed: totals.customers,
       ordersCancelled,
+      skippedOutOfRange,
     };
   });
 }

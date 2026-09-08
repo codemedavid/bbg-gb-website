@@ -86,6 +86,15 @@ export type CounterOutcome = {
   status: string;
   /** Vials whose payment an admin has actually verified — the honesty column. */
   paymentConfirmedVials: number;
+  /**
+   * Whether this counter belongs to the batch the admin has selected.
+   *
+   * Only the live board sets it, and only to say NO for a counter left in the
+   * stage by an earlier cycle. Closing skips those, so the panel has to be able
+   * to name them — a counter that is silently absent from both the table and
+   * the close is a batch stranded in Pasalo that nobody ever looks for again.
+   */
+  inWindow?: boolean;
 };
 
 // ---- Sheet 1: one row per customer ---------------------------------------

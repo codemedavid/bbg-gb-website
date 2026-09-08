@@ -65,7 +65,8 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
   const openStage = async () => {
     const ok = await confirm({
       title: 'End Kahati and open Pasalo?',
-      message: 'Every counter with vials on it moves to Pasalo and keeps selling on the deadline you set. '
+      message: `Only counters that started between ${from} and ${to} will move to Pasalo — anything from an `
+        + 'earlier batch stays on the Kahati board. They keep selling on the deadline you set. '
         + 'Nothing is cancelled and nobody is refunded — that only happens when you close the stage.',
       confirmLabel: 'Open Pasalo',
       cancelLabel: 'Not yet',
@@ -75,9 +76,14 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
     try {
       const result = await call('/admin/groupbuys/pasalo', {
         closesAt: deadline ? new Date(deadline).toISOString() : null,
+        from,
+        to,
       });
       showToast(`Pasalo opened on ${result.opened} counter(s). `
-        + `${result.skippedEmpty} empty and ${result.skippedFull} full were left alone.`);
+        + `${result.skippedEmpty} empty and ${result.skippedFull} full were left alone.`
+        + (result.skippedOutOfRange > 0
+          ? ` ${result.skippedOutOfRange} from another batch were not touched.`
+          : ''));
       await refresh();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not open Pasalo.');
@@ -90,22 +96,31 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
   // decides every counter and books real refunds, so the confirm names what it
   // will do rather than asking "are you sure?".
   const closeStage = async () => {
-    const short = (data?.board ?? []).filter((c) => c.neededToQualify > 0);
+    const short = batchBoard.filter((c) => c.neededToQualify > 0);
     const ok = await confirm({
-      title: `Close Pasalo and decide ${data?.board.length ?? 0} counter(s)?`,
-      message: short.length > 0
+      title: `Close Pasalo and decide ${batchBoard.length} counter(s)?`,
+      message: (short.length > 0
         ? `${short.length} counter(s) are still below their minimum and will be cancelled — their lines become refunds `
           + 'and those customers stop being billed for them. Successful products keep shipping. This cannot be undone.'
-        : 'Every counter reached its minimum, so all of them proceed to fulfilment and nobody is refunded.',
+        : 'Every counter reached its minimum, so all of them proceed to fulfilment and nobody is refunded.')
+        // Named before the admin commits, not discovered afterwards. Leaving a
+        // counter in the stage is the right call for a batch that is not this
+        // one, but a silent skip is a batch nobody ever closes.
+        + (strayBoard.length > 0
+          ? ` ${strayBoard.length} counter(s) from another batch are outside ${from} – ${to} and will be left running.`
+          : ''),
       confirmLabel: 'Close Pasalo & decide',
       cancelLabel: 'Keep it running',
     });
     if (!ok) return;
     setBusy('close');
     try {
-      const result = await call('/admin/groupbuys/pasalo/close');
+      const result = await call('/admin/groupbuys/pasalo/close', { from, to });
       showToast(`${result.fulfilled} product(s) proceeding, ${result.failed} failed. `
-        + `${result.refundsWritten} refund(s) recorded — ${php(result.refundTotalPhp)} across ${result.customersOwed} customer(s).`);
+        + `${result.refundsWritten} refund(s) recorded — ${php(result.refundTotalPhp)} across ${result.customersOwed} customer(s).`
+        + (result.skippedOutOfRange > 0
+          ? ` ${result.skippedOutOfRange} counter(s) from another batch were left running.`
+          : ''));
       await refresh();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not close Pasalo.');
@@ -115,6 +130,11 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
   };
 
   const board = data?.board ?? [];
+  // The stage holds every counter still running, whatever cycle it came from.
+  // Only this batch's are acted on — the rest are shown as a warning so a
+  // counter that no close will decide is never simply absent from the screen.
+  const batchBoard = board.filter((c) => c.inWindow !== false);
+  const strayBoard = board.filter((c) => c.inWindow === false);
   const customers = data?.customers ?? [];
   const outstanding = customers.filter((c) => c.status !== 'refunded');
 
@@ -141,7 +161,7 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
           <button className={btnBoardAction} disabled={busy !== null} onClick={openStage}>
             {busy === 'open' ? 'Opening…' : 'Open Pasalo'}
           </button>
-          {board.length > 0 && (
+          {batchBoard.length > 0 && (
             <button className={btnPrimary} disabled={busy !== null} onClick={closeStage}>
               {busy === 'close' ? 'Closing…' : 'Close Pasalo & decide'}
             </button>
@@ -151,7 +171,9 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
 
       {isLoading && <p className="text-ink-muted">Loading…</p>}
 
-      {board.length > 0 && <CurrentBatch board={board} />}
+      {strayBoard.length > 0 && <StrayCounters counters={strayBoard} from={from} to={to} />}
+
+      {batchBoard.length > 0 && <CurrentBatch board={batchBoard} />}
 
       {customers.length > 0 && (
         <PasaloResults
@@ -164,12 +186,42 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
         />
       )}
 
-      {!isLoading && board.length === 0 && customers.length === 0 && (
+      {!isLoading && batchBoard.length === 0 && customers.length === 0 && (
         <p className="m-0 rounded-[12px] border border-dashed border-line bg-surface-mist px-4 py-6 text-center text-[12.5px] text-ink-muted">
           No Pasalo running and no refunds determined in this range. Open the stage after ending Kahati.
         </p>
       )}
     </section>
+  );
+}
+
+// Counters sitting in Pasalo that this batch will not decide.
+//
+// Its own block above the table rather than a greyed row inside it: these are
+// not part of the batch being closed and printing them among its counters is
+// how they get refunded with it. But they cannot be hidden either — closing
+// skips them, so without this an admin has a counter that appears on no screen
+// and in no close, still holding customers' money.
+function StrayCounters({
+  counters, from, to,
+}: { counters: CounterOutcome[]; from: string; to: string }) {
+  return (
+    <div className="mb-4 rounded-[12px] border border-warn-fg/30 bg-warn-bg px-4 py-3">
+      <p className="m-0 text-[12.5px] font-bold text-warn-fg">
+        {counters.length} counter(s) in Pasalo are from another batch
+      </p>
+      <p className="m-0 mt-1 text-[12px] text-ink-body">
+        They started outside {from} – {to}, so closing will leave them running and nobody on them is
+        refunded. Switch the date range above to the batch they belong to and close that one separately.
+      </p>
+      <ul className="m-0 mt-2 flex flex-wrap gap-x-4 gap-y-1 p-0 pl-4 text-[12px] text-ink-body">
+        {counters.map((c) => (
+          <li key={c.groupBuyId}>
+            {c.productName} <span className="text-ink-muted">({c.combinedVials}/{c.minRequired})</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

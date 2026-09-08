@@ -13,6 +13,7 @@
 import { and, asc, eq, gte, inArray, isNotNull, lt, ne } from 'drizzle-orm';
 import { getDb, groupBuys, orderItemRefunds, orderItems, orders, users } from '@/lib/db';
 import { counterQuantities } from '../kahati-quantity';
+import { isCounterInBatchWindow, type BatchWindow } from '../pasalo';
 import { isPaymentVerified } from '../payment-status';
 import type { CollectedBasis, RefundStatus } from '../refund-status';
 import type { CounterOutcome, RefundRecord, SuccessfulItem } from './pasalo-refund';
@@ -256,12 +257,23 @@ async function loadCounters(db: Db, counterIds: readonly string[]): Promise<Coun
  * separately — needed to qualify, and slots remaining — because one column
  * cannot say both and conflating them is what makes a batch two vials short
  * look unreachable.
+ *
+ * Every counter in the stage is returned, in-range or not, each carrying
+ * `inWindow`. Filtering the out-of-range ones out here would hide precisely
+ * what the admin needs to see: closing will not decide them, so a counter that
+ * appears on no screen and in no close is a batch stranded in Pasalo. The panel
+ * shows this batch's counters in the table and the rest as a warning.
  */
-export async function loadPasaloBoard(db: Db): Promise<CounterOutcome[]> {
+export async function loadPasaloBoard(
+  db: Db,
+  window?: BatchWindow | null,
+): Promise<CounterOutcome[]> {
   const rows = await db.select().from(groupBuys)
     .where(eq(groupBuys.status, 'pasalo'))
     .orderBy(asc(groupBuys.name));
   if (!rows.length) return [];
 
-  return loadCounters(db, rows.map((r) => r.id));
+  const inWindowById = new Map(rows.map((r) => [r.id, isCounterInBatchWindow(r, window)]));
+  const counters = await loadCounters(db, rows.map((r) => r.id));
+  return counters.map((c) => ({ ...c, inWindow: inWindowById.get(c.groupBuyId) ?? true }));
 }

@@ -40,7 +40,7 @@ export const GET = handler(async (req: Request) => {
     to,
     // The stage as it stands right now, which is a different question from what
     // a past close decided — the admin watches this table while Pasalo runs.
-    board: await loadPasaloBoard(db),
+    board: await loadPasaloBoard(db, { start, end }),
     customers: buildCustomerRefundRows(refunds, successful),
     refunds,
     successful,
