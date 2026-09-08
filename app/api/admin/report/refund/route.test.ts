@@ -25,6 +25,10 @@ async function kahatiLine(opts: {
   orderNo: string; productId: string; groupBuyId: string;
   qty: number; lineTotalPhp: number;
   shipName?: string; status?: 'payment_confirmed' | 'cancelled'; day?: string;
+  /** The batch this order was placed under. Null is a pre-cycle order. */
+  cycleKey?: string | null;
+  /** Overrides `day` when the exact instant matters — a 22:00 cycle boundary. */
+  createdAt?: Date;
 }) {
   const db = await getDb();
   const [o] = await db.insert(orders).values({
@@ -32,7 +36,8 @@ async function kahatiLine(opts: {
     status: opts.status ?? 'payment_confirmed',
     subtotalPhp: String(opts.lineTotalPhp), totalPhp: String(opts.lineTotalPhp),
     shipName: opts.shipName ?? 'Christine', shipPhone: '09103572843', shipAddress: '1 Mabini St',
-    createdAt: new Date(`${opts.day ?? '2026-08-08'}T04:00:00Z`),
+    createdAt: opts.createdAt ?? new Date(`${opts.day ?? '2026-08-08'}T04:00:00Z`),
+    cycleKey: opts.cycleKey ?? null,
   }).returning();
   await db.insert(orderItems).values({
     orderId: o.id, kind: 'group_buy', groupBuyId: opts.groupBuyId,
@@ -191,5 +196,85 @@ describe('POST /api/admin/report/refund', () => {
 
     const both = await call({ ...BATCH, paste: 'BPC10\t0.4\t1500', buyTypes: ['kahati', 'group_buy'] });
     expect(both.body.data.rows).toHaveLength(2);
+  });
+
+  // ---- batch identity -----------------------------------------------------
+  //
+  // A cycle opens at 22:00 Manila, so no From/To a person types reproduces one:
+  // the range either clips the evening the batch opened or swallows the evening
+  // the next one did. Either way the supplier's shortfall gets joined to buyers
+  // from a batch that was never short — money sent to the wrong people. When
+  // the admin has picked a batch, its cycle key IS the filter and the dates
+  // only label the file.
+
+  it('scopes to the picked batch, leaving the neighbouring one out', async () => {
+    const { productId, groupBuyId } = await kahatiProduct({ code: 'BPC157', supplierCode: 'SC-1' });
+    await kahatiLine({
+      orderNo: 'BBG-1', productId, groupBuyId, qty: 2, lineTotalPhp: 7500,
+      shipName: 'This batch', cycleKey: '2026-08-06T14:00:00.000Z',
+    });
+    // Same day, same product, different batch. A date range cannot tell these
+    // two apart; the cycle key can.
+    await kahatiLine({
+      orderNo: 'BBG-2', productId, groupBuyId, qty: 2, lineTotalPhp: 7500,
+      shipName: 'Next batch', cycleKey: '2026-08-13T14:00:00.000Z',
+    });
+
+    const { status, body } = await call({
+      ...BATCH, cycleKey: '2026-08-06T14:00:00.000Z', paste: 'SC-1\t2\t7500',
+    });
+
+    expect(status).toBe(200);
+    const names = body.data.rows.map((r: { customer: string }) => r.customer);
+    expect(names).toContain('This batch');
+    expect(names).not.toContain('Next batch');
+  });
+
+  it('keeps an order the typed date range would have missed', async () => {
+    const { productId, groupBuyId } = await kahatiProduct({ code: 'BPC157', supplierCode: 'SC-1' });
+    // 22:30 Manila on Aug 6 — the evening the cycle opened, which is the day
+    // BEFORE the range the admin types. Stamped with the batch all the same.
+    await kahatiLine({
+      orderNo: 'BBG-1', productId, groupBuyId, qty: 2, lineTotalPhp: 7500,
+      shipName: 'Opening night', cycleKey: '2026-08-06T14:00:00.000Z',
+      createdAt: new Date('2026-08-06T14:30:00.000Z'),
+    });
+
+    const { body } = await call({
+      ...BATCH, cycleKey: '2026-08-06T14:00:00.000Z', paste: 'SC-1\t2\t7500',
+    });
+
+    const names = body.data.rows.map((r: { customer: string }) => r.customer);
+    expect(names).toContain('Opening night');
+  });
+
+  it('echoes the batch it scoped to, so the export can say which one it is', async () => {
+    const { productId, groupBuyId } = await kahatiProduct({ code: 'BPC157', supplierCode: 'SC-1' });
+    await kahatiLine({
+      orderNo: 'BBG-1', productId, groupBuyId, qty: 2, lineTotalPhp: 7500,
+      cycleKey: '2026-08-06T14:00:00.000Z',
+    });
+
+    const { body } = await call({
+      ...BATCH, cycleKey: '2026-08-06T14:00:00.000Z', paste: 'SC-1\t2\t7500',
+    });
+
+    expect(body.data.cycleKey).toBe('2026-08-06T14:00:00.000Z');
+  });
+
+  it('falls back to the date window for a batch with no cycle key', async () => {
+    // Every order placed before cycles were stamped. These belong to no batch,
+    // so the range is still the only thing that can scope them.
+    const { productId, groupBuyId } = await kahatiProduct({ code: 'BPC157', supplierCode: 'SC-1' });
+    await kahatiLine({
+      orderNo: 'BBG-1', productId, groupBuyId, qty: 2, lineTotalPhp: 7500,
+      shipName: 'Legacy', cycleKey: null,
+    });
+
+    const { body } = await call({ ...BATCH, paste: 'SC-1\t2\t7500' });
+
+    const names = body.data.rows.map((r: { customer: string }) => r.customer);
+    expect(names).toContain('Legacy');
+    expect(body.data.cycleKey).toBeNull();
   });
 });
