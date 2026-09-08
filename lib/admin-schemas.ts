@@ -114,6 +114,27 @@ export const paymentMethodSchema = z.object({
   sortOrder: z.number().int().nonnegative().optional(),
 });
 
+// A feedback folder. No file rides along — a folder is a name and an order —
+// so unlike the payment-method and MOQ schemas this one covers the whole body.
+export const feedbackFolderSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  // An empty string is a deliberate clear, distinct from an absent field.
+  description: z.string().max(300).nullable().optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+});
+
+// Text fields of one uploaded feedback. The screenshot arrives as a separate
+// multipart File part, validated by lib/uploads, so it is not part of this
+// schema — the same split the payment-method QR uses.
+export const feedbackItemSchema = z.object({
+  folderId: z.string().uuid(),
+  caption: z.string().max(500).nullable().optional(),
+  customerName: z.string().max(80).nullable().optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+});
+
 // Text fields of an MOQ product. The image arrives as a separate multipart File
 // part, validated by lib/uploads, so it is not part of this schema.
 export const moqProductSchema = z.object({
