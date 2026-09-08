@@ -87,6 +87,20 @@ describe('attributeParticipantStages', () => {
     ]);
   });
 
+  // Two people joining one hatian in the same second is ordinary, and the
+  // boundary can fall between them. Input order decides it, rather than
+  // whichever way Array#sort happens to leave a tie.
+  it('breaks a tied commit time on input order', () => {
+    const staged = attributeParticipantStages([
+      commitment({ orderId: 'first', vials: 5, committedAt: at(1) }),
+      commitment({ orderId: 'second', vials: 5, committedAt: at(1) }),
+    ], { kahatiVials: 5 });
+
+    expect(staged.map((s) => [s.orderId, s.stage])).toEqual([
+      ['first', 'kahati'], ['second', 'pasalo'],
+    ]);
+  });
+
   it('returns new rows and leaves the caller’s array untouched', () => {
     const rows = [commitment({ orderId: 'a', committedAt: at(1) })];
     const staged = attributeParticipantStages(rows, { kahatiVials: 5 });
