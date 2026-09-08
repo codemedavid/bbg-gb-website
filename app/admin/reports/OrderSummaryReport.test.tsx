@@ -23,6 +23,7 @@ const report: WeeklyReport = {
     totals: { usd: 100, qty: 5, kits: 0.5 },
   },
   buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
+  kahatiStage: { kahatiVials: 0, pasaloVials: 0, totalVials: 0, counters: 0 },
 };
 
 describe('OrderSummaryReport', () => {

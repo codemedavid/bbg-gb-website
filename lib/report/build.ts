@@ -5,6 +5,7 @@ import { num } from './money';
 import { buildBuyerSummary, type BuyerSummary } from './buyer-summary';
 import { buildProductTotals, type ProductTotals } from './product-totals';
 import { partitionBySegment, type ReportSegment } from './segment';
+import { splitKahatiStageVials, type KahatiStageVials } from './kahati-stage';
 import { formatDateRange, formatRange, isoWeekNumber, mondayOf } from './week';
 
 export type ReportItem = {
@@ -113,6 +114,15 @@ export type WeeklyReport = {
   productTotals: ProductTotals;
   /** The same week's orders rolled up per buyer, packing fee included. */
   buyerSummary: BuyerSummary;
+  /**
+   * The counter vials in this report, split into the stage that sold them.
+   *
+   * Kahati and Pasalo are one report — the vials Pasalo fills are the vials the
+   * Kahati batch needed, so they go to the supplier as one order. This is what
+   * lets the one report still say which half is which. Zero on the on-hand and
+   * Group Buy halves, which hold no counters.
+   */
+  kahatiStage: KahatiStageVials;
 };
 
 // Manila-local M/D/YYYY for an ISO instant (report matches the +08:00 sample).
@@ -193,6 +203,7 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     rows,
     productTotals: buildProductTotals(orders),
     buyerSummary: buildBuyerSummary(orders),
+    kahatiStage: splitKahatiStageVials(orders),
   };
 }
 

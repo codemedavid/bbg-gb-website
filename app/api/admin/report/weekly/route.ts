@@ -64,6 +64,8 @@ export const GET = handler(async (req: Request) => {
           kahatiCode: kahatiProducts.code, kahatiPriceUsd: kahatiProducts.priceUsd,
           kahatiKitSize: kahatiProducts.kitSize,
           kahatiVialCap: groupBuys.totalSlots,
+          groupBuyId: orderItems.groupBuyId,
+          counterKahatiVials: groupBuys.kahatiVials,
           campaignIncludedProducts: moqCampaigns.includedProducts,
           moqName: moqProducts.name, moqSpec: moqProducts.spec,
         })
@@ -115,6 +117,12 @@ export const GET = handler(async (req: Request) => {
       // split when orders.buy_type says 'solo' only because that is its default.
       kind: it.kind,
       unitPricePhp: it.unitPricePhp,
+      // The counter this line claimed from, and the vials frozen on it when
+      // Kahati closed. Together they let the report split its vials into the
+      // stage that sold them (lib/report/kahati-stage.ts). Null on every line
+      // that references no counter.
+      groupBuyId: it.groupBuyId,
+      counterKahatiVials: it.counterKahatiVials,
     };
 
     const included = ((it.campaignIncludedProducts as IncludedProduct[] | null) ?? [])

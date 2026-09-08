@@ -61,6 +61,24 @@ export function SegmentReport({ segment, report, isBusy, onDownload, onPrintPack
         </div>
       </div>
 
+      {/* Kahati and Pasalo are one report, so the heading alone is misleading:
+          a sheet headed "Kahati" carries Pasalo vials too, and an admin sizing a
+          batch off it has to be told. The split is stated rather than implied,
+          because "how much of this came from the rescue window" is a question
+          the batch gets asked. */}
+      {segment === 'kahati' && report.kahatiStage.totalVials > 0 && (
+        <p
+          data-testid="kahati-stage-split"
+          className="m-0 rounded-[9px] bg-surface-mist px-3 py-2 text-[12.5px] text-ink-body"
+        >
+          <span className="font-semibold text-ink">Includes Pasalo.</span>{' '}
+          {report.kahatiStage.kahatiVials} Kahati + {report.kahatiStage.pasaloVials} Pasalo
+          {' '}= {report.kahatiStage.totalVials} vials across {report.kahatiStage.counters}
+          {' '}counter{report.kahatiStage.counters === 1 ? '' : 's'}. Pasalo vials completed these
+          batches, so they are ordered with them.
+        </p>
+      )}
+
       <OrderSummaryReport report={report} />
       <ProductTotalsReport productTotals={report.productTotals} segment={segment} />
     </section>

@@ -30,6 +30,7 @@ const half = (invoice: string, code: string, name: string, buyType: 'solo' | 'gr
     totals: { usd: 100, qty: 5, kits: 0.5 },
   },
   buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
+  kahatiStage: { kahatiVials: 0, pasaloVials: 0, totalVials: 0, counters: 0 },
 });
 
 const onhand = half('BBG-2500', 'TR15', 'Tirzepatide', 'solo');
@@ -41,6 +42,7 @@ const emptyHalf: WeeklyReport = {
   counts: { paid: 0, pending: 0, cancelled: 0 }, totals: { usd: 0, php: 0, packingFee: 0 },
   rows: [], productTotals: { rows: [], totals: { usd: 0, qty: 0, kits: 0 } },
   buyerSummary: { groups: [], totals: { qty: 0, amountPhp: 0 } },
+  kahatiStage: { kahatiVials: 0, pasaloVials: 0, totalVials: 0, counters: 0 },
 };
 
 const segments = { onhand, groupbuy, kahati };
