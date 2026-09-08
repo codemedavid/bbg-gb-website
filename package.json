@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "prebuild": "npm run db:check",
+    "prebuild": "npm run config:check && npm run db:check",
     "start": "next start",
     "lint": "next lint",
     "db:push": "drizzle-kit push",
@@ -15,7 +15,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "drizzle-kit push --force && tsx scripts/seed.ts",
     "imagekit:setup": "tsx scripts/provision-imagekit.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "config:check": "tsx scripts/check-config.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.12",
