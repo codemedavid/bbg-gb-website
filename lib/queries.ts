@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
 import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY, type KahatiDownpaymentPolicy } from './kahati-downpayment';
-import type { Category, CheckoutPaymentMethod, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, PasaloCounter, Product, SettlementPreview } from './types';
+import type { Category, CheckoutPaymentMethod, FeedbackFolderDetail, PublicFeedbackFolder, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, PasaloCounter, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -123,6 +123,24 @@ export const useCampaigns = () =>
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
+  });
+
+// The feedback gallery. Hand-curated and changed by an admin a few times a
+// batch, so it is cached for the same five minutes the packing fees are rather
+// than refetched on every mount like the live boards.
+export const useFeedbackFolders = () =>
+  useQuery({
+    queryKey: ['feedback-folders'],
+    queryFn: () => apiGet<PublicFeedbackFolder[]>('/feedback'),
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useFeedbackFolder = (id?: string) =>
+  useQuery({
+    queryKey: ['feedback-folder', id],
+    queryFn: () => apiGet<FeedbackFolderDetail>(`/feedback/${id}`),
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
   });
 
 export const usePaymentMethods = () =>

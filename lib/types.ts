@@ -144,6 +144,34 @@ export type PaymentMethod = {
   isActive: boolean; sortOrder: number;
 };
 
+/**
+ * One uploaded customer feedback: a screenshot, plus the readable version of
+ * what it says. `imageUrl` is already resolved server-side — the storage key
+ * never reaches the browser.
+ */
+export type FeedbackItem = {
+  id: string; folderId: string; imageUrl: string;
+  caption: string | null; customerName: string | null;
+  isActive: boolean; sortOrder: number;
+};
+
+/**
+ * A folder of feedback, as the gallery index renders it. `itemCount` and
+ * `coverUrl` describe only the screenshots the caller is allowed to see, so the
+ * public tile never advertises a screenshot an admin has hidden.
+ */
+export type FeedbackFolder = {
+  id: string; name: string; description: string | null;
+  itemCount: number; coverUrl: string | null;
+  isActive: boolean; sortOrder: number;
+};
+
+// What the public /feedback endpoint returns: no admin bookkeeping.
+export type PublicFeedbackFolder = Omit<FeedbackFolder, 'isActive' | 'sortOrder'>;
+
+// One folder and everything filed in it, from /feedback/[id].
+export type FeedbackFolderDetail = PublicFeedbackFolder & { items: FeedbackItem[] };
+
 // Shape returned by the public /payment-methods endpoint (active methods only).
 export type CheckoutPaymentMethod =
   Pick<PaymentMethod, 'id' | 'label' | 'accountName' | 'accountNumber' | 'qrUrl' | 'purpose' | 'instructions'>;

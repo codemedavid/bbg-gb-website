@@ -65,6 +65,19 @@ export default function HomePage() {
           </div>
           <div className="text-[18px] font-bold text-brand-green">→</div>
         </button>
+
+        {/* Third in the stack and deliberately last: the two above answer a
+            question the customer came with, this one answers the question they
+            have before they commit — "has anyone actually received this?" */}
+        <button onClick={() => router.push('/feedback')}
+          className="mt-2.5 flex w-full items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-[#a9c88f] bg-white p-3.5 text-left">
+          <div className="text-2xl">💬</div>
+          <div className="flex-1">
+            <div className="text-[14px] font-bold text-ink">Customer feedback</div>
+            <div className="text-[12px] text-ink-muted">Totoong review ng mga sumali. Basahin dito.</div>
+          </div>
+          <div className="text-[18px] font-bold text-brand-green">→</div>
+        </button>
       </div>
       {joining && <JoinSheet g={joining} onClose={() => setJoining(null)} />}
     </>
