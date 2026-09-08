@@ -96,6 +96,33 @@ describe('Feedback folder page', () => {
     expect(within(dialog).getByRole('img')).toHaveAttribute('src', '/api/files/feedback/a.png');
   });
 
+  // Coverage backfill: the close paths existed but nothing exercised them, and
+  // a lightbox that covers the whole screen with no way out is a trap on a
+  // phone, where there is no Escape key.
+  it('closes the full-size view from the button', async () => {
+    await setup({
+      id: 'f1', name: 'Batch 6', description: null, itemCount: 1, coverUrl: null,
+      items: [item({ caption: 'Sobrang bilis!' })],
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /Sobrang bilis/ }));
+
+    await userEvent.click(screen.getByRole('button', { name: /Isara/ }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes the full-size view by tapping the backdrop', async () => {
+    await setup({
+      id: 'f1', name: 'Batch 6', description: null, itemCount: 1, coverUrl: null,
+      items: [item({ caption: 'Sobrang bilis!' })],
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /Sobrang bilis/ }));
+
+    await userEvent.click(screen.getByRole('dialog'));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('says the folder is empty rather than rendering nothing', async () => {
     await setup({ id: 'f1', name: 'Batch 7', description: null, itemCount: 0, coverUrl: null, items: [] });
 

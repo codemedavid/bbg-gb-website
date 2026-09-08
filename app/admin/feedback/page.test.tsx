@@ -111,6 +111,29 @@ describe('Admin feedback folders', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/name/i);
   });
 
+  it('edits an existing folder rather than creating a second one', async () => {
+    setup();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^Edit$/ })[0]);
+    await userEvent.clear(screen.getByLabelText(/Folder name/i));
+    await userEvent.type(screen.getByLabelText(/Folder name/i), 'Batch 6 Feedback');
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    expect(saveFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'f1', body: expect.objectContaining({ name: 'Batch 6 Feedback' }) }),
+    );
+  });
+
+  it('closes the folder form without saving on Cancel', async () => {
+    setup();
+
+    await userEvent.click(screen.getByRole('button', { name: /New folder/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+
+    expect(saveFolder).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(/Folder name/i)).not.toBeInTheDocument();
+  });
+
   it('names the number of screenshots a folder delete will destroy', async () => {
     setup();
 
