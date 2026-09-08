@@ -86,6 +86,35 @@ describe('buildWeeklyReport', () => {
   });
 });
 
+// Kahati and Pasalo are one report — the vials Pasalo fills are the vials the
+// Kahati batch needed — so the report has to be able to say how much of itself
+// came from each stage.
+describe('the Kahati/Pasalo stage split on a report', () => {
+  const counterLine = (qty: number, frozen: number | null) => ({
+    nameSnapshot: 'Retatrutide', qty, unitPriceUsd: null, unitPricePhp: '1040',
+    kind: 'group_buy', groupBuyId: 'gb1', counterKahatiVials: frozen,
+  });
+
+  it('reports the vials each stage brought in', () => {
+    const r = buildWeeklyReport('2026-05-25', [
+      order({ orderNo: 'a', buyType: 'kahati', createdAt: '2026-05-26T02:00:00Z', items: [counterLine(3, 3)] }),
+      order({ orderNo: 'b', buyType: 'kahati', createdAt: '2026-05-27T02:00:00Z', items: [counterLine(2, 3)] }),
+    ]);
+    expect(r.kahatiStage).toMatchObject({ kahatiVials: 3, pasaloVials: 2, totalVials: 5 });
+  });
+
+  it('carries the Pasalo vials in the KAHATI half, not a half of their own', () => {
+    const { kahati, groupbuy, onhand } = buildSegmentedWeeklyReport('2026-05-25', [
+      order({ orderNo: 'a', buyType: 'kahati', createdAt: '2026-05-26T02:00:00Z', items: [counterLine(3, 3)] }),
+      order({ orderNo: 'b', buyType: 'kahati', createdAt: '2026-05-27T02:00:00Z', items: [counterLine(2, 3)] }),
+    ]);
+    expect(kahati.kahatiStage).toMatchObject({ kahatiVials: 3, pasaloVials: 2 });
+    // Nowhere else: a Pasalo vial counted twice would over-order the supplier.
+    expect(groupbuy.kahatiStage.totalVials).toBe(0);
+    expect(onhand.kahatiStage.totalVials).toBe(0);
+  });
+});
+
 describe('buildSegmentedWeeklyReport', () => {
   // A week holding both kinds of business: one on-hand sale off the shelf and
   // one hatian commitment against the next batch.

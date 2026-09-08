@@ -6,7 +6,9 @@
 // Splitting the report starts here, with the rule that decides which side an
 // order falls on.
 import { describe, it, expect } from 'vitest';
-import { segmentOfOrder, partitionBySegment, SEGMENT_LABEL } from './segment';
+import {
+  segmentOfOrder, partitionBySegment, SEGMENT_LABEL, REPORT_SEGMENTS, SEGMENT_BUY_TYPES,
+} from './segment';
 import type { ReportOrderInput } from './build';
 
 const order = (o: Partial<ReportOrderInput>): ReportOrderInput => ({
@@ -97,5 +99,33 @@ describe('SEGMENT_LABEL', () => {
     expect(SEGMENT_LABEL.onhand).toBe('On-Hand');
     expect(SEGMENT_LABEL.groupbuy).toBe('Group Buy');
     expect(SEGMENT_LABEL.kahati).toBe('Kahati');
+  });
+});
+
+
+// The client's decision, locked in: Kahati and Pasalo report together, because
+// the vials Pasalo fills are the vials the Kahati batch needed. Nothing else
+// pins this. If a 'pasalo' buy type or a fourth segment is ever added, the
+// batch order silently splits and the supplier is under-ordered — the failure
+// is a wrong number, not an exception, so no other test would catch it.
+describe('Pasalo reports with Kahati', () => {
+  it('files a commitment made during the Pasalo stage under Kahati', () => {
+    // A Pasalo join is a commitment to a group_buys counter, so checkout stamps
+    // it buy_type 'kahati' exactly as a first-window join does.
+    expect(segmentOfOrder(order({ buyType: 'kahati' }))).toBe('kahati');
+  });
+
+  it('files a counter commitment under Kahati even with no buy type recorded', () => {
+    expect(segmentOfOrder(order({
+      buyType: undefined,
+      items: [{ nameSnapshot: 'Retatrutide', qty: 3, unitPriceUsd: null, unitPricePhp: '1040', kind: 'group_buy' }],
+    })))
+      .toBe('kahati');
+  });
+
+  it('gives Pasalo no segment of its own', () => {
+    expect(REPORT_SEGMENTS).toEqual(['onhand', 'groupbuy', 'kahati']);
+    expect(REPORT_SEGMENTS).not.toContain('pasalo');
+    expect(Object.values(SEGMENT_BUY_TYPES).flat()).not.toContain('pasalo');
   });
 });
