@@ -193,3 +193,61 @@ describe('packing fee status on a hatian order', () => {
     expect(await screen.findByTestId('packing-fee-BBG-2418')).toHaveTextContent(/charged once at final checkout/i);
   });
 });
+
+// The client, on why customers had to be messaged one by one to pay:
+// "di kasi nila alam if pumasok ba ang na place nila or wala ... kasi inaantay
+// lang nila magkano babayaran at ano ang pumasok sa kanila."
+//
+// The page was a flat list of orders. It never said which batch an order
+// belonged to, and nothing told a customer whether the hatian they joined had
+// reached its minimum.
+describe('my orders, by batch', () => {
+  const AUG = '2026-08-29T14:00:00.000Z';
+
+  const commitment = (o: Record<string, unknown> = {}) => ({
+    kahatiName: 'Retatrutide', vials: 3, lineTotalPhp: 2700,
+    counterStatus: 'open', claimedSlots: 8, minViableVials: 7, ...o,
+  });
+
+  const batched = (o: Record<string, unknown> = {}) => ({
+    ...kahatiOrder, cycleKey: AUG, commitments: [commitment()], ...o,
+  });
+
+  it('groups the orders into the batch they were placed in', async () => {
+    state.orders = [batched({ id: 'a', orderNo: 'KH-1' }), batched({ id: 'b', orderNo: 'KH-2' })];
+    render(<OrdersPage />, { wrapper });
+
+    const batches = await screen.findAllByTestId(/^order-batch-/);
+    expect(batches).toHaveLength(1);
+  });
+
+  it('says a hatian that reached its minimum got in', async () => {
+    state.orders = [batched({ commitments: [commitment({ claimedSlots: 8 })] })];
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByTestId('commitment-o1-0')).toHaveTextContent(/pumasok/i);
+  });
+
+  it('says how many more vials a hatian still needs', async () => {
+    state.orders = [batched({ commitments: [commitment({ claimedSlots: 5 })] })];
+    render(<OrdersPage />, { wrapper });
+
+    const line = await screen.findByTestId('commitment-o1-0');
+    expect(line).toHaveTextContent(/2 more/i);
+  });
+
+  it('says a cancelled hatian did not get in', async () => {
+    state.orders = [batched({ commitments: [commitment({ counterStatus: 'cancelled' })] })];
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByTestId('commitment-o1-0')).toHaveTextContent(/hindi pumasok/i);
+  });
+
+  // "Kasi inaantay lang nila magkano babayaran."
+  it('shows what the whole batch still owes', async () => {
+    state.orders = [batched({ id: 'a', totalPhp: '2700', downpaymentPhp: '150' })];
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByTestId('batch-amount-due')).toHaveTextContent('2,550');
+  });
+});
