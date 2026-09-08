@@ -7,6 +7,11 @@ import { php } from '@/lib/format';
 import { KAHATI_MAX_VIALS, kahatiProgressPercent, kahatiClaimedDisplay } from '@/lib/kahati';
 import { perVialPrice } from '@/lib/pricing';
 import { hatianBatchSummary } from '@/lib/hatian-batch-summary';
+import {
+  attributeParticipantStages, summariseParticipantStages,
+  type ParticipantStage, type StagedCommitment,
+} from '@/lib/hatian-participants';
+import { counterQuantities, type CounterQuantities } from '@/lib/kahati-quantity';
 import { STATUS_LABEL } from '@/lib/order-status';
 import type { GroupBuy, HatianCommitment, PaymentState } from '@/lib/types';
 
@@ -217,10 +222,67 @@ function ProofLightbox({ row, onClose }: { row: HatianCommitment; onClose: () =>
   );
 }
 
+// Which of the two selling windows this participant committed in. Worth a
+// badge rather than a word: the whole reason the column exists is that an admin
+// scanning the table has to be able to pick out the Pasalo joiners at a glance
+// when somebody asks who came in on the rescue.
+function StageBadge({ stage, testId }: { stage: ParticipantStage; testId: string }) {
+  const isPasalo = stage === 'pasalo';
+  return (
+    <span
+      data-testid={testId}
+      className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-bold ${
+        isPasalo ? 'bg-[#fdf0dc] text-[#8a6d1f]' : 'bg-[#e8f5db] text-brand-greendark'
+      }`}
+    >
+      {isPasalo ? 'Pasalo' : 'Kahati'}
+    </span>
+  );
+}
+
+// Whether this batch gets ordered at all, said in a sentence.
+//
+// The figure above it — "vials remaining" — is the gap to the 10-vial CAP, and
+// answering "how far from full" is not answering "is this happening". At 5/10 a
+// batch needs TWO more vials to proceed and has FIVE slots left to sell, and
+// quoting the five is how a batch two vials from success gets written off
+// (lib/kahati-quantity.ts). The shortfall wording says what the alternative is,
+// because "5 of 7" alone does not tell an admin that the customers on this
+// counter are owed refunds if it stays there.
+function QualificationNote({ q }: { q: CounterQuantities }) {
+  const qualified = q.state === 'qualified' || q.state === 'full';
+  const tone = q.combinedVials <= 0
+    ? 'bg-line/60 text-ink-body'
+    : qualified ? 'bg-[#e8f5db] text-brand-greendark' : 'bg-[#fdf0dc] text-[#8a6d1f]';
+  const message = q.combinedVials <= 0
+    ? 'Walang sumali pa — this counter has no vials on it yet.'
+    : qualified
+      ? `Qualified — ${q.combinedVials} of the ${q.minRequired} vials needed. This batch gets ordered.`
+      : `${q.neededToQualify} more ${q.neededToQualify === 1 ? 'vial' : 'vials'} needed before this batch `
+        + `can be ordered. If it closes below ${q.minRequired}, the batch is cancelled and every `
+        + 'participant here is refunded.';
+  return (
+    <p data-testid="summary-qualification" className={`mt-3 mb-0 rounded-[9px] px-3 py-2 text-[12.5px] font-semibold ${tone}`}>
+      {message}
+    </p>
+  );
+}
+
 // What the batch adds up to. The arithmetic lives in lib/hatian-batch-summary —
 // the two traps in it (double-counted shared balances, cancelled orders) are
 // worth a tested module rather than a handful of reduces inline here.
-function BatchSummary({ rows, groupBuy }: { rows: HatianCommitment[]; groupBuy: GroupBuy }) {
+function BatchSummary({ rows, groupBuy }: { rows: StagedCommitment<HatianCommitment>[]; groupBuy: GroupBuy }) {
+  // The two windows, counted off the rows this table is showing.
+  const split = summariseParticipantStages(rows);
+  // Qualification, read off the COUNTER. lib/pasalo-server closes the stage on
+  // claimed_slots, so a panel that judged the batch by the rows it happened to
+  // list would promise an outcome the close is not going to deliver.
+  const q = counterQuantities({
+    claimedSlots: groupBuy.claimedSlots,
+    totalSlots: groupBuy.totalSlots,
+    kahatiVials: groupBuy.kahatiVials ?? null,
+    minViableVials: groupBuy.minViableVials,
+  });
   const s = hatianBatchSummary(rows, {
     totalSlots: groupBuy.totalSlots,
     // Derived, not read off the row: the admin feed returns raw group_buys and
@@ -233,6 +295,11 @@ function BatchSummary({ rows, groupBuy }: { rows: HatianCommitment[]; groupBuy: 
     { label: 'Total participants', value: String(s.totalParticipants), testId: 'summary-participants' },
     { label: 'Vials reserved', value: String(s.totalVialsReserved), testId: 'summary-vials-reserved' },
     { label: 'Vials remaining', value: String(s.remainingVials), testId: 'summary-vials-remaining' },
+    // Toward the MINIMUM, which is the other question entirely from the cap
+    // figure above it — and the one the batch lives or dies by.
+    { label: `Toward the ${q.minRequired}-vial minimum`, value: `${q.combinedVials} / ${q.minRequired}`, testId: 'summary-minimum' },
+    { label: 'Kahati vials', value: String(split.kahatiVials), testId: 'summary-kahati-vials' },
+    { label: 'Pasalo vials', value: String(split.pasaloVials), testId: 'summary-pasalo-vials' },
     { label: 'Gross income', value: php(s.grossIncomePhp), testId: 'summary-gross-income', tone: 'text-brand-greendark' },
     { label: 'Confirmed payments', value: String(s.confirmedPayments), testId: 'summary-confirmed', tone: 'text-brand-greendark' },
     { label: 'Pending payments', value: String(s.pendingPayments), testId: 'summary-pending', tone: 'text-[#8a6d1f]' },
@@ -249,6 +316,7 @@ function BatchSummary({ rows, groupBuy }: { rows: HatianCommitment[]; groupBuy: 
           </div>
         ))}
       </dl>
+      <QualificationNote q={q} />
       {/* Said out loud, because it is the difference between ordering 5 vials
           from the supplier and ordering 9. */}
       {s.cancelledOrders > 0 && (
@@ -262,6 +330,9 @@ function BatchSummary({ rows, groupBuy }: { rows: HatianCommitment[]; groupBuy: 
 
 function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose: () => void }) {
   const { data: rows = [], isLoading } = useAdminGroupBuyCommitments(groupBuy.id);
+  // Which window each of them committed in, reconstructed from the counter's
+  // frozen kahati_vials — there is no per-order stage column to read.
+  const staged = attributeParticipantStages(rows, { kahatiVials: groupBuy.kahatiVials ?? null });
   const [proof, setProof] = useState<HatianCommitment | null>(null);
 
   return (
@@ -276,13 +347,14 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-left text-[12.5px]">
+              <table className="w-full min-w-[1200px] text-left text-[12.5px]">
                 <thead className="border-b border-line-soft text-[11px] uppercase tracking-wide text-ink-muted">
                   <tr>
                     <th className="py-2 pr-3">Customer</th>
                     <th className="py-2 pr-3">Contact</th>
                     <th className="py-2 pr-3">Shipping address</th>
                     <th className="py-2 pr-3">Vials</th>
+                    <th className="py-2 pr-3">Window</th>
                     <th className="py-2 pr-3">Paid</th>
                     <th className="py-2 pr-3">Balance</th>
                     <th className="py-2 pr-3">Method</th>
@@ -295,7 +367,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r: HatianCommitment) => (
+                  {staged.map((r) => (
                     <tr key={r.orderId} className="border-b border-line-soft/60 transition-colors duration-150 hover:bg-surface-mist/60">
                       <td className="py-2.5 pr-3">
                         <div className="font-semibold text-ink">{r.customerName}</div>
@@ -305,6 +377,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
                       <td data-testid={`contact-${r.orderId}`} className="py-2.5 pr-3 whitespace-nowrap text-ink-body">{r.contactPhone}</td>
                       <td data-testid={`address-${r.orderId}`} className="min-w-[180px] max-w-[240px] py-2.5 pr-3 text-[11.5px] text-ink-body">{r.shippingAddress}</td>
                       <td data-testid={`vials-${r.orderId}`} className="py-2.5 pr-3 font-bold text-ink">{r.vials}</td>
+                      <td className="py-2.5 pr-3"><StageBadge stage={r.stage} testId={`stage-${r.orderId}`} /></td>
                       <td data-testid={`amount-paid-${r.orderId}`} className="py-2.5 pr-3 font-semibold text-brand-greendark">{php(r.amountPaidPhp)}</td>
                       <td data-testid={`balance-${r.orderId}`} className="py-2.5 pr-3 font-semibold text-ink">
                         {php(r.orderBalancePhp)}
@@ -334,7 +407,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
                 </tbody>
               </table>
             </div>
-            <BatchSummary rows={rows} groupBuy={groupBuy} />
+            <BatchSummary rows={staged} groupBuy={groupBuy} />
           </>
         )}
       </div>
