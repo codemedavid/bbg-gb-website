@@ -155,6 +155,11 @@ export async function makeGroupBuy(
     kahatiVials: number | null;
     pasaloClosesAt: Date | null;
     minViableVials: number;
+    // Which batch this counter belongs to. `opensAt` is the scheduled start and
+    // `createdAt` the fallback for a counter that was never scheduled — the two
+    // dates lib/pasalo.ts counterStartedAt chooses between.
+    opensAt: Date | null;
+    createdAt: Date;
   }> = {},
 ): Promise<{ id: string; totalSlots: number; minVials: number }> {
   const db = await getDb();
@@ -169,6 +174,8 @@ export async function makeGroupBuy(
     kahatiVials: overrides.kahatiVials ?? null,
     pasaloClosesAt: overrides.pasaloClosesAt ?? null,
     minViableVials: overrides.minViableVials ?? 7,
+    opensAt: overrides.opensAt ?? null,
+    ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
   }).returning();
   return { id: row.id, totalSlots, minVials };
 }

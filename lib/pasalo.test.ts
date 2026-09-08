@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   pasaloEligibility, pasaloOutcome, pasaloFailureReason, pasaloSecuredNotice,
+  counterStartedAt, isCounterInBatchWindow,
 } from './pasalo';
 import { counterQuantities } from './kahati-quantity';
 
@@ -94,5 +95,73 @@ describe('pasaloSecuredNotice — the customer-facing line on a live Pasalo', ()
   });
   it('uses the singular for a single remaining slot', () => {
     expect(pasaloSecuredNotice(q(9, 3))).toBe('BATCH SECURED ✅ · 1 slot pa bago mapuno');
+  });
+});
+
+describe('counterStartedAt — which date decides the batch a counter belongs to', () => {
+  it('uses the scheduled open date when the counter was scheduled', () => {
+    const opensAt = new Date('2026-08-29T14:00:00Z');
+    expect(counterStartedAt({ opensAt, createdAt: new Date('2026-08-20T00:00:00Z') }))
+      .toEqual(opensAt);
+  });
+
+  it('falls back to created_at for a counter that was never scheduled', () => {
+    // Every counter written before scheduling existed has opens_at null, and
+    // those rows are exactly the old data this filter has to keep out.
+    const createdAt = new Date('2026-07-01T00:00:00Z');
+    expect(counterStartedAt({ opensAt: null, createdAt })).toEqual(createdAt);
+  });
+});
+
+describe('isCounterInBatchWindow — keeping an older batch out of this close', () => {
+  const window = {
+    start: new Date('2026-08-29T00:00:00+08:00'),
+    end: new Date('2026-09-06T00:00:00+08:00'),
+  };
+
+  it('includes a counter that started inside the window', () => {
+    expect(isCounterInBatchWindow(
+      { opensAt: new Date('2026-08-30T14:00:00+08:00'), createdAt: new Date('2026-08-01T00:00:00Z') },
+      window,
+    )).toBe(true);
+  });
+
+  it('excludes a counter that started before the window — the whole point', () => {
+    expect(isCounterInBatchWindow(
+      { opensAt: new Date('2026-08-16T14:00:00+08:00'), createdAt: new Date('2026-08-16T00:00:00Z') },
+      window,
+    )).toBe(false);
+  });
+
+  it('excludes a counter that started after the window', () => {
+    expect(isCounterInBatchWindow(
+      { opensAt: new Date('2026-09-12T14:00:00+08:00'), createdAt: new Date('2026-09-12T00:00:00Z') },
+      window,
+    )).toBe(false);
+  });
+
+  it('judges an unscheduled counter by created_at', () => {
+    expect(isCounterInBatchWindow(
+      { opensAt: null, createdAt: new Date('2026-07-04T00:00:00+08:00') },
+      window,
+    )).toBe(false);
+    expect(isCounterInBatchWindow(
+      { opensAt: null, createdAt: new Date('2026-09-01T00:00:00+08:00') },
+      window,
+    )).toBe(true);
+  });
+
+  it('is inclusive of the first instant and exclusive of the end bound', () => {
+    // dateRangeBounds hands back an exclusive end — the next day's midnight —
+    // so a counter opened at the end bound belongs to the NEXT batch.
+    expect(isCounterInBatchWindow({ opensAt: window.start, createdAt: window.start }, window)).toBe(true);
+    expect(isCounterInBatchWindow({ opensAt: window.end, createdAt: window.end }, window)).toBe(false);
+  });
+
+  it('includes everything when no window is given, so an unscoped call is unchanged', () => {
+    expect(isCounterInBatchWindow(
+      { opensAt: new Date('2020-01-01T00:00:00Z'), createdAt: new Date('2020-01-01T00:00:00Z') },
+      null,
+    )).toBe(true);
   });
 });
