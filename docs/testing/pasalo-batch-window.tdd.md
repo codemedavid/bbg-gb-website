@@ -88,3 +88,63 @@ Checkpoint `bc3d880`.
 - **Not verified against the production driver.** Tests run on PGlite; the
   filtering is in application code rather than SQL, so no driver-specific
   behaviour is involved.
+
+---
+
+# Refund export scoped to a batch
+
+Follow-up, same defect one surface over. Asked for directly: *"oo ayusin din
+ang Refund Export."*
+
+## The defect
+
+`POST /api/admin/report/refund` joined the supplier's shortfall sheet to every
+kahati order inside a typed `From`/`To` window. A cycle opens at 22:00 Manila,
+so a typed range either clips the evening the batch opened or swallows the
+evening the next one did — and the buyers it wrongly picks up are people the
+supplier was never short on.
+
+## Decision
+
+`orders.cycle_key` is the batch's identity. When the admin has picked a batch
+from the Reports picker, that key is the filter and the dates only label the
+file. **Never both**: intersecting them drops the batch's own opening-evening
+orders, which sit before the date the admin types — the same leak from the
+other side. Orders with no key (pre-cycle) still scope by the window.
+
+## RED
+
+`npx vitest run app/api/admin/report/refund/route.test.ts`
+
+```
+Tests  4 failed | 11 passed (15)
+
+× scopes to the picked batch, leaving the neighbouring one out
+  → expected [ 'This batch', 'Next batch' ] to not include 'Next batch'
+× keeps an order the typed date range would have missed
+  → expected [ '' ] to include 'Opening night'
+```
+
+Checkpoint `688c185`.
+
+## GREEN
+
+`npx vitest run` → **279 files, 3063 tests passed**. `tsc --noEmit` clean.
+
+## Test specification
+
+| # | What is guaranteed | Test | Type | Result |
+|---|---|---|---|---|
+| 1 | A same-day order from the neighbouring batch is excluded | `route.test.ts:scopes to the picked batch…` | integration | PASS |
+| 2 | An order placed at 22:30 the evening the cycle opened is kept, though it falls before the typed `from` | `route.test.ts:keeps an order the typed date range would have missed` | integration | PASS |
+| 3 | The response names the batch it scoped to | `route.test.ts:echoes the batch it scoped to` | integration | PASS |
+| 4 | A pre-cycle order with no key still joins by the date window | `route.test.ts:falls back to the date window…` | integration | PASS |
+| 5 | Every prior refund-export guarantee still holds | `route.test.ts` (11) | integration | PASS |
+
+## Known gaps
+
+- **The warning is the only guard against a stale range.** Typing a date clears
+  `cycleKey` upstairs, so the export falls back to dates and says so in orange.
+  Nothing forces the admin to pick a batch.
+- **`RefundExport` has no component test**, consistent with the rest of the
+  admin reports UI; the scoping it drives is covered at the route.
