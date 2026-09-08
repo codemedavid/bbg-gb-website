@@ -15,10 +15,17 @@ import { refundCsv, type RefundRow, type RefundSummary, type RefundTier } from '
 // The screen deliberately shows the join BEFORE offering the download. A row
 // matched by price rather than by supplier code is a guess, and an admin about
 // to send money is the right person to catch a wrong one.
+//
+// Scoped to a BATCH when the Reports page has one picked, not to the dates. A
+// cycle opens at 22:00 Manila, so a typed range either clips the evening the
+// batch opened or swallows the evening the next one did — and the buyers it
+// wrongly picks up are people the supplier was never short on.
 
 type RefundResponse = {
   from: string;
   to: string;
+  /** The batch this join actually covered, or null when it fell back to dates. */
+  cycleKey: string | null;
   rows: RefundRow[];
   summary: RefundSummary;
   skipped: string[];
@@ -76,14 +83,20 @@ function downloadRefundCsv(rows: RefundRow[], from: string, to: string): void {
   setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 0);
 }
 
-export function RefundExport({ from, to }: { from: string; to: string }) {
+export function RefundExport({ from, to, cycleKey }: { from: string; to: string; cycleKey?: string }) {
   const [paste, setPaste] = useState('');
   const [buyTypes, setBuyTypes] = useState<string[]>(['kahati']);
   const [result, setResult] = useState<RefundResponse | null>(null);
   const showToast = useToast((s) => s.show);
 
   const match = useMutation({
-    mutationFn: () => apiSend<RefundResponse>('/admin/report/refund', 'POST', { from, to, paste, buyTypes }),
+    mutationFn: () => apiSend<RefundResponse>('/admin/report/refund', 'POST', {
+      from, to, paste, buyTypes,
+      // Only when a batch is actually picked. Typing a date clears it upstairs,
+      // and a stale key would scope the sheet to a batch the dates no longer
+      // describe — worse than the leak it was added to close.
+      ...(cycleKey ? { cycleKey } : {}),
+    }),
     onSuccess: setResult,
     onError: (err: unknown) => showToast(err instanceof Error ? err.message : 'Could not match the sheet.'),
   });
@@ -106,8 +119,14 @@ export function RefundExport({ from, to }: { from: string; to: string }) {
       <header>
         <h2 className="m-0 font-display text-[17px] font-bold">Refund export</h2>
         <p className="mt-1 text-[13px] leading-snug text-ink-muted">
-          Paste the supplier&rsquo;s refund sheet — SKU, kits, amount — and it comes back joined to the buyers
-          in this date window, with their contact details.
+          Paste the supplier&rsquo;s refund sheet — SKU, kits, amount — and it comes back joined to the
+          buyers in this batch, with their contact details.
+        </p>
+        <p className={`mt-1 text-[12px] font-semibold ${cycleKey ? 'text-brand-greendark' : 'text-warn-fg'}`}>
+          {cycleKey
+            ? 'Scoped to the batch picked above — orders are matched by their batch, not by the dates.'
+            : 'No batch picked, so this matches by date only. A cycle opens at 22:00 Manila, '
+              + 'so a typed range can pull in the next batch — pick a batch above to be exact.'}
         </p>
       </header>
 

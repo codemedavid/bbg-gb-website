@@ -136,7 +136,7 @@ export default function AdminReportsPage() {
           comes after them: the batch was ordered, it arrived short, now who is
           owed money. Shares the same date window — a refund belongs to one
           batch, and that batch is the range already chosen above. */}
-      <RefundExport from={from} to={to} />
+      <RefundExport from={from} to={to} cycleKey={cycleKey} />
     </div>
   );
 }
