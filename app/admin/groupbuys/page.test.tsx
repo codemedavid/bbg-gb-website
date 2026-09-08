@@ -493,3 +493,95 @@ describe('board search', () => {
     expect(screen.queryByLabelText(/search/i)).not.toBeInTheDocument();
   });
 });
+
+// "Sa kahati po? Then sa pasalo if sino ang nag commit?" — asked in the buyers'
+// group chat, and unanswerable from this panel. It listed everyone who
+// committed to a counter without saying which of the two selling windows they
+// committed in, and its only fill figure was the gap to the 10-vial CAP — never
+// the gap to the 7-vial MINIMUM, which is the number that decides whether the
+// batch gets ordered at all.
+describe('which window each participant committed in', () => {
+  const openPanelFor = async (counter: Record<string, unknown>) => {
+    board.current = [counter];
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /participants/i }));
+    await screen.findByText('Ana Cruz');
+  };
+
+  // kahati_vials 3 freezes the counter at the moment Kahati closed: Ana's 3
+  // vials were on it, Ben's 2 were sold by the Pasalo window that followed.
+  const PASALO_HATIAN = { ...OPEN_HATIAN, status: 'pasalo', kahatiVials: 3, minViableVials: 7 };
+
+  it('marks each participant as a Kahati or a Pasalo joiner', async () => {
+    await openPanelFor(PASALO_HATIAN);
+    expect(screen.getByTestId('stage-o1')).toHaveTextContent(/kahati/i);
+    expect(screen.getByTestId('stage-o2')).toHaveTextContent(/pasalo/i);
+  });
+
+  // Null kahati_vials means Kahati never closed on this counter, so Pasalo has
+  // not happened and nobody can be filed under it.
+  it('calls everyone a Kahati joiner while Kahati is still running', async () => {
+    await openPanelFor(OPEN_HATIAN);
+    expect(screen.getByTestId('stage-o1')).toHaveTextContent(/kahati/i);
+    expect(screen.getByTestId('stage-o2')).toHaveTextContent(/kahati/i);
+  });
+
+  it('totals the vials each window brought in', async () => {
+    await openPanelFor(PASALO_HATIAN);
+    expect(screen.getByTestId('summary-kahati-vials')).toHaveTextContent('3');
+    expect(screen.getByTestId('summary-pasalo-vials')).toHaveTextContent('2');
+  });
+});
+
+// "Para alam namin kung sino ang pasok at hindi pumasok sa 7vials?" — the
+// 7-vial minimum is a BATCH gate, not a per-person one: at 7 the batch is
+// ordered and every participant is in, under 7 it is cancelled and every
+// participant is refunded (lib/kahati.ts). So the panel answers it about the
+// counter, and answers it with the same figures the Pasalo close will use.
+describe('progress toward the 7-vial minimum', () => {
+  const openPanelFor = async (counter: Record<string, unknown>) => {
+    board.current = [counter];
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /participants/i }));
+    await screen.findByText('Ana Cruz');
+  };
+
+  // The trap this exists to close: "vials remaining" is the gap to the CAP.
+  // At 5/10 the batch needs TWO more vials to go ahead and has FIVE slots left
+  // to sell, and quoting the five is how a batch two vials from success gets
+  // written off (lib/kahati-quantity.ts).
+  it('counts toward the minimum, not toward the cap', async () => {
+    await openPanelFor(OPEN_HATIAN);
+    expect(screen.getByTestId('summary-minimum')).toHaveTextContent('5 / 7');
+    // The cap figure stays exactly where it was, saying the other thing.
+    expect(screen.getByTestId('summary-vials-remaining')).toHaveTextContent('5');
+  });
+
+  it('says how many more vials the batch still needs', async () => {
+    await openPanelFor(OPEN_HATIAN);
+    expect(screen.getByTestId('summary-qualification')).toHaveTextContent(/2 more/i);
+  });
+
+  it('says the batch is qualified once the minimum is reached', async () => {
+    await openPanelFor({ ...OPEN_HATIAN, claimedSlots: 7 });
+    expect(screen.getByTestId('summary-qualification')).toHaveTextContent(/qualified/i);
+  });
+
+  // The close reads the COUNTER's claimed vials, so the panel must too. A panel
+  // that judged the batch by the rows in its own table would promise an outcome
+  // the close is not going to deliver.
+  it('judges the batch by the counter, not by the rows in the table', async () => {
+    await openPanelFor({ ...OPEN_HATIAN, claimedSlots: 8 });
+    expect(screen.getByTestId('summary-qualification')).toHaveTextContent(/qualified/i);
+    // The table still reports what the listed participants actually hold.
+    expect(screen.getByTestId('summary-vials-reserved')).toHaveTextContent('5');
+  });
+
+  // The minimum is frozen per counter, so a batch created under a different
+  // rule is judged by the rule it was created under.
+  it('honours a minimum this counter was created with', async () => {
+    await openPanelFor({ ...OPEN_HATIAN, claimedSlots: 5, minViableVials: 5 });
+    expect(screen.getByTestId('summary-minimum')).toHaveTextContent('5 / 5');
+    expect(screen.getByTestId('summary-qualification')).toHaveTextContent(/qualified/i);
+  });
+});
