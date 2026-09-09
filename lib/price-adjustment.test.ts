@@ -209,6 +209,32 @@ describe('names the workbook spells differently from the catalog', () => {
     },
   ];
 
+  // The client confirmed SALTFORM-KPV20 is a new product. It is created under
+  // the catalog's own convention — "KPV (SALTFORM)", matching "SS31 (SALTFORM)"
+  // — rather than under the workbook's "SALTFORM-KPV20", so the alias is what
+  // joins the two.
+  it('matches the new saltform KPV to the catalog name', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'SALTFORM-KPV20', size: '20mg', code: 'SALT-KPV20', php: 6600 })],
+      [product({ id: 'kpv-salt', name: 'KPV (SALTFORM)', spec: '20mg', pricePhp: 6600 })],
+    );
+
+    expect(plan.unmatched).toEqual([]);
+    expect(plan.unchanged.map((u) => u.productId)).toEqual(['kpv-salt']);
+  });
+
+  // The 10mg KPV is a different product at a different price and must not be
+  // caught by the alias.
+  it('does not drag the plain 10mg KPV in with it', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'SALTFORM-KPV20', size: '20mg', code: 'SALT-KPV20', php: 6600 })],
+      [product({ id: 'kpv10', name: 'KPV', spec: '10mg vial', pricePhp: 3563 })],
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.unmatched).toHaveLength(1);
+  });
+
   it.each(cases)('matches $row.name', ({ row, product: p, to }) => {
     const plan = planPriceAdjustment([row], [p]);
 
