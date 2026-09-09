@@ -97,10 +97,30 @@ suites rather than this file.
   spread across them. That falls out of reusing `buildPasaloRefunds`, whose
   deposit pool is spent once per customer per batch. It is the correct total; it
   just attributes the deposit to one line.
-- **The email was not reworded.** `kahatiCancelledEmail` still describes the
-  cancellation as it did; the refund row is a separate record for the admin.
-  A partial cancellation now reports a 0 refund and `orderCancelled: false`, but
-  no second template was written for it.
+- **The partial-cancellation email: resolved, not left open.** This was flagged
+  as a gap and then built. A customer whose order survives on another counter
+  now gets `kahatiPartlyCancelledEmail` instead of the whole-order notice. Own
+  RED/GREEN cycle:
+
+  ```
+  (RED)   test: require a different email when only part of an order fell through
+          × does not tell the customer their order was cancelled
+          × says the order is still going ahead, and with how many vials
+          × quotes the new total the order was re-billed to
+          Tests  3 failed | 8 passed (11)
+  (GREEN) feat: tell a customer their order continues when only one hatian fell short
+          Tests  33 passed (33); full suite 289 files, 3197 passed
+  ```
+
+  Two of the five partial-case tests passed before the change, incidentally: the
+  old template says "no payment was collected" at a 0 downpayment, and it
+  already named the hatian and its shortfall. They are kept as guards, not
+  claimed as driven failures.
+
+  The notice carries `releasedVials`, `survivingVials` and `newTotalPhp`; the
+  PostHog event reports `partly_cancelled` rather than claiming a cancellation
+  that did not happen; `email_log.kind` is a plain varchar, so the new kind
+  needed no migration.
 - **Legacy mixed orders: resolved, not left open.** This was flagged as a
   deliberate gap and the client answered it — *"onhand is onhand retail so no
   need for any cancelled since the user is buying a onhand stocks in the
