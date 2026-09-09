@@ -251,3 +251,38 @@ describe('my orders, by batch', () => {
     expect(await screen.findByTestId('batch-amount-due')).toHaveTextContent('2,550');
   });
 });
+
+// The screen in the client's screenshot. The badge is the only thing a customer
+// sees before they tap, so a payment missing from it is a payment that, to
+// them, did not happen — "nawala daw payment".
+describe('the badge on an order settled at the hatian final checkout', () => {
+  // KH-2791 as it stands in production: a repeat commitment that owed nothing
+  // at checkout, whose PHP 1,140 balance was paid two days later.
+  const settledOrder = (settlementStatus: string | null, paymentStatus = 'not_due') => ({
+    ...kahatiOrder,
+    orderNo: 'KH-2791', status: 'payment_confirmed', paymentStatus,
+    settlementId: settlementStatus ? 's1' : null, settlementStatus,
+  });
+
+  it('reports the balance the customer paid, not the nothing they owed at checkout', async () => {
+    state.orders = [settledOrder('proof_review')];
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByText('Proof Submitted')).toBeInTheDocument();
+    expect(screen.queryByText(/no payment due/i)).not.toBeInTheDocument();
+  });
+
+  it('confirms the payment once the settlement has been verified', async () => {
+    state.orders = [settledOrder('paid')];
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByText('Payment Confirmed')).toBeInTheDocument();
+  });
+
+  it('still says nothing is due when no settlement is carrying anything', async () => {
+    state.orders = [settledOrder(null)];
+    render(<OrdersPage />, { wrapper });
+
+    expect(await screen.findByText('No Payment Due')).toBeInTheDocument();
+  });
+});
