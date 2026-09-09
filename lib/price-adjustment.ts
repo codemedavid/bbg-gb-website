@@ -120,15 +120,27 @@ export function planPriceAdjustment(
     }
 
     if (repriceable.length === 0) continue;
-    if (repriceable.length > 1) {
+
+    // The catalog carries duplicate rows: a real kahati product beside an
+    // orphan twin that is neither kahati nor on-hand and differs only in
+    // formatting. The orphans are dead weight, so where exactly one candidate
+    // is actually sold as kahati, that is the one the sheet means.
+    //
+    // It settles nothing when BOTH are live kahati products (Oxytocin is two,
+    // at different prices) or when NEITHER is (the Rejuran pair). Those stay
+    // ambiguous, because then the sheet genuinely does not say which.
+    const live = repriceable.filter((p) => p.isKahati);
+    const candidates = live.length === 1 ? live : repriceable;
+
+    if (candidates.length > 1) {
       plan.ambiguous.push({
         row: row.row, name: row.name, size: row.size,
-        candidates: repriceable.map((p) => p.id),
+        candidates: candidates.map((p) => p.id),
       });
       continue;
     }
 
-    const product = repriceable[0];
+    const product = candidates[0];
     if (product.pricePhp === row.php) {
       plan.unchanged.push({
         row: row.row, productId: product.id, name: product.name,

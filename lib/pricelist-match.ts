@@ -72,6 +72,14 @@ export const ALIASES: Record<string, string> = {
   healthyhairskinandnailsblend: 'hairskinnails',
   tirzepatidesaltformmounjaro: 'tirzepatidesaltform',
   '5amino1': '5amino1mq',
+  // Sep2026 adjustment workbook. baseName strips a parenthetical carrying a
+  // digit, so the catalogue code the catalog keeps IN the product name is lost
+  // from the row key and the two stop matching.
+  relaxationpm: 'relaxationpmrp226',
+  lipocb12plus: 'lipocb12pluslc396',
+  wolverine: 'wolverinetb500+bpc',
+  // The workbook says Cagrilintide, the catalog says Cagrilentide.
+  'tirzepatide+cagrilintide': 'tirzepatide30mg+cagrilentide5mg',
 };
 
 export const aliasOf = (n: string): string => ALIASES[n] ?? n;
