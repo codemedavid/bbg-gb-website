@@ -428,18 +428,23 @@ export default function AdminGroupBuysPage() {
 
   const [search, setSearch] = useState('');
 
-  // The counters this control will actually end.
+  // What the cycle will do, split the way the server splits it.
   //
-  // Open AND joined, matching rollOpenKahatis's own skip rule: the server leaves
-  // a counter nobody has joined alone, so counting every open row told the admin
-  // five were ending when two were — and on the board a cycle has just left
-  // behind (every counter open, none joined) it offered a button that would do
-  // nothing at all.
+  // `running` is open AND joined — the counters that actually END, matching
+  // rollOpenKahatis's own rule. Counting every open row here told the admin five
+  // were ending when two were.
+  //
+  // `idle` is open and empty. Those do not end; they are re-read from the
+  // catalog in place, which is the half of a cycle that had been missing. They
+  // are counted separately rather than folded in, because "2 counters close" and
+  // "87 are brought up to date" are different promises and the dialog makes both.
   //
   // Counted off the whole board, never off `shown`: the cycle acts on every such
   // counter there is, so an admin who narrowed the view to one name must still
   // be told how many the button will move.
-  const running = gbs.filter((g) => g.status === 'open' && g.claimedSlots > 0);
+  const open = gbs.filter((g) => g.status === 'open');
+  const running = open.filter((g) => g.claimedSlots > 0);
+  const idle = open.length - running.length;
 
   // Every cycle seals each counter and opens a fresh one beside it, so the board
   // grows a same-named sibling per counter per cycle and finding one by eye
@@ -452,10 +457,22 @@ export default function AdminGroupBuysPage() {
   // Confirmed, because customers are committed to these counters; deliberately
   // not worded as a warning, though, since the commitments stay with the counter
   // that took them and its successor opens in the same breath.
+  //
+  // The message names BOTH halves. On the board a cycle has just left behind
+  // every counter is empty, so a dialog that spoke only of what closes would read
+  // as "end 0 counters" — and an admin would back out of the one action that
+  // brings the board's prices up to date.
   const handleStartCycle = async () => {
+    const closing = `${running.length} counter${running.length === 1 ? '' : 's'}`;
     const ok = await confirm({
-      title: `Start a new cycle across ${running.length} counter${running.length === 1 ? '' : 's'}?`,
-      message: 'Every counter with vials on it closes and a fresh one opens in its place, ready to take the next cycle. Counters nobody has joined stay open. Customer orders are not changed — settle those on the orders screen.',
+      title: `Start a new cycle across ${closing}?`,
+      message: [
+        'Every counter with vials on it closes and a fresh one opens in its place, ready to take the next cycle.',
+        idle > 0
+          ? `The ${idle} counter${idle === 1 ? '' : 's'} nobody has joined stay${idle === 1 ? 's' : ''} open and ${idle === 1 ? 'is' : 'are'} re-read from product management — name, price and slots come forward from the catalog.`
+          : '',
+        'Customer orders are not changed — settle those on the orders screen.',
+      ].filter(Boolean).join(' '),
       confirmLabel: 'End all & start next',
       cancelLabel: 'Keep the board as it is',
     });
@@ -479,7 +496,7 @@ export default function AdminGroupBuysPage() {
           <p className="mt-1 text-[13px] text-ink-muted">Edit kahati prices, slots &amp; close orders.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-none">
-          {running.length > 0 && (
+          {open.length > 0 && (
             <button
               onClick={handleStartCycle}
               disabled={startKahatiCycle.isPending}

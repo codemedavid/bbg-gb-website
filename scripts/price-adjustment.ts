@@ -7,10 +7,13 @@
 //
 //   npx tsx scripts/price-adjustment.ts "<path to .xlsx>"
 //   npx tsx scripts/price-adjustment.ts "<path to .xlsx>" --apply
+//
+// Applying reprices the catalog AND the open listings quoting it, so a run no
+// longer leaves the boards selling at last week's money.
 import ExcelJS from 'exceljs';
-import { eq } from 'drizzle-orm';
 import { getDb, products } from '@/lib/db';
 import { planPriceAdjustment, type AdjustmentRow, type PriceableProduct } from '@/lib/price-adjustment';
+import { applyPriceUpdates } from '@/lib/price-adjustment-server';
 
 const cell = (v: unknown): string | null => {
   if (v == null) return null;
@@ -84,10 +87,13 @@ async function main() {
     console.log('\nDRY RUN — nothing was written. Re-run with --apply to write these prices.\n');
     return;
   }
-  for (const u of plan.updates) {
-    await db.update(products).set({ pricePhp: String(u.toPhp) }).where(eq(products.id, u.productId));
-  }
-  console.log(`\nAPPLIED ${plan.updates.length} price changes.\n`);
+  // Through applyPriceUpdates rather than a bare UPDATE loop: a price that
+  // reaches the catalog and not the boards is the bug this script used to have,
+  // and the two writes belong to one operation (lib/price-adjustment-server.ts).
+  const applied = await applyPriceUpdates(db, plan.updates);
+  console.log(`\nAPPLIED ${applied.products} price changes.`);
+  console.log(`  open Kahati counters repriced   ${applied.kahatis}`);
+  console.log(`  open Group Buy batches repriced ${applied.campaigns}\n`);
 }
 
 main().then(() => process.exit(0)).catch((err) => { console.error(err); process.exit(1); });

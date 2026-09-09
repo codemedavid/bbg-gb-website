@@ -21,10 +21,11 @@
 // price they were placed at (order_items.name_snapshot / unit_price_php), so a
 // repriced counter changes what the NEXT joiner pays, never what an existing
 // one owes.
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, products, groupBuys, moqCampaigns } from '@/lib/db';
 import {
   kahatiListingPatch, campaignListingPatch, hasListingChanges,
+  kahatiRefreshPatch, campaignRefreshPatch, type CampaignListingPatch,
 } from './listing-sync';
 import type { SeedableProduct } from './campaign-seed';
 import type { IncludedProduct } from './types';
@@ -105,4 +106,76 @@ async function syncCampaigns(db: Db, before: SeedableProduct, after: SeedablePro
     changed += updated.length;
   }
   return changed;
+}
+
+// ---------------------------------------------------------------------------
+// Cycle refresh
+//
+// The sync above is driven by an edit; this is driven by the CYCLE. A listing
+// nobody joined is not a batch — there is nothing to end and no successor to
+// open — but it is a cycle old, and it was carrying the terms it opened with
+// because the cycle control stepped around it and the seeders would not replace
+// a product that already had a listing. So the cycle re-reads it instead.
+//
+// Every write is guarded on the listing still being OPEN and still EMPTY. That
+// guard is what lets lib/listing-sync.ts refresh without clamps: a checkout
+// that lands between the read and the write takes the counter off zero, the
+// UPDATE matches nothing, and the customer's vials decide the row rather than
+// a repricing that no longer applies to it.
+// ---------------------------------------------------------------------------
+
+/** True when the refresh actually moved this counter. */
+export async function refreshEmptyKahati(
+  db: Db,
+  counter: typeof groupBuys.$inferSelect,
+): Promise<boolean> {
+  // A free-text counter an admin typed by hand links no product, so nothing in
+  // the catalog speaks for it and a cycle has nothing to re-read it from.
+  if (!counter.productId) return false;
+
+  const [product] = await db.select().from(products).where(eq(products.id, counter.productId));
+  if (!product) return false;
+
+  const patch = kahatiRefreshPatch(product as SeedableProduct, counter);
+  if (!hasListingChanges(patch)) return false;
+
+  const updated = await db.update(groupBuys).set(patch)
+    .where(and(
+      eq(groupBuys.id, counter.id),
+      eq(groupBuys.status, 'open'),
+      eq(groupBuys.claimedSlots, 0),
+    ))
+    .returning({ id: groupBuys.id });
+  return updated.length > 0;
+}
+
+/** True when the refresh actually moved this batch. */
+export async function refreshEmptyCampaign(
+  db: Db,
+  batch: typeof moqCampaigns.$inferSelect,
+): Promise<boolean> {
+  const includedProducts = (batch.includedProducts as IncludedProduct[]) ?? [];
+  // Same rule as a counter with no product link: a batch carrying nothing from
+  // the catalog has no terms to bring forward.
+  if (includedProducts.length === 0) return false;
+
+  const ids = includedProducts.map((entry) => entry.productId);
+  const carried = await db.select().from(products).where(inArray(products.id, ids));
+  // A batch carrying several products keeps its own terms — campaignRefreshPatch
+  // relabels each entry and stops there — so every carried product is offered to
+  // it and the patch decides which of them may speak for the batch.
+  let patch: CampaignListingPatch = {};
+  for (const product of carried) {
+    patch = { ...patch, ...campaignRefreshPatch(product as SeedableProduct, { ...batch, includedProducts }) };
+  }
+  if (!hasListingChanges(patch)) return false;
+
+  const updated = await db.update(moqCampaigns).set(patch)
+    .where(and(
+      eq(moqCampaigns.id, batch.id),
+      eq(moqCampaigns.status, 'open'),
+      eq(moqCampaigns.committed, 0),
+    ))
+    .returning({ id: moqCampaigns.id });
+  return updated.length > 0;
 }

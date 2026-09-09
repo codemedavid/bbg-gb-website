@@ -27,6 +27,7 @@ import { captureEvent } from './posthog';
 import { counterQuantities } from './kahati-quantity';
 import { buildPasaloRefunds, type BatchLine, type BatchOrderFacts } from './pasalo-refund';
 import { writeRefundRows } from './pasalo-server';
+import { refreshEmptyKahati } from './listing-sync-server';
 
 // A transaction handle exposes the same query surface as the root database, so
 // helpers here accept either — checkout calls closeFullKahati inside its tx.
@@ -334,6 +335,13 @@ export type KahatiCycleRollover = {
   /** Open counters nobody had joined, left running rather than sealed. */
   skippedEmpty: number;
   /**
+   * Of the empty ones, how many carried terms the catalog had since moved and
+   * were brought forward. Reported apart from `skippedEmpty` because the two
+   * answer different questions: how many batches did NOT end, and how many
+   * listings the cycle actually changed.
+   */
+  refreshed: number;
+  /**
    * Expired counters below the viable minimum, left open on purpose so the
    * sweep still cancels them and refunds their participants.
    */
@@ -382,11 +390,20 @@ export async function rollOpenKahatis(db: Db, now: Date = new Date()): Promise<K
   const failed: KahatiCycleRollover['failed'] = [];
   let skippedEmpty = 0;
   let leftForCancellation = 0;
+  let refreshed = 0;
 
   for (const counter of running) {
-    if (counter.claimedSlots <= 0) { skippedEmpty += 1; continue; }
-    if (isExpiredUnviable(counter, now)) { leftForCancellation += 1; continue; }
     try {
+      if (counter.claimedSlots <= 0) {
+        skippedEmpty += 1;
+        // Nothing to end — but its terms are a cycle old, and nothing else was
+        // ever going to correct them: the seeder will not open a replacement
+        // for a product that already carries an open counter, so this row was
+        // blocking its own successor. Re-read in place instead.
+        if (await refreshEmptyKahati(db, counter)) refreshed += 1;
+        continue;
+      }
+      if (isExpiredUnviable(counter, now)) { leftForCancellation += 1; continue; }
       // One transaction per counter, the same way the checkout path wraps
       // closeFullKahati. Half of the pair — sealed with no successor — is a
       // counter permanently off the board: closed, unjoinable and out of the
@@ -404,7 +421,7 @@ export async function rollOpenKahatis(db: Db, now: Date = new Date()): Promise<K
       });
     }
   }
-  return { rolled, skippedEmpty, leftForCancellation, failed };
+  return { rolled, skippedEmpty, refreshed, leftForCancellation, failed };
 }
 
 // Releases every live commitment on a failed hatian and returns the details

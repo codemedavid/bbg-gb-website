@@ -21,7 +21,7 @@
 // 6/3 outright, and a per-person floor above the cap would reject every
 // commitment including the first. A listing narrows as far as the people
 // already in it allow, and no further.
-import { campaignDefaultsFor, kahatiDefaultsFor, seededKitPrice } from './pricing';
+import { campaignDefaultsFor, kahatiDefaultsFor, round2, seededKitPrice } from './pricing';
 import { listingName, type SeedableProduct } from './campaign-seed';
 import type { IncludedProduct, MoqCampaign } from './types';
 
@@ -196,6 +196,139 @@ export function campaignListingPatch(
   }
 
   if (a.arrivalGroup !== b.arrivalGroup) patch.arrivalGroup = a.arrivalGroup;
+
+  return patch;
+}
+
+// ---------------------------------------------------------------------------
+// Cycle refresh
+//
+// The patches above answer "what did this EDIT change", and that question is
+// the right one for an edit: a field travels only when the admin moved it, so
+// a discount typed into one counter by hand survives a rename.
+//
+// A new cycle asks a different question — "what does the catalog say this
+// listing should be" — and it asks it of a listing NOBODY JOINED. There is no
+// edit to diff against, because the drift did not come from one edit: it came
+// from a listing outliving the terms it opened with, cycle after cycle. So the
+// comparison is against the row as STORED, and the answer is the catalog's,
+// whatever the row happens to say.
+//
+// No clamps appear below, and their absence is the point. Every clamp above
+// exists to protect people already in the listing — a cap cannot fall below the
+// vials already claimed, a floor cannot rise above the cap. A refresh only ever
+// reaches an empty listing, so there is nobody to protect and nothing to clamp
+// against; the callers in lib/listing-sync-server.ts are what hold that
+// precondition, guarding every write on the listing still being empty.
+// ---------------------------------------------------------------------------
+
+/** An empty hatian counter as stored — what its refresh is measured against. */
+export type KahatiRefreshRow = {
+  name: string;
+  pricePerKitPhp: string;
+  totalSlots: number;
+  minVials: number;
+  arrivalGroup: ArrivalGroup;
+};
+
+/** An empty campaign batch as stored — what its refresh is measured against. */
+export type CampaignRefreshRow = {
+  name: string;
+  pricePerKitPhp: string;
+  moq: number;
+  perCustomerMin: number;
+  arrivalGroup: ArrivalGroup;
+  includedProducts: IncludedProduct[];
+};
+
+/**
+ * A price that is both derivable and actually different from the stored one.
+ *
+ * Compared as MONEY, not as text: the column is numeric, so a row storing
+ * "2000.00" against a catalog saying 2000 is the same price, and treating it as
+ * a change would have every cycle report work it did not do.
+ *
+ * An underivable price yields undefined, exactly as an edit's would. A listing
+ * whose product has lost its price keeps the one it has — seededKitPrice
+ * refuses to OPEN a counter it cannot price, and a refresh that dropped one to
+ * ₱0 would put a free kit on a public board.
+ */
+function refreshedPrice(stored: string, derived: number | null): string | undefined {
+  if (derived == null) return undefined;
+  const current = Number(stored);
+  if (Number.isFinite(current) && round2(current) === round2(derived)) return undefined;
+  return String(derived);
+}
+
+/** What a new cycle makes of one EMPTY hatian counter, given its product. */
+export function kahatiRefreshPatch(p: SeedableProduct, row: KahatiRefreshRow): KahatiListingPatch {
+  const a = kahatiDerived(p);
+  // A product the catalog can no longer price is not sold this way, and
+  // kahatiSeedFor refuses to OPEN a counter for it. A refresh refuses wholesale
+  // for the same reason rather than refusing only the price: carrying a new
+  // name onto a listing the catalog would not have opened is churn that makes
+  // the board look tended when the gap it has is a missing price.
+  if (a.pricePerKitPhp == null) return {};
+
+  const patch: KahatiListingPatch = {};
+
+  if (a.name !== row.name) patch.name = a.name;
+
+  const pricePerKitPhp = refreshedPrice(row.pricePerKitPhp, a.pricePerKitPhp);
+  if (pricePerKitPhp !== undefined) patch.pricePerKitPhp = pricePerKitPhp;
+
+  if (a.totalSlots !== row.totalSlots) patch.totalSlots = a.totalSlots;
+
+  // Against the cap this counter will HAVE once the patch lands, so a product
+  // stating a floor above its own cap still leaves the counter joinable.
+  const cap = patch.totalSlots ?? row.totalSlots;
+  const minVials = Math.min(a.minVials, cap);
+  if (minVials !== row.minVials) patch.minVials = minVials;
+
+  if (a.arrivalGroup !== row.arrivalGroup) patch.arrivalGroup = a.arrivalGroup;
+
+  return patch;
+}
+
+/**
+ * What a new cycle makes of one EMPTY campaign batch, given its product.
+ *
+ * A batch carrying other products keeps its name, price and counts, for the
+ * same reason an edit leaves them: one product of several cannot speak for the
+ * batch. Its own label inside `included_products` is its own, so that is
+ * refreshed either way.
+ */
+export function campaignRefreshPatch(p: SeedableProduct, row: CampaignRefreshRow): CampaignListingPatch {
+  const patch: CampaignListingPatch = {};
+
+  if (row.includedProducts.some((entry) => entry.productId === p.id && entry.name !== p.name)) {
+    patch.includedProducts = row.includedProducts.map((entry) => (
+      entry.productId === p.id ? { ...entry, name: p.name } : entry
+    ));
+  }
+
+  const carriesOnlyThis = row.includedProducts.length === 1
+    && row.includedProducts[0]?.productId === p.id;
+  if (!carriesOnlyThis) return patch;
+
+  const a = campaignDerived(p);
+  // Same refusal as a counter's: an unpriceable product is one campaignSeedFor
+  // would not have listed. The relabelling above still stands — that is the
+  // product's own name for itself, and it is true whatever the price is.
+  if (a.pricePerKitPhp == null) return patch;
+
+  if (a.name !== row.name) patch.name = a.name;
+
+  const pricePerKitPhp = refreshedPrice(row.pricePerKitPhp, a.pricePerKitPhp);
+  if (pricePerKitPhp !== undefined) patch.pricePerKitPhp = pricePerKitPhp;
+
+  if (a.moq !== row.moq) patch.moq = a.moq;
+
+  const capacity = patch.moq ?? row.moq;
+  const perCustomerMin = Math.min(a.perCustomerMin, capacity);
+  if (perCustomerMin !== row.perCustomerMin) patch.perCustomerMin = perCustomerMin;
+
+  if (a.arrivalGroup !== row.arrivalGroup) patch.arrivalGroup = a.arrivalGroup;
 
   return patch;
 }

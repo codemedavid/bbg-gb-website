@@ -373,13 +373,43 @@ describe('start new cycle', () => {
     expect(screen.queryByRole('button', { name: /start new cycle/i })).not.toBeInTheDocument();
   });
 
-  // The board right after a cycle: every counter open, none joined. The server
-  // skips empty counters, so pressing the button would change nothing — the
-  // control has to be off the board for that too, not just for a closed one.
-  it('hides the control when every open counter is empty', () => {
+  // The board right after a cycle: every counter open, none joined. This used to
+  // hide the control, on the reasoning that the server skips empty counters and
+  // the button would do nothing — and for as long as that was true, the boards
+  // could not be reset at all. A cycle now re-reads every empty counter from the
+  // catalog, so this is the very board the control is most needed on.
+  it('offers the control when every open counter is empty', () => {
     board.current = [
       { ...OPEN_HATIAN, id: 'gb1', claimedSlots: 0 },
       { ...OPEN_HATIAN, id: 'gb2', name: 'KLOW 80mg', claimedSlots: 0 },
+    ];
+
+    render(<Page />);
+
+    expect(screen.getByRole('button', { name: /start new cycle/i })).toBeInTheDocument();
+  });
+
+  // An admin pressing this on an all-empty board has to be told what it will do,
+  // or the dialog reads as "end 0 counters" and they back out of the one action
+  // that would bring the board's prices up to date.
+  it('says the empty counters will be re-read from the catalog', async () => {
+    board.current = [
+      { ...OPEN_HATIAN, id: 'gb1', claimedSlots: 0 },
+      { ...OPEN_HATIAN, id: 'gb2', name: 'KLOW 80mg', claimedSlots: 0 },
+    ];
+
+    render(<Page />);
+    fireEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
+
+    expect(await screen.findByText(/2 counters nobody has joined/i)).toBeInTheDocument();
+  });
+
+  // Nothing open at all is the one board with nothing to do: no batch to end and
+  // no listing to bring forward.
+  it('hides the control when every counter has left the board', () => {
+    board.current = [
+      { ...OPEN_HATIAN, id: 'gb1', status: 'closed' },
+      { ...OPEN_HATIAN, id: 'gb2', status: 'cancelled' },
     ];
 
     render(<Page />);

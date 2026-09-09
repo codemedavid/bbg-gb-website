@@ -13,6 +13,7 @@
 import { and, asc, desc, eq, isNotNull, lte, sql } from 'drizzle-orm';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { MOQ_BATCH_MAX_KITS, batchCapacity, canRollBatch, isBatchFull, nextBatchDeadline } from './group-buy';
+import { refreshEmptyCampaign } from './listing-sync-server';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 type BatchRow = typeof moqCampaigns.$inferSelect;
@@ -128,6 +129,13 @@ export type CycleRollover = {
   rolled: BatchRollover[];
   /** Running batches nobody had joined, left open rather than rolled. */
   skippedEmpty: number;
+  /**
+   * Of the empty ones, how many carried terms the catalog had since moved and
+   * were brought forward. Reported apart from `skippedEmpty` because the two
+   * answer different questions: how many batches did NOT end, and how many
+   * listings the cycle actually changed.
+   */
+  refreshed: number;
 };
 
 // Start a new cycle across the whole board: end every running batch that has
@@ -152,12 +160,21 @@ export async function rollOpenBatches(db: Db, now: Date = new Date()): Promise<C
 
   const rolled: BatchRollover[] = [];
   let skippedEmpty = 0;
+  let refreshed = 0;
   for (const batch of running) {
-    if (batch.committed <= 0) { skippedEmpty += 1; continue; }
+    if (batch.committed <= 0) {
+      skippedEmpty += 1;
+      // Nothing to end — but its terms are a cycle old, and nothing else was
+      // ever going to correct them: the seeder will not open a replacement for
+      // a product already carried by a live batch, so this row was blocking its
+      // own successor. Re-read in place instead.
+      if (await refreshEmptyCampaign(db, batch)) refreshed += 1;
+      continue;
+    }
     const result = await rollBatch(db, batch);
     if (result) rolled.push(result);
   }
-  return { rolled, skippedEmpty };
+  return { rolled, skippedEmpty, refreshed };
 }
 
 // Open the batch that follows a completed one. Successors inherit the terms

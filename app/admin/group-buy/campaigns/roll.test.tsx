@@ -106,13 +106,19 @@ describe('starting a new cycle', () => {
     await waitFor(() => expect(cycleMutate).toHaveBeenCalled());
   });
 
-  it('warns that batches nobody joined stay open', async () => {
+  // "Stay open" was the whole of what this used to say, and it was true in the
+  // worst way: an empty batch stayed open carrying the price it opened with,
+  // cycle after cycle, because it blocked the seeder from replacing it. It now
+  // stays open AND is re-read from the catalog, and the dialog has to say so —
+  // an admin who reads only "stays open" has no reason to press the button.
+  it('says batches nobody joined stay open and are re-read from the catalog', async () => {
     feed = { data: [campaign()], isLoading: false };
     render(<AdminCampaignsPage />);
 
     await userEvent.click(screen.getByRole('button', { name: /start new cycle/i }));
 
     expect(await screen.findByText(/nobody has joined stay open/i)).toBeInTheDocument();
+    expect(await screen.findByText(/re-read from product management/i)).toBeInTheDocument();
   });
 
   it('writes nothing when the confirm is declined', async () => {

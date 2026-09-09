@@ -145,7 +145,10 @@ describe('rollOpenKahatis — a cycle re-reads the counters nobody joined', () =
   it('counts nothing when a counter already matches its product', async () => {
     const db = await getDb();
     const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
-    await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000, totalSlots: 10, minVials: 1 });
+    await makeGroupBuy({
+      productId: product.id, name: 'Test Peptide 10mg',
+      pricePerKitPhp: 2000, totalSlots: 10, minVials: 1,
+    });
 
     expect((await rollOpenKahatis(db)).refreshed).toBe(0);
   });
