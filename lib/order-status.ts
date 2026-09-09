@@ -11,7 +11,7 @@
 // status the backend holds, so the two cannot drift apart.
 import { ORDER_STATUS_FLOW } from '@/lib/db/schema';
 import {
-  PAYMENT_STATUS_BADGE, PAYMENT_STATUS_LABEL, derivePaymentStatus,
+  PAYMENT_STATUS_BADGE, PAYMENT_STATUS_LABEL, overallPaymentStatus,
 } from '@/lib/payment-status';
 
 /** The fulfilment progression, in order. Mirrors the stored enum exactly. */
@@ -129,6 +129,7 @@ export function orderBadge(order: {
   status: string;
   paymentStatus?: string | null;
   proofCount?: number;
+  settlementStatus?: string | null;
 }): OrderBadge {
   // A called-off order is neither a payment state nor a delivery state. Said
   // first so nothing below can overrule it.
@@ -137,10 +138,11 @@ export function orderBadge(order: {
   }
 
   if (PAYMENT_PHASE.includes(order.status)) {
-    const payment = derivePaymentStatus({
+    const payment = overallPaymentStatus({
       status: order.status,
       paymentStatus: order.paymentStatus ?? null,
       proofCount: order.proofCount ?? 0,
+      settlementStatus: order.settlementStatus ?? null,
     });
     return { label: PAYMENT_STATUS_LABEL[payment], className: PAYMENT_STATUS_BADGE[payment] };
   }

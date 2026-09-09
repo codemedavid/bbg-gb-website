@@ -15,7 +15,7 @@ import { php, shortDate } from '@/lib/format';
 import { collectedAmountLabel } from '@/lib/kahati-downpayment';
 import { customerEditability, EDIT_BLOCKED_MESSAGE } from '@/lib/order-edit';
 import { STATUS_LABEL, STATUS_BADGE, orderBadge } from '@/lib/order-status';
-import { PAYMENT_STATUS_LABEL, derivePaymentStatus } from '@/lib/payment-status';
+import { PAYMENT_STATUS_LABEL, overallPaymentStatus } from '@/lib/payment-status';
 
 // One order, whole, on one screen.
 //
@@ -190,10 +190,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               nothing else. It used to print the FULFILMENT status, which is
               how an order that owed nothing came to tell its customer
               "Payment Confirmed" — see lib/payment-status.ts. */}
-          <Field label="Status" value={PAYMENT_STATUS_LABEL[derivePaymentStatus({
+          {/* The settlement counts too. A hatian order collects money twice —
+              the downpayment here, the balance at the final checkout — and this
+              field used to ask only about the first, so a customer who had paid
+              their whole balance still read "No Payment Due". */}
+          <Field label="Status" value={PAYMENT_STATUS_LABEL[overallPaymentStatus({
             status: order.status,
             paymentStatus: order.paymentStatus ?? null,
             proofCount: proofs.length || (proofUrl ? 1 : 0),
+            settlementStatus: order.settlementStatus ?? null,
           })]} />
           <Field label="Amount" value={php(order.totalPhp)} />
           {/* Every proof, plus a way to add one the customer only paid later.

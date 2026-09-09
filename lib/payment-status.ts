@@ -149,3 +149,72 @@ export function derivePaymentStatus(
   // against a payment nobody ever saw.
   return 'pending';
 }
+
+/**
+ * What one SETTLEMENT says about the money it carries, in this vocabulary.
+ *
+ * A hatian order is paid twice. The downpayment lands at checkout and is what
+ * `orders.payment_status` records; the balance lands at the hatian final
+ * checkout, which writes a settlement row and never touches that column. Asking
+ * only the order therefore misses the larger of the two payments entirely.
+ *
+ * 'proof_review' maps to 'proof_submitted' rather than to 'pending' because a
+ * settlement CANNOT exist without a proof — the route stores one before the
+ * transaction opens (lib/proof.ts validateAndStoreProofs) — so the row itself
+ * is the evidence that the customer sent money.
+ *
+ * A cancelled settlement collected nothing and so has nothing to say; the same
+ * is true of a status this build has never heard of. Both return null, which
+ * `overallPaymentStatus` reads as "this obligation does not speak".
+ */
+function settlementPaymentStatus(status: string | null | undefined): PaymentStatus | null {
+  if (status === 'paid') return 'confirmed';
+  if (status === 'proof_review') return 'proof_submitted';
+  return null;
+}
+
+/**
+ * How resolved each state is, worst first. Combining two payments takes the
+ * MINIMUM, so the answer can never overstate what a customer has actually had
+ * checked — 'rejected' first because a verdict against the money is the one
+ * that most needs somebody to act.
+ *
+ * 'not_due' is absent on purpose: it is the identity, not a rank. It means this
+ * obligation is carrying nothing, so it yields to any obligation that is.
+ */
+const RESOLUTION_ORDER: readonly PaymentStatus[] = [
+  'rejected', 'pending', 'proof_submitted', 'confirmed',
+];
+
+const leastResolved = (a: PaymentStatus, b: PaymentStatus): PaymentStatus =>
+  RESOLUTION_ORDER.indexOf(a) <= RESOLUTION_ORDER.indexOf(b) ? a : b;
+
+/**
+ * Everything this order's customer has paid into it — the checkout downpayment
+ * AND the final-checkout settlement — as one state.
+ *
+ * This is what a customer-facing screen must ask. `derivePaymentStatus` answers
+ * for the order row alone, which is right for the admin's payment queue and
+ * wrong for My Orders: it is how KH-2791 came to show "No Payment Due" over a
+ * PHP 1,140 payment made two days earlier, and how 20 other orders came to show
+ * "Payment Confirmed" over a balance nobody had verified.
+ *
+ * The rule is the less resolved of the two, and it holds in both directions.
+ * A paid settlement does not confirm a downpayment still owed; a verified
+ * downpayment does not confirm a balance still in review.
+ */
+export function overallPaymentStatus(
+  order: {
+    status: string;
+    paymentStatus?: string | null;
+    proofCount: number;
+    settlementStatus?: string | null;
+  },
+): PaymentStatus {
+  const own = derivePaymentStatus(order);
+  const settled = settlementPaymentStatus(order.settlementStatus);
+  if (!settled) return own;
+  // The order itself is carrying nothing, so the settlement is the whole story.
+  if (own === 'not_due') return settled;
+  return leastResolved(own, settled);
+}
