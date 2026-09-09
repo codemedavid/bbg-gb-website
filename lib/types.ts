@@ -1,3 +1,4 @@
+import type { CommitmentLine } from './order-batches';
 import type { PaymentPurpose } from './payment-purpose';
 export type Category = { id: string; name: string; slug: string; sortOrder: number };
 
@@ -226,6 +227,18 @@ export type Order = {
   // back to them so they can confirm what they asked for, and to the admin who
   // has to act on it.
   notes?: string | null;
+  /**
+   * orders.cycle_key - the batch this order was placed in. Null for orders
+   * placed before cycles were stamped. Optional so a response from a server
+   * that predates the field still types.
+   */
+  cycleKey?: string | null;
+  /**
+   * The hatian counters this order joined, with each counter's state, so My
+   * Orders can tell the customer whether their commitment got into a batch
+   * (lib/order-batches.ts). Absent on non-kahati orders.
+   */
+  commitments?: CommitmentLine[];
   createdAt: string; items?: OrderItem[];
 };
 export type OrderHistory = { id: string; status: string; note: string | null; createdAt: string };

@@ -10,7 +10,42 @@ import { php, shortDate } from '@/lib/format';
 import { collectedAmountLabel } from '@/lib/kahati-downpayment';
 import { STATUS_LABEL, STATUS_BADGE, orderBadge } from '@/lib/order-status';
 import { useToast } from '@/lib/store/toast';
+import { groupOrdersIntoBatches, type BatchOrder, type StagedCommitmentLine } from '@/lib/order-batches';
+import { neededToQualify } from '@/lib/kahati-quantity';
 import type { Order } from '@/lib/types';
+
+// What the customer is told about one hatian they joined.
+//
+// The client's account of why this screen exists: customers "di kasi nila alam
+// if pumasok ba ang na place nila or wala", so each of them had to be worked
+// out off the admin board and messaged separately to pay. Said in their own
+// words, not in counter statuses.
+function CommitmentRow({ line, testId }: { line: StagedCommitmentLine; testId: string }) {
+  const short = neededToQualify(line.claimedSlots, line.minViableVials);
+  const tone = line.verdict === 'in'
+    ? 'bg-[#e8f5db] text-brand-greendark'
+    : line.verdict === 'cancelled' ? 'bg-[#fbe4e4] text-[#b23b3b]' : 'bg-[#fdf0dc] text-[#8a6d1f]';
+  const said = line.verdict === 'in'
+    ? 'Pumasok - kasama na sa batch'
+    : line.verdict === 'cancelled'
+      ? 'Hindi pumasok - na-cancel ang batch, ibabalik ang bayad'
+      : `Kulang pa - ${short} more vial${short === 1 ? '' : 's'} bago tumuloy ang batch`;
+  return (
+    <div data-testid={testId} className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-[9px] px-2.5 py-1.5 text-[12px] font-semibold ${tone}`}>
+      <span>{line.kahatiName} x{line.vials}</span>
+      <span>{said}</span>
+    </div>
+  );
+}
+
+// The batch view reads a strict subset of an order. Mapped rather than passed
+// whole so lib/order-batches stays free of the API's string money columns.
+const toBatchOrder = (o: Order): BatchOrder => ({
+  orderId: o.id, orderNo: o.orderNo, status: o.status, buyType: o.buyType,
+  cycleKey: o.cycleKey ?? null,
+  totalPhp: Number(o.totalPhp), downpaymentPhp: Number(o.downpaymentPhp ?? 0),
+  placedAt: o.createdAt, commitments: o.commitments ?? [],
+});
 
 // What the customer is told about a hatian order's packing fee. A settlement
 // that exists but is unverified is "under review", never "settled" — and a
@@ -150,6 +185,9 @@ export default function OrdersPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { data: orders = [], isLoading } = useOrders(!!user);
+  // OrderCard still renders the full Order; the batch view only decides the
+  // grouping and the verdicts, so the original rows are kept to hand.
+  const byId = new Map(orders.map((o) => [o.id, o]));
 
   if (!loading && !user) {
     return (
@@ -171,7 +209,32 @@ export default function OrdersPage() {
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 p-4 md:p-6">
         <SettlePrompt />
         {isLoading || loading ? <div className="py-16 text-center text-[13px] text-ink-muted">Loading…</div>
-          : orders.length ? orders.map((o) => <OrderCard key={o.id} order={o} />)
+          : orders.length ? groupOrdersIntoBatches(orders.map(toBatchOrder)).map((batch) => (
+            <section
+              key={batch.cycleKey ?? 'unbatched'}
+              data-testid={`order-batch-${batch.cycleKey ?? 'earlier'}`}
+              className="flex flex-col gap-3"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-[12px] bg-surface-mist px-3.5 py-2.5">
+                <div className="text-[13px] font-bold text-ink">
+                  {batch.cycleKey ? `Batch ng ${shortDate(batch.placedAt)}` : 'Mga naunang order'}
+                </div>
+                {/* "Kasi inaantay lang nila magkano babayaran" - one figure for
+                    the whole batch, so nobody has to be messaged the amount. */}
+                <div data-testid="batch-amount-due" className="text-[12.5px] text-ink-body">
+                  Babayaran: <span className="font-bold text-ink">{php(batch.amountDuePhp)}</span>
+                </div>
+              </div>
+              {batch.orders.map((o) => (
+                <div key={o.orderId} className="flex flex-col gap-1.5">
+                  <OrderCard order={byId.get(o.orderId)!} />
+                  {o.commitments.map((line, i) => (
+                    <CommitmentRow key={i} line={line} testId={`commitment-${o.orderId}-${i}`} />
+                  ))}
+                </div>
+              ))}
+            </section>
+          ))
           : <div className="py-16 text-center text-[13px] text-ink-muted">No orders yet. Sali sa kahati o mag-shop! 🛒</div>}
       </div>
     </>

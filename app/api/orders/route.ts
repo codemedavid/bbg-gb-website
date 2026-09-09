@@ -807,6 +807,23 @@ export const GET = handler(async () => {
     ...order,
     settlementStatus,
     items: await db.select().from(orderItems).where(eq(orderItems.orderId, order.id)),
+    // Each hatian this order joined, with its counter's state. My Orders needs
+    // it to answer the one question the customer actually has - did my
+    // commitment get into a batch - which nothing on the order row can say.
+    commitments: (await db.select({
+      kahatiName: groupBuys.name,
+      vials: orderItems.qty,
+      lineTotalPhp: orderItems.lineTotalPhp,
+      counterStatus: groupBuys.status,
+      claimedSlots: groupBuys.claimedSlots,
+      minViableVials: groupBuys.minViableVials,
+    })
+      .from(orderItems)
+      .innerJoin(groupBuys, eq(groupBuys.id, orderItems.groupBuyId))
+      .where(eq(orderItems.orderId, order.id)))
+      // numeric comes back as a string; the contract says number, so it is
+      // converted here rather than in every screen that reads it.
+      .map((c) => ({ ...c, lineTotalPhp: Number(c.lineTotalPhp) })),
   })));
   return ok(withItems);
 });
