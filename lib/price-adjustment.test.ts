@@ -127,3 +127,94 @@ describe('planPriceAdjustment', () => {
     expect(keys).toEqual(['productId', 'name', 'spec', 'fromPhp', 'toPhp']);
   });
 });
+
+
+// The catalog carries duplicate rows: a real kahati product beside an orphan
+// twin that is neither kahati nor on-hand, differing only in formatting
+// ("AICAR" 50mg vial vs "Aicar " 50mg). Nine workbook rows matched a pair like
+// that and none of them applied.
+//
+// The orphans are dead weight, so the kahati one wins. Where that does not
+// settle it — two live kahati products, or two orphans — the row stays
+// ambiguous, because then the sheet really does not say.
+describe('a workbook row that matches a duplicated catalog entry', () => {
+  it('prefers the kahati product over its orphan twin', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Aicar', size: '50mg', code: 'AR50', php: 3663 })],
+      [
+        product({ id: 'kahati', name: 'AICAR', spec: '50mg vial', pricePhp: 3600, isKahati: true, isOnHand: true }),
+        product({ id: 'orphan', name: 'Aicar ', spec: '50mg', pricePhp: 3200, isKahati: false, isOnHand: false }),
+      ],
+    );
+
+    expect(plan.updates.map((u) => u.productId)).toEqual(['kahati']);
+    expect(plan.ambiguous).toEqual([]);
+  });
+
+  // Oxytocin is two LIVE kahati products, OXY10 at 2937.50 and OT10 at 3200.
+  // Picking one would move a real price on a coin toss.
+  it('stays ambiguous when both candidates are live kahati products', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Oxytocin', size: '10mg', code: 'OT10', php: 3263 })],
+      [
+        product({ id: 'oxy10', name: 'Oxytocin', spec: '10mg vial', pricePhp: 2937.5, isKahati: true }),
+        product({ id: 'ot10', name: 'Oxytocin', spec: '10mg', pricePhp: 3200, isKahati: true }),
+      ],
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.ambiguous[0].candidates).toEqual(['oxy10', 'ot10']);
+  });
+
+  it('stays ambiguous when neither candidate is a kahati product', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Rejuran GOLD & SILVER (Dual effect serum)', size: '30ml each', code: null, php: 2563 })],
+      [
+        product({ id: 'a', name: 'Rejuran GOLD & SILVER (Dual effect serum)', spec: '30ml', pricePhp: 2500, isKahati: false, isOnHand: false }),
+        product({ id: 'b', name: ' Rejuran GOLD & SILVER (Dual effect serum)', spec: '30ml each', pricePhp: 2500, isKahati: false, isOnHand: false }),
+      ],
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.ambiguous).toHaveLength(1);
+  });
+});
+
+// Four rows named a product the catalog spells differently, so the matcher
+// found nothing and the price never moved. lib/pricelist-match.ts already keeps
+// an ALIASES map for exactly this — spreadsheet spellings no amount of
+// normalisation bridges.
+describe('names the workbook spells differently from the catalog', () => {
+  const cases: { row: AdjustmentRow; product: PriceableProduct; to: number }[] = [
+    {
+      row: sheetRow({ name: 'Relaxation PM (RP 226)', size: '10ml', code: 'RP226', php: 6063 }),
+      product: product({ id: 'rp', name: 'Relaxation PM (RP 226)', spec: '10ml', pricePhp: 6000 }),
+      to: 6063,
+    },
+    {
+      row: sheetRow({ name: 'Lipo C B12 Plus (LC396)', size: '10ml', code: 'LC396', php: 5013 }),
+      product: product({ id: 'lc', name: 'Lipo C B12 Plus (LC396)', spec: '10ml', pricePhp: 4950 }),
+      to: 5013,
+    },
+    {
+      // The workbook says Cagrilintide; the catalog says Cagrilentide.
+      row: sheetRow({ name: 'Tirzepatide 30mg + Cagrilintide 5mg', size: '35mg', code: 'TRC35', php: 9063 }),
+      product: product({ id: 'trc', name: 'Tirzepatide 30mg + Cagrilentide 5mg', spec: '35mg', pricePhp: 9000 }),
+      to: 9063,
+    },
+    {
+      row: sheetRow({ name: 'Wolverine (TB500+BPC)', size: '10mg vial', code: 'WOLV', php: 6363 }),
+      product: product({ id: 'wolv', name: 'Wolverine (TB500+BPC)', spec: '10mg vial', pricePhp: 6300 }),
+      to: 6363,
+    },
+  ];
+
+  it.each(cases)('matches $row.name', ({ row, product: p, to }) => {
+    const plan = planPriceAdjustment([row], [p]);
+
+    expect(plan.unmatched).toEqual([]);
+    expect(plan.updates).toEqual([
+      { productId: p.id, name: p.name, spec: p.spec, fromPhp: p.pricePhp, toPhp: to },
+    ]);
+  });
+});
