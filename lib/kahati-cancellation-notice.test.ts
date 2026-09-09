@@ -8,12 +8,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { KahatiDownpaymentPolicy } from './kahati-downpayment';
 import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from './kahati-downpayment';
+import { delivererFor } from './email-delivery';
 
-const sent: Array<{ to: string; subject: string; html: string }> = [];
+const sent: Array<{ to: string; subject: string; html: string; kind: string }> = [];
 vi.mock('./email', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./email')>()),
   // The real templates, so the assertions read the body a customer would.
-  sendEmail: vi.fn(async (m: { to: string; subject: string; html: string }) => { sent.push(m); }),
+  sendEmail: vi.fn(async (m: { to: string; subject: string; html: string; kind: string }) => { sent.push(m); }),
 }));
 
 const readPolicy = vi.fn<() => Promise<KahatiDownpaymentPolicy>>();
@@ -151,5 +152,32 @@ describe('the email when only part of an order fell through', () => {
     await notifyKahatiCancellations([notice()]);
 
     expect(sent[0].html).toMatch(/nothing will be shipped/i);
+  });
+});
+
+
+// SMTP_KINDS is empty: PostHog workflows deliver every customer email, keyed on
+// the event, and lib/email.ts only writes the audit row. So a kind no workflow
+// listens for composes a mail that nothing sends — status 'undeliverable', a
+// console.error, and a customer who hears nothing. That is the failure mode
+// lib/email-delivery.ts was written after 144 dropped password resets.
+//
+// Composing the mail is not sending it. This asserts the difference.
+describe('every cancellation email is on a kind something delivers', () => {
+  it('gives the whole-order notice a delivery route', async () => {
+    await notifyKahatiCancellations([notice()]);
+
+    expect(sent).toHaveLength(1);
+    expect(delivererFor(sent[0].kind)).not.toBe('none');
+  });
+
+  it('gives the partial notice a delivery route too', async () => {
+    await notifyKahatiCancellations([notice({
+      orderCancelled: false, downpayment: 0,
+      releasedVials: 3, survivingVials: 2, newTotalPhp: 1950,
+    })]);
+
+    expect(sent).toHaveLength(1);
+    expect(delivererFor(sent[0].kind)).not.toBe('none');
   });
 });
