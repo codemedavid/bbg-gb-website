@@ -236,11 +236,13 @@ export async function notifyKahatiCancellations(notices: CancellationNotice[]): 
     const body = notice.orderCancelled
       ? kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS, refundNotice })
       : kahatiPartlyCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS });
-    await sendEmail({
-      to: notice.email,
-      ...body,
-      kind: notice.orderCancelled ? 'kahati_cancelled' : 'kahati_partly_cancelled',
-    });
+    // ONE kind for both, deliberately. PostHog workflows deliver these, keyed
+    // on the event, and there is one live workflow for 'kahati_cancelled'. A
+    // second kind would have no workflow listening for it, so the mail would be
+    // composed, logged and never sent (lib/email-delivery.ts). The two cases
+    // are told apart by the event's `orderCancelled` property, which the
+    // workflow branches its copy on — see docs/posthog-events.md.
+    await sendEmail({ to: notice.email, ...body, kind: 'kahati_cancelled' });
     // Distinct from order_cancelled: this one carries the refund amount and the
     // hatian that fell through, so PostHog can send the right explanation.
     await captureEvent({

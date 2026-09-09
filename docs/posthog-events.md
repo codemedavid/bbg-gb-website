@@ -43,6 +43,23 @@ without a name in `ORDER_STATUS_EVENT`; it needs a developer, not a customer ema
 `kahati_cancelled` is deliberately separate from `order_cancelled`: it carries the
 refund amount and the hatian that fell through, so the email can explain *why*.
 
+**Its workflow must branch on `orderCancelled`.** A customer who joined several
+hatians in one checkout keeps the ones that reached their minimum — only the
+short hatian's lines are released, and their order is re-billed to what survived
+(`lib/kahati-server.ts`). So this event now fires for two different outcomes, and
+sending the "cancelled, refund coming" copy to someone whose parcel is still
+being packed makes them think they lost everything.
+
+| `orderCancelled` | What happened | The copy must say |
+|---|---|---|
+| `true` | Nothing of the order is going ahead | Cancelled; `refundPhp` is coming back |
+| `false` | The hatian fell short, the order survives on another | **Tuloy pa rin ang order.** `survivingVials` still shipping, new total `newTotalPhp`, and the downpayment is NOT refunded — it still holds their place in the parcel |
+
+Both go out under one `email_log` kind, `kahati_cancelled`, because there is one
+workflow. Do not split the kind without building a second workflow first: a kind
+no workflow listens for is composed, logged and never sent
+(`lib/email-delivery.ts`).
+
 ### `password_reset_requested` — the one workflow with special rules
 
 This event carries a **credential**: its `resetUrl` property is single-use and
@@ -131,7 +148,10 @@ Status-change events add: `statusLabel` (human-readable, e.g. "Payment confirmed
 `previousStatus`, `trackingNo`, `courier`, `note`.
 
 `kahati_cancelled` adds: `kahatiId`, `kahatiName`, `claimedVials`, `minVials` (7),
-`refundPhp` — the downpayment to return.
+`refundPhp` — the downpayment to return, **0 when the order survives** — plus
+`orderCancelled` (the branch above), `releasedVials` (theirs on the hatian that
+fell short) and `survivingVials` / `newTotalPhp` (what is still shipping, and what
+they now owe). `status` reads `cancelled` or `partly_cancelled` to match.
 
 `settlement_placed` is the one event that is **not** about a single order, so it
 carries no `orderId`/`orderNo`/`status`. It adds: `settlementId`, `orderCount`
