@@ -26,6 +26,9 @@ const notice = (over: Record<string, unknown> = {}) => ({
   userId: 'u1', name: 'Ana Cruz', email: 'ana@example.com',
   orderId: 'o1', orderNo: 'BBG-1001',
   kahatiId: 'k1', kahatiName: 'Reta 10mg', claimedSlots: 3, downpayment: 500,
+  // The whole order went, which is what every test below this line assumes.
+  // The partial case has its own describe at the bottom.
+  orderCancelled: true, releasedVials: 3, survivingVials: 0, newTotalPhp: 0,
   ...over,
 } as Parameters<typeof notifyKahatiCancellations>[0][number]);
 
@@ -87,5 +90,66 @@ describe('a sweep that cancelled nothing', () => {
 
     expect(readPolicy).not.toHaveBeenCalled();
     expect(sent).toHaveLength(0);
+  });
+});
+
+
+// When a customer joined several hatians in one checkout, one falling short no
+// longer takes their whole order with it (lib/kahati-server.ts). But they were
+// still sent the same email — "Order BBG-1001 has been cancelled and nothing
+// will be shipped" — about an order that is, in fact, still shipping. A
+// customer reading that reasonably concludes they lost everything, which is
+// worse than the silence it replaced.
+describe('the email when only part of an order fell through', () => {
+  const partial = (over: Record<string, unknown> = {}) => notice({
+    orderCancelled: false,
+    // Nothing comes back: the deposit is still holding the place their
+    // surviving vials have in the parcel.
+    downpayment: 0,
+    releasedVials: 3, survivingVials: 2, newTotalPhp: 1950,
+    ...over,
+  });
+
+  it('does not tell the customer their order was cancelled', async () => {
+    await notifyKahatiCancellations([partial()]);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].html).not.toMatch(/nothing will be shipped/i);
+    expect(sent[0].subject).not.toMatch(/order .* cancelled/i);
+  });
+
+  it('says the order is still going ahead, and with how many vials', async () => {
+    await notifyKahatiCancellations([partial({ survivingVials: 2 })]);
+
+    expect(sent[0].html).toMatch(/tuloy/i);
+    expect(sent[0].html).toMatch(/2 vial/i);
+  });
+
+  // "Kasi inaantay lang nila magkano babayaran" — the figure that changed is
+  // the whole point of the message.
+  it('quotes the new total the order was re-billed to', async () => {
+    await notifyKahatiCancellations([partial({ newTotalPhp: 1950 })]);
+
+    expect(sent[0].html).toMatch(/1,950/);
+  });
+
+  it('does not promise a refund of a deposit that is still holding their place', async () => {
+    await notifyKahatiCancellations([partial()]);
+
+    expect(sent[0].html).not.toMatch(/refunded to the account you paid from/i);
+  });
+
+  it('still names the hatian that fell short and by how much', async () => {
+    await notifyKahatiCancellations([partial({ kahatiName: 'Reta 10mg', claimedSlots: 3 })]);
+
+    expect(sent[0].html).toMatch(/Reta 10mg/);
+    expect(sent[0].html).toMatch(/3 of 7/);
+  });
+
+  // The whole-order email is untouched by any of this.
+  it('still sends the cancelled wording when the whole order did go', async () => {
+    await notifyKahatiCancellations([notice()]);
+
+    expect(sent[0].html).toMatch(/nothing will be shipped/i);
   });
 });
