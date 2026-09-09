@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PAYMENT_STATUSES, PAYMENT_STATUS_LABEL,
   checkoutPaymentStatus, derivePaymentStatus, isPaymentVerified,
-  isAdminOnlyPaymentStatus, type PaymentStatus,
+  isAdminOnlyPaymentStatus, overallPaymentStatus, type PaymentStatus,
 } from '@/lib/payment-status';
 
 describe('the payment vocabulary', () => {
@@ -120,5 +120,75 @@ describe('reading a row written before the column existed', () => {
     expect(derivePaymentStatus({
       status: 'payment_confirmed', paymentStatus: 'rejected', proofCount: 1,
     })).toBe('rejected');
+  });
+});
+
+describe('an order the customer has since paid at the hatian final checkout', () => {
+  // The reported defect, in the client's words: "nawala daw payment".
+  //
+  // A hatian order collects money TWICE — the downpayment at checkout, and the
+  // balance at the final checkout, which is a settlement row and not an
+  // order-level proof. `orders.payment_status` only ever heard about the first
+  // one, so KH-2791 — a repeat commitment that owed ₱0 at checkout and whose
+  // customer then paid the whole ₱1,140 balance and uploaded the bank proof —
+  // still read 'not_due'. The customer saw "No Payment Due" over money they had
+  // just sent.
+  //
+  // Two obligations, one answer: report the LESS resolved of them. Anything
+  // else either forgets a payment (not_due over a paid settlement) or claims
+  // one nobody has checked (confirmed over a settlement still in review).
+  const settled = (paymentStatus: string | null, settlementStatus: string | null): PaymentStatus =>
+    overallPaymentStatus({
+      status: 'payment_confirmed', paymentStatus, proofCount: 0, settlementStatus,
+    });
+
+  it('stops saying nothing is due once the balance has been paid', () => {
+    // KH-2791 and 4 more live orders (₱4,295 between them).
+    expect(settled('not_due', 'proof_review')).toBe('proof_submitted');
+  });
+
+  it('confirms the payment once an admin has verified the settlement', () => {
+    // 8 more live orders, each showing "No Payment Due" over a VERIFIED payment.
+    expect(settled('not_due', 'paid')).toBe('confirmed');
+  });
+
+  it('does not claim a confirmed payment while the settlement is unverified', () => {
+    // 20 live orders. The downpayment was verified and the balance — the far
+    // larger sum, ₱136,487.75 across them — has not been. Reporting the better
+    // of the two tells a customer their money was checked when nobody has
+    // looked, which is the exact lie this module exists to end.
+    expect(settled('confirmed', 'proof_review')).toBe('proof_submitted');
+  });
+
+  it('keeps reporting an unpaid downpayment after the balance clears', () => {
+    // The settlement covers the BALANCE. It says nothing about a downpayment
+    // still owed or already rejected, so it must not paper over one.
+    expect(settled('pending', 'paid')).toBe('pending');
+    expect(settled('rejected', 'paid')).toBe('rejected');
+  });
+
+  it('ignores a cancelled settlement, which collected nothing', () => {
+    expect(settled('not_due', 'cancelled')).toBe('not_due');
+    expect(settled('confirmed', 'cancelled')).toBe('confirmed');
+  });
+
+  it('leaves an order carrying no settlement exactly as it was', () => {
+    for (const stored of ['pending', 'proof_submitted', 'confirmed', 'rejected', 'not_due']) {
+      expect(settled(stored, null)).toBe(stored);
+      expect(settled(stored, undefined as unknown as null)).toBe(stored);
+    }
+  });
+
+  it('derives a legacy row own state first, then folds the settlement in', () => {
+    // A row written before payment_status existed still has to answer, and the
+    // settlement is the newer of the two facts either way.
+    expect(overallPaymentStatus({
+      status: 'payment_confirmed', paymentStatus: null, proofCount: 1,
+      settlementStatus: 'proof_review',
+    })).toBe('proof_submitted');
+  });
+
+  it('never reads a settlement status it does not recognise as a payment', () => {
+    expect(settled('not_due', 'some_future_state')).toBe('not_due');
   });
 });

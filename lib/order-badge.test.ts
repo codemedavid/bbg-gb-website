@@ -79,3 +79,50 @@ describe('the badge on a row written before payment had a field', () => {
     }
   });
 });
+
+describe('the badge on an order whose balance went through the final checkout', () => {
+  // "nawala daw payment" — the customer's report, holding the screenshot of a
+  // ₱1,140 payment they had made two days earlier.
+  //
+  // A hatian order is paid twice: the downpayment at checkout, and the balance
+  // at the hatian final checkout, which writes a SETTLEMENT and never touches
+  // orders.payment_status. The badge only ever asked the order, so the second
+  // payment was invisible on the one screen the customer checks.
+  it('does not say nothing is due on an order the customer has paid in full', () => {
+    // KH-2791 exactly: 'not_due' because the repeat commitment owed ₱0 at
+    // checkout, then ₱1,140 settled with a bank proof and awaiting review.
+    const badge = orderBadge({
+      status: 'payment_confirmed', paymentStatus: 'not_due', settlementStatus: 'proof_review',
+    });
+
+    expect(badge.label).toBe('Proof Submitted');
+    expect(badge.label).not.toMatch(/no payment due/i);
+  });
+
+  it('confirms the payment once an admin has verified the settlement', () => {
+    expect(orderBadge({
+      status: 'payment_confirmed', paymentStatus: 'not_due', settlementStatus: 'paid',
+    }).label).toBe('Payment Confirmed');
+  });
+
+  it('does not claim a confirmed payment while the settlement is still unverified', () => {
+    // The overclaim direction, and the larger number: 20 live orders whose
+    // ₱150 downpayment is verified and whose balance nobody has checked.
+    expect(orderBadge({
+      status: 'payment_confirmed', paymentStatus: 'confirmed', settlementStatus: 'proof_review',
+    }).label).toBe('Proof Submitted');
+  });
+
+  it('goes back to owing when the settlement was cancelled', () => {
+    expect(orderBadge({
+      status: 'payment_confirmed', paymentStatus: 'not_due', settlementStatus: 'cancelled',
+    }).label).toBe('No Payment Due');
+  });
+
+  it('still reports the parcel once it is moving', () => {
+    // Past the payment phase the parcel is the news, settlement or not.
+    expect(orderBadge({
+      status: 'shipped', paymentStatus: 'not_due', settlementStatus: 'proof_review',
+    }).label).toBe('Shipped');
+  });
+});
