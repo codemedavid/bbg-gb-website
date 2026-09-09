@@ -21,7 +21,7 @@ describe('planPriceAdjustment', () => {
     const plan = planPriceAdjustment([sheetRow()], [product()]);
 
     expect(plan.updates).toEqual([
-      { productId: 'p1', name: 'Selank', spec: '10mg', fromPhp: 3200, toPhp: 3263 },
+      { row: 2, productId: 'p1', name: 'Selank', spec: '10mg', fromPhp: 3200, toPhp: 3263 },
     ]);
   });
 
@@ -133,7 +133,7 @@ describe('planPriceAdjustment', () => {
 
     const keys = Object.keys(plan.updates[0]);
     expect(keys.filter((k) => /onhand|on_hand/i.test(k))).toEqual([]);
-    expect(keys).toEqual(['productId', 'name', 'spec', 'fromPhp', 'toPhp']);
+    expect(keys).toEqual(['row', 'productId', 'name', 'spec', 'fromPhp', 'toPhp']);
   });
 });
 
@@ -160,32 +160,19 @@ describe('a workbook row that matches a duplicated catalog entry', () => {
     expect(plan.ambiguous).toEqual([]);
   });
 
-  // Oxytocin is two LIVE kahati products, OXY10 at 2937.50 and OT10 at 3200.
-  // Picking one would move a real price on a coin toss.
-  it('stays ambiguous when both candidates are live kahati products', () => {
+  // Two LIVE products tied on price is still worth a human look: repricing a
+  // real pair off one sheet row should not happen quietly.
+  it('stays ambiguous when two live kahati products tie on price', () => {
     const plan = planPriceAdjustment(
       [sheetRow({ name: 'Oxytocin', size: '10mg', code: 'OT10', php: 3263 })],
       [
-        product({ id: 'oxy10', name: 'Oxytocin', spec: '10mg vial', pricePhp: 2937.5, isKahati: true }),
-        product({ id: 'ot10', name: 'Oxytocin', spec: '10mg', pricePhp: 3200, isKahati: true }),
+        product({ id: 'a', name: 'Oxytocin', spec: '10mg vial', pricePhp: 3200, isKahati: true }),
+        product({ id: 'b', name: 'Oxytocin', spec: '10mg', pricePhp: 3200, isKahati: true }),
       ],
     );
 
     expect(plan.updates).toEqual([]);
-    expect(plan.ambiguous[0].candidates).toEqual(['oxy10', 'ot10']);
-  });
-
-  it('stays ambiguous when neither candidate is a kahati product', () => {
-    const plan = planPriceAdjustment(
-      [sheetRow({ name: 'Rejuran GOLD & SILVER (Dual effect serum)', size: '30ml each', code: null, php: 2563 })],
-      [
-        product({ id: 'a', name: 'Rejuran GOLD & SILVER (Dual effect serum)', spec: '30ml', pricePhp: 2500, isKahati: false, isOnHand: false }),
-        product({ id: 'b', name: ' Rejuran GOLD & SILVER (Dual effect serum)', spec: '30ml each', pricePhp: 2500, isKahati: false, isOnHand: false }),
-      ],
-    );
-
-    expect(plan.updates).toEqual([]);
-    expect(plan.ambiguous).toHaveLength(1);
+    expect(plan.ambiguous[0].candidates).toEqual(['a', 'b']);
   });
 });
 
@@ -244,12 +231,39 @@ describe('names the workbook spells differently from the catalog', () => {
     expect(plan.unmatched).toHaveLength(1);
   });
 
+  // Created under the catalog's convention, which keeps the doses in the name
+  // — the shape TRC35 already set — so the alias joins the two.
+  it('matches the new Tirzepatide + Retatrutide blend', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Tirzepatide 20mg + Retatrutide 10mg', size: '30mg', code: 'TRR30', php: 7463 })],
+      [product({ id: 'trr', name: 'Tirzepatide 20mg + Retatrutide 10mg', spec: '30mg', pricePhp: 7463 })],
+    );
+
+    expect(plan.unmatched).toEqual([]);
+    expect(plan.unchanged.map((u) => u.productId)).toEqual(['trr']);
+  });
+
+  // The new GHK-Cu blend needs no alias: the catalog name carries no doses, so
+  // baseName already reduces the workbook label onto it. Size keeps the 60mg
+  // sibling out.
+  it('matches the new GHK-Cu + KPV on name and size alone', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'GHKcu 100mg + KPV 20mg', size: '120mg', code: 'CUV120', php: 8463 })],
+      [
+        product({ id: 'cuv120', name: 'GHK-Cu + KPV', spec: '120mg vial', pricePhp: 8463 }),
+        product({ id: 'cuv60', name: 'GHK-Cu + KPV', spec: '60mg vial', pricePhp: 4863 }),
+      ],
+    );
+
+    expect(plan.unchanged.map((u) => u.productId)).toEqual(['cuv120']);
+  });
+
   it.each(cases)('matches $row.name', ({ row, product: p, to }) => {
     const plan = planPriceAdjustment([row], [p]);
 
     expect(plan.unmatched).toEqual([]);
     expect(plan.updates).toEqual([
-      { productId: p.id, name: p.name, spec: p.spec, fromPhp: p.pricePhp, toPhp: to },
+      { row: row.row, productId: p.id, name: p.name, spec: p.spec, fromPhp: p.pricePhp, toPhp: to },
     ]);
   });
 });
