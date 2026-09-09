@@ -20,7 +20,7 @@ import { and, asc, eq, gte, inArray, isNotNull, lt, lte, ne, sql, type SQL } fro
 import { getDb, groupBuys, orders, orderItems, orderStatusHistory, settlements, users } from '@/lib/db';
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { round2, VIALS_PER_KIT } from './pricing';
-import { sendEmail, kahatiCancelledEmail } from './email';
+import { sendEmail, kahatiCancelledEmail, kahatiPartlyCancelledEmail } from './email';
 import { cancellationRefundNoticeFor, DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from './kahati-downpayment';
 import { getKahatiDownpaymentPolicy } from './settings';
 import { captureEvent } from './posthog';
@@ -53,6 +53,12 @@ export type CancellationNotice = {
    * still holding the place their surviving vials have in the parcel.
    */
   orderCancelled: boolean;
+  /** Vials of this order that were on the counter that fell short. */
+  releasedVials: number;
+  /** Vials of this order still going ahead on its other counters. */
+  survivingVials: number;
+  /** What the order was re-billed to. 0 when the whole order went. */
+  newTotalPhp: number;
 };
 
 export type KahatiCancellation = { row: GroupBuyRow; notices: CancellationNotice[] };
@@ -225,10 +231,15 @@ export async function notifyKahatiCancellations(notices: CancellationNotice[]): 
   const policy = await getKahatiDownpaymentPolicy().catch(() => DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
   const refundNotice = cancellationRefundNoticeFor(policy);
   for (const notice of notices) {
+    // Two different things happened to two different customers, and telling the
+    // second one the first one's news is worse than telling them nothing.
+    const body = notice.orderCancelled
+      ? kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS, refundNotice })
+      : kahatiPartlyCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS });
     await sendEmail({
       to: notice.email,
-      ...kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS, refundNotice }),
-      kind: 'kahati_cancelled',
+      ...body,
+      kind: notice.orderCancelled ? 'kahati_cancelled' : 'kahati_partly_cancelled',
     });
     // Distinct from order_cancelled: this one carries the refund amount and the
     // hatian that fell through, so PostHog can send the right explanation.
@@ -238,7 +249,11 @@ export async function notifyKahatiCancellations(notices: CancellationNotice[]): 
       email: notice.email,
       name: notice.name,
       properties: {
-        orderId: notice.orderId, orderNo: notice.orderNo, status: 'cancelled',
+        orderId: notice.orderId, orderNo: notice.orderNo,
+        // The HATIAN was cancelled either way; the ORDER may not have been.
+        status: notice.orderCancelled ? 'cancelled' : 'partly_cancelled',
+        orderCancelled: notice.orderCancelled,
+        releasedVials: notice.releasedVials, survivingVials: notice.survivingVials,
         kahatiId: notice.kahatiId, kahatiName: notice.kahatiName,
         claimedVials: notice.claimedSlots, minVials: KAHATI_MIN_VIABLE_VIALS,
         refundPhp: notice.downpayment,
@@ -462,6 +477,14 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
       line.groupBuyId == null || liveCounters.has(line.groupBuyId));
     const keepsOrderAlive = survivors.length > 0;
 
+    // Computed out here because the customer's email quotes them, not just the
+    // re-bill below.
+    const subtotal = round2(survivors.reduce((sum, l) => sum + Number(l.lineTotalPhp), 0));
+    const newTotalPhp = keepsOrderAlive ? round2(subtotal + Number(order.packingFeePhp)) : 0;
+    const vialsOn = (of: typeof lines) => of.reduce((sum, l) => sum + l.qty, 0);
+    const releasedVials = vialsOn(lines.filter((l) => l.groupBuyId === g.id));
+    const survivingVials = vialsOn(survivors.filter((l) => l.groupBuyId != null));
+
     await db.transaction(async (tx) => {
       if (keepsOrderAlive) {
         // A mixed result. The order lives, ships its survivors, and is re-billed
@@ -469,10 +492,9 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
         // never ordered from the supplier. The packing fee is NOT re-derived:
         // the parcel is still being packed, and lib/order-edit-server.ts
         // declines to move it for exactly the same reason.
-        const subtotal = round2(survivors.reduce((sum, l) => sum + Number(l.lineTotalPhp), 0));
         await tx.update(orders).set({
           subtotalPhp: String(subtotal),
-          totalPhp: String(round2(subtotal + Number(order.packingFeePhp))),
+          totalPhp: String(newTotalPhp),
           updatedAt: new Date(),
         }).where(eq(orders.id, order.id));
         // Recorded against the status the order KEEPS: it did not change state,
@@ -502,6 +524,7 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
         // holding the place its surviving vials have in the parcel.
         downpayment: keepsOrderAlive ? 0 : Number(order.downpaymentPhp),
         orderCancelled: !keepsOrderAlive,
+        releasedVials, survivingVials, newTotalPhp,
       });
     }
   }

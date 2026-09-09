@@ -238,6 +238,44 @@ export function orderStatusEmail(o: { name: string; orderNo: string; status: str
 // A hatian that expired under the 7-vial minimum. The batch is never ordered, so
 // the order is cancelled outright and the downpayment goes back. Refunds are
 // manual (GCash/bank transfer) — this email is what tells the customer to expect one.
+const vialCount = (n: number): string => `${n} vial${n === 1 ? '' : 's'}`;
+
+/**
+ * One of a customer's hatians fell short, but their order lives on.
+ *
+ * A customer who joined several hatians in one checkout used to get the
+ * whole-order cancellation notice when any one of them failed — telling them
+ * "nothing will be shipped" about a parcel that was, in fact, still being
+ * packed. Reading that, they reasonably conclude they lost everything, and the
+ * shop hears about it.
+ *
+ * So this says the opposite thing first: the order is still going ahead. What
+ * fell through, what survived, and what they now owe — because the amount is
+ * what they are waiting on.
+ *
+ * No refund sentence. Nothing is coming back: their deposit is still holding
+ * the place their surviving vials have in this parcel.
+ */
+export function kahatiPartlyCancelledEmail(o: {
+  name: string; orderNo: string; kahatiName: string; claimedSlots: number; minVials: number;
+  /** Vials of theirs that were on the counter that fell short. */
+  releasedVials: number;
+  /** Vials of theirs still going ahead, on their other counters. */
+  survivingVials: number;
+  /** What the order was re-billed to, once the failed vials came off it. */
+  newTotalPhp: number;
+}) {
+  return {
+    subject: `"${o.kahatiName}" did not push through - order ${o.orderNo} continues`,
+    html: wrap(`Heads up, ${o.name} 🙏`, `
+      <p>The hatian <strong>${escapeHtml(o.kahatiName)}</strong> closed with only <strong>${o.claimedSlots} of ${o.minVials}</strong> vials needed, so we could not place that batch. Your <strong>${vialCount(o.releasedVials)}</strong> on it will not be ordered.</p>
+      <p><strong>Pero tuloy pa rin ang order mo.</strong> Order <strong>${o.orderNo}</strong> is NOT cancelled — <strong>${vialCount(o.survivingVials)}</strong> from your other hatian are still going ahead and will ship in your parcel.</p>
+      <p>Ang bago mong total: <strong>${php(o.newTotalPhp)}</strong>. Hindi ka sinisingil para sa vials na hindi na-order.</p>
+      <p>Nasa iyo pa rin ang downpayment mo — ito ang humahawak sa lugar mo sa parcel na ito.</p>
+      <p>Salamat sa pag-intindi!</p>`),
+  };
+}
+
 export function kahatiCancelledEmail(o: {
   name: string; orderNo: string; kahatiName: string; claimedSlots: number; minVials: number;
   downpayment: number;
