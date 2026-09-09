@@ -172,10 +172,14 @@ describe('sweepKahatis — failed hatian cancellation flow', () => {
     expect(await orderStatus(soloOrder!.id)).toBe('proof_review');
   });
 
-  it('still restocks on-hand lines inside a legacy pre-split mixed order', async () => {
+  // On-hand is RETAIL: the customer bought stock that was already sitting in the
+  // inventory, and a hatian falling short has nothing to do with it. This order
+  // used to be cancelled outright and the vials clawed back into stock, so a
+  // failed hatian silently un-sold goods the customer had already paid for and
+  // that were ready to ship.
+  it('keeps the on-hand goods in a legacy pre-split mixed order', async () => {
     // Orders placed before checkout split by mode can hold both kinds on one
-    // record, and those still exist in the database — so the restock path in
-    // releaseKahatiOrders has to keep working for them.
+    // record, and those still exist in the database.
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
     const product = await makeProduct({ stock: 46 });
     const user = await makeUser();
@@ -201,9 +205,21 @@ describe('sweepKahatis — failed hatian cancellation flow', () => {
 
     await sweepKahatis(db);
 
+    // Untouched: retail stock the customer bought is not un-sold by a hatian.
     const [row] = await db.select().from(products).where(eq(products.id, product.id));
-    expect(row.stock).toBe(50); // 46 + the 4 returned by the cancellation
-    expect(await orderStatus(legacy.id)).toBe('cancelled');
+    expect(row.stock).toBe(46);
+    expect(await orderStatus(legacy.id)).not.toBe('cancelled');
+
+    // Re-billed to the on-hand line alone — the hatian vial is not being
+    // ordered, so it is not charged for.
+    const [rebilled] = await db.select().from(orders).where(eq(orders.id, legacy.id));
+    expect(Number(rebilled.subtotalPhp)).toBe(2200);
+    expect(Number(rebilled.totalPhp)).toBe(2200 + 150);
+
+    // The failed hatian vial is still owed back.
+    const refunds = await db.select().from(orderItemRefunds)
+      .where(eq(orderItemRefunds.orderId, legacy.id));
+    expect(refunds).toHaveLength(1);
   });
 
   it('does not touch a hatian that succeeded', async () => {
