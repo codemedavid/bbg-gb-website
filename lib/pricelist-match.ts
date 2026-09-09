@@ -80,6 +80,11 @@ export const ALIASES: Record<string, string> = {
   wolverine: 'wolverinetb500+bpc',
   // The workbook says Cagrilintide, the catalog says Cagrilentide.
   'tirzepatide+cagrilintide': 'tirzepatide30mg+cagrilentide5mg',
+  // The workbook leads with the form, the catalog trails it — "SALTFORM-KPV20"
+  // against "KPV (SALTFORM)", which is the convention SS31 (SALTFORM) already
+  // set. Scoped to the 20mg saltform; the plain 10mg KPV is a different product
+  // at a different price and the size filter keeps it out.
+  saltformkpv20: 'kpvsaltform',
 };
 
 export const aliasOf = (n: string): string => ALIASES[n] ?? n;
