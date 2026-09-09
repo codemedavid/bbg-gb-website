@@ -113,10 +113,19 @@ describe('planPriceAdjustment', () => {
     ];
     const plan = planPriceAdjustment(rows, [product()]);
 
-    const accounted = plan.updates.length + plan.unchanged.length
-      + plan.ambiguous.length + plan.unmatched.length + plan.excluded.length
-      + plan.skippedOnHand.length;
-    expect(accounted).toBe(rows.length);
+    const seen = new Set([
+      ...plan.updates.map(() => null), // updates carry no row; counted below
+    ]);
+    void seen;
+    const rowsAccounted = new Set<number>([
+      ...plan.unchanged.map((u) => u.row),
+      ...plan.skippedOnHand.map((u) => u.row),
+      ...plan.ambiguous.map((a) => a.row),
+      ...plan.unmatched.map((u) => u.row),
+      ...plan.excluded.map((e) => e.row),
+      ...plan.updates.map((u) => u.row),
+    ]);
+    expect([...rowsAccounted].sort()).toEqual(rows.map((r) => r.row));
   });
 
   it('never proposes a change to an on-hand price column', () => {
@@ -242,5 +251,79 @@ describe('names the workbook spells differently from the catalog', () => {
     expect(plan.updates).toEqual([
       { productId: p.id, name: p.name, spec: p.spec, fromPhp: p.pricePhp, toPhp: to },
     ]);
+  });
+});
+
+
+// The client's rule for a duplicated catalog entry: "Yon higher price po ang
+// inconsider natin" — where the catalog holds the same product twice at
+// different prices, the dearer row is the live one.
+describe('a duplicate the kahati flag does not settle', () => {
+  // Oxytocin is two live kahati products, OXY10 at 2937.50 and OT10 at 3200.
+  it('takes the dearer of two live kahati products', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Oxytocin', size: '10mg', code: 'OT10', php: 3263 })],
+      [
+        product({ id: 'oxy10', name: 'Oxytocin', spec: '10mg vial', pricePhp: 2937.5, isKahati: true }),
+        product({ id: 'ot10', name: 'Oxytocin', spec: '10mg', pricePhp: 3200, isKahati: true }),
+      ],
+    );
+
+    expect(plan.ambiguous).toEqual([]);
+    expect(plan.updates.map((u) => u.productId)).toEqual(['ot10']);
+  });
+
+  // The Rejuran pair is the same product listed twice at the SAME price, so
+  // "dearer" picks neither. Updating one would leave its twin stale at the old
+  // price — two rows for one product disagreeing about what it costs.
+  it('moves both when duplicates are indistinguishable on price', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Rejuran GOLD & SILVER (Dual effect serum)', size: '30ml each', code: null, php: 2563 })],
+      [
+        product({ id: 'a', name: 'Rejuran GOLD & SILVER (Dual effect serum)', spec: '30ml', pricePhp: 2500, isKahati: false, isOnHand: false }),
+        product({ id: 'b', name: ' Rejuran GOLD & SILVER (Dual effect serum)', spec: '30ml each', pricePhp: 2500, isKahati: false, isOnHand: false }),
+      ],
+    );
+
+    expect(plan.ambiguous).toEqual([]);
+    expect(plan.updates.map((u) => u.productId).sort()).toEqual(['a', 'b']);
+  });
+
+  // The kahati flag still leads: a live product is the answer even when the
+  // dead twin beside it happens to carry a bigger number.
+  it('still prefers the kahati product over a dearer orphan', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Aicar', size: '50mg', code: 'AR50', php: 3663 })],
+      [
+        product({ id: 'kahati', name: 'AICAR', spec: '50mg vial', pricePhp: 3600, isKahati: true }),
+        product({ id: 'orphan', name: 'Aicar ', spec: '50mg', pricePhp: 9999, isKahati: false, isOnHand: false }),
+      ],
+    );
+
+    expect(plan.updates.map((u) => u.productId)).toEqual(['kahati']);
+  });
+});
+
+// The client confirmed the workbook's "JUVEDERM Volume" is the catalog's
+// "JUVEDERM Voluma" — a spelling difference, not a different filler.
+describe('JUVEDERM Volume', () => {
+  it('matches the catalog Voluma', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'JUVEDERM Volume', size: '2 x 1ml prefilled syringes', code: 'JUVEDERMVol', php: 4063 })],
+      [product({ id: 'vol', name: 'JUVEDERM Voluma', spec: '2x1ml prefilled syringes', pricePhp: 4000, isKahati: false, isOnHand: false })],
+    );
+
+    expect(plan.unmatched).toEqual([]);
+    expect(plan.updates.map((u) => u.toPhp)).toEqual([4063]);
+  });
+
+  it('does not match a different JUVEDERM', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'JUVEDERM Volume', size: '2 x 1ml prefilled syringes', code: 'JUVEDERMVol', php: 4063 })],
+      [product({ id: 'u3', name: 'JUVEDERM Ultra 3', spec: '2x1ml prefilled syringes', pricePhp: 4063 })],
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.unmatched).toHaveLength(1);
   });
 });
