@@ -90,6 +90,23 @@ export async function signedUrl(bucket: string, key: string, expiresSec = 3600):
   return `/api/files/${bucket}/${key}`;
 }
 
+/**
+ * The bytes of a stored file, whichever driver holds them.
+ *
+ * readLocal only ever answered for the local driver, so the same-origin file
+ * route 404'd on everything in production. This is that route's read: it fetches
+ * from the storage host SERVER-SIDE and hands the bytes back, so the browser
+ * only ever talks to bbgph.org (lib/file-url.ts).
+ */
+export async function readFile(bucket: string, key: string): Promise<Buffer> {
+  if (env.storageDriver === 'local') return readLocal(bucket, key);
+  // Signed for ImageKit, signed for Supabase — either way the credential stays
+  // on the server and never reaches the customer.
+  const res = await fetch(await signedUrl(bucket, key));
+  if (!res.ok) throw new Error(`Storage returned ${res.status} for ${bucket}/${key}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 export async function readLocal(bucket: string, key: string): Promise<Buffer> {
   const src = path.join(UPLOAD_DIR, bucket, key);
   return fs.readFile(src);

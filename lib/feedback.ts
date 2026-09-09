@@ -1,4 +1,4 @@
-import { signedUrl } from '@/lib/storage';
+import { siteFileUrl } from '@/lib/file-url';
 import { BUCKETS } from '@/lib/env';
 
 export type FeedbackItemRow = {
@@ -19,7 +19,7 @@ export async function serializeFeedbackItem(i: FeedbackItemRow) {
   return {
     id: i.id,
     folderId: i.folderId,
-    imageUrl: await signedUrl(BUCKETS.feedback, i.imageKey),
+    imageUrl: siteFileUrl(BUCKETS.feedback, i.imageKey),
     caption: i.caption ?? null,
     customerName: i.customerName ?? null,
     isActive: i.isActive,
@@ -47,7 +47,7 @@ export async function serializeFeedbackFolder(f: FeedbackFolderRow, items: Feedb
     name: f.name,
     description: f.description ?? null,
     itemCount: items.length,
-    coverUrl: cover ? await signedUrl(BUCKETS.feedback, cover.imageKey) : null,
+    coverUrl: cover ? siteFileUrl(BUCKETS.feedback, cover.imageKey) : null,
     isActive: f.isActive,
     sortOrder: f.sortOrder,
   };
