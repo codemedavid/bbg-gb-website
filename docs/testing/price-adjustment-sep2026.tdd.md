@@ -114,22 +114,57 @@ $ npx vitest run
 | 9 | Every row is accounted for exactly once | `…:accounts for every row exactly once` | unit | PASS |
 | 10 | No update can name an on-hand price column | `…:never proposes a change to an on-hand price column` | unit | PASS |
 
-## Still outstanding — 20 rows not applied
+## Second pass — aliases and duplicate resolution
+
+On instruction, two causes were fixed and a further 9 changes applied.
+
+**Four ALIASES** (`lib/pricelist-match.ts`). `baseName` strips a parenthetical
+carrying a digit, so "Relaxation PM (RP 226)" lost the code the catalog keeps
+inside the product name; same for Lipo C B12 Plus and Wolverine. The fourth is a
+plain spelling split — workbook "Cagrilintide", catalog "Cagrilentide".
+
+**Prefer the kahati twin.** Where a row matched a real kahati product and an
+orphan (neither kahati nor on-hand, differing only in formatting), the kahati
+one is what the sheet means. It settles nothing when both are live kahati or
+neither is, and those stay ambiguous.
+
+```
+(RED)   test: resolve duplicate catalog rows and four workbook spellings
+        Tests  5 failed | 12 passed (17)
+(GREEN) fix: match four workbook spellings and prefer the kahati twin
+        Tests  22 passed (22); full suite 3232 passed
+```
+
+Applied: AICAR 3600→3663, Relaxation PM 6000→6063, Lipo C B12 Plus 4950→5013,
+Tirzepatide+Cagrilentide 9000→9063, MOTS-C 3750→3963, Selank 3200→3263,
+Wolverine 6300→6363. Re-run afterwards: `updates 0 · unchanged 119`.
+
+Total applied to production across both passes: **112**.
+
+## Still outstanding — 10 rows not applied
 
 These need a human answer; the script will apply them once the catalog is
 unambiguous.
 
-**Ambiguous (9)** — two catalog products match and the sheet does not say which.
-The workbook itself lists three of these twice (rows 31/93, 32/129, 36/53):
-Rejuran GOLD & SILVER, Aicar 50mg, MOTS-c 10mg ×2, Selank 10mg ×2,
-Retatrutide (Saltform) 30mg, Oxytocin 10mg ×2.
+**Ambiguous (3)** — the catalog genuinely does not say which.
+- Rejuran GOLD & SILVER (row 16): two orphan rows, both ₱2500, neither kahati.
+- Oxytocin (rows 36, 53): two LIVE kahati products — OXY10 at ₱2937.50 and
+  OT10 at ₱3200. A human has to say which one is current.
 
-**Unmatched (11)** — nothing matches on name + size. Mostly salt-forms and
-blends, which either sit under a different name in the catalog or do not exist
-yet: Cagrilintide (Saltform) 5mg, SALTFORM-KPV20, GHKcu 100mg + KPV 20mg,
-Relaxation PM (RP 226), Lipo C B12 Plus, Tirzepatide 30mg + Cagrilintide 5mg,
-Tirzepatide 20mg + Retatrutide 10mg, Tesamorelin (Saltform) 10mg and 5mg,
-JUVEDERM Volume, Wolverine (TB500+BPC).
+**Unmatched (7)** — three of these are already at the workbook's price and need
+nothing: Cagrilintide (Saltform) 5mg (catalog "CAGRILENTIDE", ₱6600) and
+Tesamorelin (Saltform) 10mg / 5mg (catalog "Tesamorilin", ₱11900 / ₱6200).
+
+The remaining four may be new products or renames, and need a decision:
+SALTFORM-KPV20 20mg (catalog has KPV 10mg only), GHKcu 100mg + KPV 20mg at
+120mg (catalog has GHK-Cu + KPV 60mg), Tirzepatide 20mg + Retatrutide 10mg
+(TRR30), and JUVEDERM Volume (catalog has JUVEDERM **Voluma** at ₱4000 — likely
+a workbook typo).
+
+**Catalog hygiene.** The orphan rows that caused the ambiguity — "Aicar " with a
+trailing space, a second "MOTS-c", a second "Selank" — are dead weight, neither
+kahati nor on-hand. Removing them would stop this recurring on every price
+update. Not done here; it deletes catalog rows and is its own decision.
 
 ## Known gaps
 
