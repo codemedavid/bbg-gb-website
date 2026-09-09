@@ -2,9 +2,17 @@
   BBG Peptides — kahati_cancelled
   Trigger: PostHog event `kahati_cancelled` (lib/kahati-server.ts) — a hatian expired
            under the 7-vial minimum, so the batch was never ordered.
-  Subject: Order {{ event.properties.orderNo }} cancelled — "{{ event.properties.kahatiName }}" did not reach {{ event.properties.minVials }} vials
+
+  TWO OUTCOMES, branched on `orderCancelled`. A customer who joined several hatians in
+  one checkout keeps the ones that reached their minimum: only the short hatian's lines
+  are released and their order is re-billed to what survived. Sending the "cancelled,
+  refund coming" copy to someone whose parcel is still being packed makes them think
+  they lost everything — which is the message this branch exists to prevent.
+
+  Subject — set the workflow's subject to this Liquid, not to either line alone:
+    {% if event.properties.orderCancelled %}Order {{ event.properties.orderNo }} cancelled — "{{ event.properties.kahatiName }}" did not reach {{ event.properties.minVials }} vials{% else %}"{{ event.properties.kahatiName }}" did not push through — order {{ event.properties.orderNo }} continues{% endif %}
 -->
-<div style="display:none;font-size:1px;color:#f4f7f1;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">The hatian closed short of the minimum, so your order is cancelled and your downpayment is being refunded.</div>
+<div style="display:none;font-size:1px;color:#f4f7f1;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">{% if event.properties.orderCancelled %}The hatian closed short of the minimum, so your order is cancelled and your downpayment is being refunded.{% else %}One hatian closed short, but your order is still going ahead — here is what is shipping and what you owe.{% endif %}</div>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e6eae2;margin:0;padding:24px 12px;">
 <tr><td align="center">
@@ -16,7 +24,7 @@
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
           <td style="font:700 17px/1 Arial,Helvetica,sans-serif;color:#ffffff;letter-spacing:1.2px;">BBG PEPTIDES</td>
-          <td align="right"><span style="display:inline-block;background:#f6e0e0;color:#b23b3b;font:700 10px/1 Arial,Helvetica,sans-serif;letter-spacing:.8px;padding:6px 10px;border-radius:20px;">HATIAN CLOSED</span></td>
+          <td align="right">{% if event.properties.orderCancelled %}<span style="display:inline-block;background:#f6e0e0;color:#b23b3b;font:700 10px/1 Arial,Helvetica,sans-serif;letter-spacing:.8px;padding:6px 10px;border-radius:20px;">HATIAN CLOSED</span>{% else %}<span style="display:inline-block;background:#e8f5db;color:#3c7a0a;font:700 10px/1 Arial,Helvetica,sans-serif;letter-spacing:.8px;padding:6px 10px;border-radius:20px;">TULOY ANG ORDER</span>{% endif %}</td>
         </tr>
       </table>
     </td>
@@ -24,10 +32,19 @@
 
   <tr>
     <td style="padding:22px 24px 0;">
+      {% if event.properties.orderCancelled %}
       <h1 style="margin:0 0 6px;font:700 24px/1.2 Arial,Helvetica,sans-serif;color:#1c2b26;">Pasensya na, {{ person.properties.name | default: 'kabahagi' }} &#128533;</h1>
       <p style="margin:0 0 16px;font:400 15px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
         Nagsara ang hatian na <strong style="color:#1c2b26;">{{ event.properties.kahatiName }}</strong> na kulang pa sa minimum, kaya hindi namin naipa-order ang batch.
       </p>
+      {% else %}
+      <!-- The reassurance leads. A customer who reads the first line and stops
+           reading still comes away with the right idea. -->
+      <h1 style="margin:0 0 6px;font:700 24px/1.2 Arial,Helvetica,sans-serif;color:#1c2b26;">Tuloy pa rin ang order mo, {{ person.properties.name | default: 'kabahagi' }} &#128077;</h1>
+      <p style="margin:0 0 16px;font:400 15px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+        Nagsara ang hatian na <strong style="color:#1c2b26;">{{ event.properties.kahatiName }}</strong> na kulang sa minimum, kaya hindi natuloy ang batch na iyon — pero <strong style="color:#1c2b26;">hindi kanselado ang order mo</strong>.
+      </p>
+      {% endif %}
 
       <!-- Shortfall meter -->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f7f1;border-radius:10px;">
@@ -43,13 +60,33 @@
               <div style="height:8px;width:{{ event.properties.claimedVials | times: 100 | divided_by: event.properties.minVials }}%;background:#b23b3b;border-radius:4px;font-size:0;line-height:0;">&nbsp;</div>
             </div>
             <p style="margin:10px 0 0;font:400 13px/1.5 Arial,Helvetica,sans-serif;color:#7a877f;">
-              Kailangan ng {{ event.properties.minVials }} vials bago mag-order ng batch. Order <strong style="color:#4c5a52;">{{ event.properties.orderNo }}</strong> is cancelled and nothing will be shipped.
+              Kailangan ng {{ event.properties.minVials }} vials bago mag-order ng batch.
+              {% if event.properties.orderCancelled %}Order <strong style="color:#4c5a52;">{{ event.properties.orderNo }}</strong> is cancelled and nothing will be shipped.{% else %}Ang <strong style="color:#4c5a52;">{{ event.properties.releasedVials }} vial(s)</strong> mo rito ay hindi na-order.{% endif %}
             </p>
           </td>
         </tr>
       </table>
 
-      {% if event.properties.refundPhp > 0 %}
+      {% unless event.properties.orderCancelled %}
+      <!-- What survived, and the amount they are waiting to hear. -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e8f5db;border-radius:10px;margin-top:14px;">
+        <tr>
+          <td style="padding:16px 18px;">
+            <div style="font:700 10px/1 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:1px;padding-bottom:6px;">TULOY ANG PADALA</div>
+            <p style="margin:0 0 10px;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+              <strong style="color:#1c2b26;">{{ event.properties.survivingVials }} vial(s)</strong> mula sa iba mong hatian ang tuloy pa rin at kasama sa parcel mo.
+            </p>
+            <div style="font:700 10px/1 Arial,Helvetica,sans-serif;color:#3c7a0a;letter-spacing:1px;padding-bottom:4px;">BAGONG TOTAL</div>
+            <div style="font:700 24px/1.2 Arial,Helvetica,sans-serif;color:#1c2b26;">&#8369;{{ event.properties.newTotalPhp }}</div>
+            <p style="margin:8px 0 0;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
+              Hindi ka sinisingil para sa vials na hindi na-order. Nasa iyo pa rin ang downpayment mo &mdash; ito ang humahawak sa lugar mo sa parcel na ito.
+            </p>
+          </td>
+        </tr>
+      </table>
+      {% endunless %}
+
+      {% if event.properties.orderCancelled and event.properties.refundPhp > 0 %}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e8f5db;border-radius:10px;margin-top:14px;">
         <tr>
           <td style="padding:16px 18px;">
@@ -61,14 +98,14 @@
           </td>
         </tr>
       </table>
-      {% else %}
+      {% elsif event.properties.orderCancelled %}
       <p style="margin:14px 0 0;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
         Walang nakolektang bayad para sa order na ito, kaya wala ring ire-refund.
       </p>
       {% endif %}
 
       <p style="margin:16px 0 0;font:400 14px/1.6 Arial,Helvetica,sans-serif;color:#4c5a52;">
-        Salamat sa pag-intindi — sali ka ulit sa susunod na hatian, mas mabilis mapupuno kapag maaga ka.
+        {% if event.properties.orderCancelled %}Salamat sa pag-intindi — sali ka ulit sa susunod na hatian, mas mabilis mapupuno kapag maaga ka.{% else %}Salamat sa pag-intindi! Hintayin mo na lang ang update sa natitirang vials mo.{% endif %}
       </p>
     </td>
   </tr>
@@ -78,7 +115,7 @@
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
         <tr>
           <td bgcolor="#57a814" style="border-radius:8px;">
-            <a href="https://www.bbgph.org" style="display:inline-block;padding:13px 24px;font:700 14px/1 Arial,Helvetica,sans-serif;color:#ffffff;text-decoration:none;border-radius:8px;">See open hatian</a>
+            <a href="https://www.bbgph.org{% unless event.properties.orderCancelled %}/orders{% endunless %}" style="display:inline-block;padding:13px 24px;font:700 14px/1 Arial,Helvetica,sans-serif;color:#ffffff;text-decoration:none;border-radius:8px;">{% if event.properties.orderCancelled %}See open hatian{% else %}Tingnan ang order ko{% endif %}</a>
           </td>
         </tr>
       </table>

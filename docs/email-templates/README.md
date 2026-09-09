@@ -35,7 +35,7 @@ Note that `/orders/<id>` requires a signed-in session and the app has no
 | `order-shipped.html` | `order_shipped` | Marked shipped — shows tracking number + courier |
 | `order-delivered.html` | `order_delivered` | Marked delivered — storage reminders |
 | `order-cancelled.html` | `order_cancelled` | Admin cancelled a single order |
-| `kahati-cancelled.html` | `kahati_cancelled` | Hatian expired under 7 vials — explains the refund |
+| `kahati-cancelled.html` | `kahati_cancelled` | Hatian expired under 7 vials. **Branches on `orderCancelled`**: whole order gone (refund) vs. only that hatian gone and the order still shipping (new total, no refund) |
 | `settlement-placed.html` | `settlement_placed` | Hatian final checkout — one payment, one packing fee |
 | `settlement-confirmed.html` | ⚠ **no event yet** | See the gap below |
 | `password-reset.html` | `password_reset_requested` | Someone asked for a reset link on `/forgot-password` — carries a single-use link that expires in an hour. **Its workflow needs non-default settings — see gap 3** |
