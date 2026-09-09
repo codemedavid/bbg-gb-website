@@ -68,7 +68,7 @@ async function main() {
     console.log('\n--- PRICE CHANGES ---');
     for (const u of plan.updates) {
       const delta = u.toPhp - u.fromPhp;
-      console.log(`  ${u.name} ${u.spec}: ${u.fromPhp} -> ${u.toPhp}  (${delta >= 0 ? '+' : ''}${delta})`);
+      console.log(`  row ${u.row}  ${u.name} ${u.spec}: ${u.fromPhp} -> ${u.toPhp}  (${delta >= 0 ? '+' : ''}${delta})`);
     }
   }
   for (const [label, list] of [

@@ -41,6 +41,8 @@ export type PriceableProduct = MatchableProduct & {
  * which this plan can express a change to one.
  */
 export type PriceUpdate = {
+  /** The workbook row this came from, so a report can point at the spreadsheet. */
+  row: number;
   productId: string;
   name: string;
   spec: string;
@@ -121,38 +123,46 @@ export function planPriceAdjustment(
 
     if (repriceable.length === 0) continue;
 
-    // The catalog carries duplicate rows: a real kahati product beside an
-    // orphan twin that is neither kahati nor on-hand and differs only in
-    // formatting. The orphans are dead weight, so where exactly one candidate
-    // is actually sold as kahati, that is the one the sheet means.
+    // The catalog carries duplicate rows. Two rules settle them, in order.
     //
-    // It settles nothing when BOTH are live kahati products (Oxytocin is two,
-    // at different prices) or when NEITHER is (the Rejuran pair). Those stay
-    // ambiguous, because then the sheet genuinely does not say which.
-    const live = repriceable.filter((p) => p.isKahati);
-    const candidates = live.length === 1 ? live : repriceable;
+    // First the kahati flag: an orphan twin — neither kahati nor on-hand,
+    // differing only in formatting ("AICAR" 50mg vial vs "Aicar " 50mg) — is
+    // dead weight, so a live kahati product beside one is what the sheet means
+    // however big the orphan's number.
+    const kahatiOnes = repriceable.filter((p) => p.isKahati);
+    const pool = kahatiOnes.length > 0 ? kahatiOnes : repriceable;
 
-    if (candidates.length > 1) {
+    // Then the client's rule: "Yon higher price po ang inconsider natin". Where
+    // the same product is held twice at different prices, the dearer row is the
+    // live one.
+    const dearest = Math.max(...pool.map((p) => p.pricePhp));
+    const chosen = pool.filter((p) => p.pricePhp === dearest);
+
+    // Two LIVE products tied on price is worth a human look — repricing a real
+    // pair off one sheet row should not happen quietly. Two dead rows tied on
+    // price is not: they are the same listing twice, and moving only one would
+    // leave its twin stale, two rows for one product disagreeing about cost.
+    if (chosen.length > 1 && chosen.some((p) => p.isKahati)) {
       plan.ambiguous.push({
         row: row.row, name: row.name, size: row.size,
-        candidates: candidates.map((p) => p.id),
+        candidates: chosen.map((p) => p.id),
       });
       continue;
     }
 
-    const product = candidates[0];
-    if (product.pricePhp === row.php) {
-      plan.unchanged.push({
-        row: row.row, productId: product.id, name: product.name,
-        why: 'already at the new price',
+    for (const product of chosen) {
+      if (product.pricePhp === row.php) {
+        plan.unchanged.push({
+          row: row.row, productId: product.id, name: product.name,
+          why: 'already at the new price',
+        });
+        continue;
+      }
+      plan.updates.push({
+        row: row.row, productId: product.id, name: product.name, spec: product.spec,
+        fromPhp: product.pricePhp, toPhp: row.php,
       });
-      continue;
     }
-
-    plan.updates.push({
-      productId: product.id, name: product.name, spec: product.spec,
-      fromPhp: product.pricePhp, toPhp: row.php,
-    });
   }
 
   return plan;
