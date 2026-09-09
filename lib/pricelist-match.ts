@@ -85,6 +85,12 @@ export const ALIASES: Record<string, string> = {
   // set. Scoped to the 20mg saltform; the plain 10mg KPV is a different product
   // at a different price and the size filter keeps it out.
   saltformkpv20: 'kpvsaltform',
+  // Confirmed by the client: the workbook's "Volume" is the catalog's "Voluma",
+  // a spelling difference and not one of the other JUVEDERM fillers.
+  juvedermvolume: 'juvedermvoluma',
+  // The blends keep their doses in the catalog name (the shape TRC35 set), and
+  // baseName strips them from the workbook label.
+  'tirzepatide+retatrutide': 'tirzepatide20mg+retatrutide10mg',
 };
 
 export const aliasOf = (n: string): string => ALIASES[n] ?? n;
