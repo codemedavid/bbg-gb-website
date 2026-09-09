@@ -15,13 +15,16 @@
 // that order is returned, and the customer is emailed about their refund. An
 // admin cancelling a hatian outright runs the same release flow (cancelKahati).
 import { and, asc, eq, gte, inArray, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
-import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, users } from '@/lib/db';
+import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, settlements, users } from '@/lib/db';
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { round2, VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail } from './email';
 import { cancellationRefundNoticeFor, DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from './kahati-downpayment';
 import { getKahatiDownpaymentPolicy } from './settings';
 import { captureEvent } from './posthog';
+import { counterQuantities } from './kahati-quantity';
+import { buildPasaloRefunds, type BatchLine, type BatchOrderFacts } from './pasalo-refund';
+import { writeRefundRows } from './pasalo-server';
 
 // A transaction handle exposes the same query surface as the root database, so
 // helpers here accept either — checkout calls closeFullKahati inside its tx.
@@ -408,10 +411,12 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
   const affected = await db.selectDistinct({
     id: orders.id, orderNo: orders.orderNo, userId: orders.userId,
     status: orders.status, downpaymentPhp: orders.downpaymentPhp,
-    packingFeePhp: orders.packingFeePhp,
+    packingFeePhp: orders.packingFeePhp, cycleKey: orders.cycleKey,
+    paymentStatus: orders.paymentStatus, settlementStatus: settlements.status,
   })
     .from(orders)
     .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+    .leftJoin(settlements, eq(settlements.id, orders.settlementId))
     .where(and(
       eq(orderItems.groupBuyId, g.id),
       // Already-cancelled orders are skipped, which is what makes a repeat sweep safe.
@@ -420,29 +425,35 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
 
   const note = `Hatian "${g.name}" closed with ${g.claimedSlots} of ${KAHATI_MIN_VIABLE_VIALS} vials needed — batch cancelled.`;
   const notices: CancellationNotice[] = [];
+  if (!affected.length) return notices;
+
+  // Every line of every affected order. What decides an order's fate, and
+  // whether its deposit is owed back, is what it holds ELSEWHERE.
+  const held = await db.select().from(orderItems)
+    .where(inArray(orderItems.orderId, affected.map((o) => o.id)));
+  const linesOf = (orderId: string) => held.filter((line) => line.orderId === orderId);
+
+  // Counters still going. A sweep resolving a whole board cancels several in
+  // one pass, and an order holding lines on two of them would otherwise be kept
+  // alive by each on the strength of the other — surviving a sweep in which
+  // nothing it holds was ordered. `g` is already flipped to 'cancelled' by the
+  // time this runs, so it is excluded here too.
+  const counterIds = [...new Set(
+    held.map((line) => line.groupBuyId).filter((id): id is string => id != null),
+  )];
+  const liveCounters = new Set(counterIds.length
+    ? (await db.select({ id: groupBuys.id }).from(groupBuys)
+        .where(and(inArray(groupBuys.id, counterIds), ne(groupBuys.status, 'cancelled'))))
+      .map((row) => row.id)
+    : []);
+
+  await bookKahatiRefunds(db, g, affected, held, liveCounters, note);
 
   for (const order of affected) {
-    // Every line of this order, not just the ones on this counter: what decides
-    // the order's fate is what it holds ELSEWHERE.
-    const held = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-
-    // A line only survives if ITS counter is still going. A sweep resolving a
-    // whole board cancels several counters in one pass, and an order holding
-    // lines on two of them would otherwise be kept alive by each one on the
-    // strength of the other — surviving a sweep in which nothing it holds was
-    // ordered.
-    const otherCounterIds = [...new Set(
-      held.map((line) => line.groupBuyId).filter((id): id is string => id != null && id !== g.id),
-    )];
-    const liveCounters = new Set(otherCounterIds.length
-      ? (await db.select({ id: groupBuys.id }).from(groupBuys)
-          .where(and(inArray(groupBuys.id, otherCounterIds), ne(groupBuys.status, 'cancelled'))))
-        .map((row) => row.id)
-      : []);
-
+    const lines = linesOf(order.id);
     // On-hand lines ride along with whatever the order still ships; they do not
     // themselves keep it alive (see the legacy note above).
-    const survivors = held.filter((line) =>
+    const survivors = lines.filter((line) =>
       line.groupBuyId == null || liveCounters.has(line.groupBuyId));
     const keepsOrderAlive = survivors.some((line) => line.groupBuyId != null);
 
@@ -468,8 +479,7 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
 
       // Nothing of this order is being ordered, so there is no parcel. Any
       // on-hand vials it drew go back to stock rather than being silently lost.
-      const onHandLines = held.filter((line) => line.kind === 'product');
-      for (const line of onHandLines) {
+      for (const line of lines.filter((l) => l.kind === 'product')) {
         if (!line.productId) continue;
         const vials = vialsForOrderLine(line.specSnapshot, line.qty);
         await tx.update(products).set({
@@ -498,4 +508,76 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
     }
   }
   return notices;
+}
+
+type AffectedOrder = {
+  id: string; userId: string; downpaymentPhp: string; packingFeePhp: string;
+  cycleKey: string | null; paymentStatus: string; settlementStatus: string | null;
+};
+
+/**
+ * Books what this cancellation owes, so it reaches the refund sheet.
+ *
+ * order_item_refunds used to be written only by the Pasalo close, so a counter
+ * that expired below its minimum owed its participants money, emailed them
+ * about it, and recorded nothing. Nothing tracked whether the refund was ever
+ * sent. The report needs no change to pick these up: it filters the table by
+ * date alone (lib/report/pasalo-refund-server.ts).
+ *
+ * The amounts come from lib/pasalo-refund.ts — the same rules the Pasalo close
+ * uses, so the two stages cannot disagree about what a customer is owed. That
+ * module needs every line the customer holds, not just the failed ones: a
+ * surviving line means their parcel still ships, and their deposit stays
+ * earned.
+ *
+ * Lines on counters cancelled EARLIER are left out. They were refunded when
+ * their own counter went, and counting them as survivors here would make the
+ * customer look like they were still getting a parcel — so their deposit would
+ * never come back from any counter at all.
+ */
+async function bookKahatiRefunds(
+  db: Db,
+  g: GroupBuyRow,
+  affected: readonly AffectedOrder[],
+  held: readonly (typeof orderItems.$inferSelect)[],
+  liveCounters: ReadonlySet<string>,
+  note: string,
+): Promise<void> {
+  const userOf = new Map(affected.map((o) => [o.id, o.userId]));
+
+  const lines: BatchLine[] = held
+    .filter((line) => line.groupBuyId != null
+      && (line.groupBuyId === g.id || liveCounters.has(line.groupBuyId))
+      && userOf.has(line.orderId))
+    .map((line) => ({
+      orderItemId: line.id,
+      orderId: line.orderId,
+      userId: userOf.get(line.orderId)!,
+      groupBuyId: line.groupBuyId!,
+      lineTotalPhp: Number(line.lineTotalPhp),
+      qty: line.qty,
+      failed: line.groupBuyId === g.id,
+      failureReason: line.groupBuyId === g.id ? note : null,
+    }));
+  if (!lines.some((l) => l.failed)) return;
+
+  const facts: BatchOrderFacts[] = affected.map((o) => ({
+    orderId: o.id,
+    userId: o.userId,
+    downpaymentPhp: Number(o.downpaymentPhp),
+    packingFeePhp: Number(o.packingFeePhp),
+    cycleKey: o.cycleKey,
+    paymentStatus: o.paymentStatus,
+    settlementStatus: o.settlementStatus,
+  }));
+
+  // A failed read falls back rather than throwing: the counter is already
+  // cancelled by this point, and letting a settings query stop the refunds
+  // being recorded is how money goes untracked.
+  const policy = await getKahatiDownpaymentPolicy().catch(() => DEFAULT_KAHATI_DOWNPAYMENT_POLICY);
+  const refunds = buildPasaloRefunds(lines, facts, { refundable: policy.refundable });
+  if (!refunds.length) return;
+
+  const quantities = new Map([[g.id, counterQuantities(g)]]);
+  await db.transaction(async (tx) => writeRefundRows(tx, refunds, lines, quantities));
 }

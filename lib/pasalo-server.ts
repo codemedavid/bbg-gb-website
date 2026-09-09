@@ -306,7 +306,14 @@ async function readBatchLines(
  * it has, at the amount and for the reason it was decided under. A second close
  * must never restate what a customer is owed.
  */
-async function writeRefundRows(
+/**
+ * Books refund rows for a set of failed lines.
+ *
+ * Exported because the Kahati expiry sweep owes the same rows for the same
+ * reason (lib/kahati-server.ts). Two writers would be two chances to disagree
+ * about what a customer is owed, on the one table where that is unaffordable.
+ */
+export async function writeRefundRows(
   tx: Db,
   refunds: PasaloRefundRow[],
   lines: BatchLine[],
