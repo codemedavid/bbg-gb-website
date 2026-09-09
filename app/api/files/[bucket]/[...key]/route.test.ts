@@ -90,6 +90,18 @@ describe('private files stay private', () => {
   });
 });
 
+describe('when the file is not there', () => {
+  // A storage miss is a missing file, not a broken server. It must not surface
+  // to a customer scrolling a gallery as "Something went wrong."
+  it('answers 404 rather than failing', async () => {
+    readFile.mockRejectedValue(new Error('Storage returned 404'));
+
+    const res = await get('feedback', ['gone.png']);
+
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('path safety', () => {
   it('refuses a traversal attempt even on a public bucket', async () => {
     const res = await get('feedback', ['..', '..', '.env']);
