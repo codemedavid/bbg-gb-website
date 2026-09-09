@@ -141,45 +141,77 @@ Wolverine 6300→6363. Re-run afterwards: `updates 0 · unchanged 119`.
 
 Total applied to production across both passes: **112**.
 
-## Still outstanding — 10 rows not applied
+## Third pass — the client's answers
 
-These need a human answer; the script will apply them once the catalog is
-unambiguous.
+The client answered: SALTFORM-KPV20 is new; JUVEDERM "Volume" is the catalog's
+"Voluma"; for a duplicated entry *"Yon higher price po ang inconsider natin"*;
+and *"ang wala sa system paki add nalng"*.
 
-**Ambiguous (3)** — the catalog genuinely does not say which.
-- Rejuran GOLD & SILVER (row 16): two orphan rows, both ₱2500, neither kahati.
-- Oxytocin (rows 36, 53): two LIVE kahati products — OXY10 at ₱2937.50 and
-  OT10 at ₱3200. A human has to say which one is current.
+**The dearer row wins.** Where the catalog holds one product twice at different
+prices, the dearer is the live one — that settles Oxytocin (OXY10 ₱2937.50 vs
+OT10 ₱3200). The kahati flag still leads it: a live kahati product beats a
+dearer orphan. Where duplicates tie on price AND neither is kahati they are the
+same dead listing twice, so BOTH move — updating one would leave its twin
+stale, two rows for one product disagreeing about cost. Two tied LIVE products
+stay ambiguous, because repricing a real pair off one row should not happen
+quietly.
 
-**Unmatched (7)** — three of these are already at the workbook's price and need
-nothing: Cagrilintide (Saltform) 5mg (catalog "CAGRILENTIDE", ₱6600) and
-Tesamorelin (Saltform) 10mg / 5mg (catalog "Tesamorilin", ₱11900 / ₱6200).
+**Two of the three "new" products already existed**, under names the matcher
+could not reach:
 
-The remaining four may be new products or renames, and need a decision:
-SALTFORM-KPV20 20mg (catalog has KPV 10mg only), GHKcu 100mg + KPV 20mg at
-120mg (catalog has GHK-Cu + KPV 60mg), Tirzepatide 20mg + Retatrutide 10mg
-(TRR30), and JUVEDERM Volume (catalog has JUVEDERM **Voluma** at ₱4000 — likely
-a workbook typo).
+| Workbook | Catalog held | At |
+|---|---|---|
+| GHKcu 100mg + KPV 20mg (CUV120) | "GHKcu 100mg + KPV 20mg" | ₱8400 |
+| Tirzepatide 20mg + Retatrutide 10mg (TRR30) | same name | ₱7400 |
+| SALTFORM-KPV20 | "KPV (SAL**F**ORM)" — typo, code KP20 | ₱6600 |
 
-**Catalog hygiene.** The orphan rows that caused the ambiguity — "Aicar " with a
-trailing space, a second "MOTS-c", a second "Selank" — are dead weight, neither
-kahati nor on-hand. Removing them would stop this recurring on every price
-update. Not done here; it deletes catalog rows and is its own decision.
+An INSERT guarded on `code` created a genuine duplicate for the KPV before this
+was noticed — the codes differed (KP20 vs SALT-KPV20) so the guard passed. It
+was deleted the same minute, after confirming no order line and no counter
+referenced it. **A code guard does not catch a name-level duplicate.**
+
+Two catalog names were corrected rather than aliased:
+- `CUV120` → "GHK-Cu + KPV" / "120mg vial", its 60mg sibling's convention.
+  An alias was rejected here: workbook row 122 is that 60mg sibling under the
+  same name, so redirecting the key would have left row 122 unmatched.
+- `KP20` → "KPV (SALTFORM)", fixing the SALFORM typo.
+
+```
+(RED)   test: resolve a duplicate by the dearer row, per the client
+        Tests  4 failed | 20 passed (24)
+(RED)   test: require the two remaining new products to match
+        Tests  1 failed | 24 passed (25)
+(GREEN) fix: match the blends and the saltform KPV to their catalog names
+        Tests  30 passed (30)
+```
+
+Applied: GHK-Cu + KPV 120mg 8400→8463, Rejuran ×2 2500→2563, Tirzepatide+
+Retatrutide 7400→7463, Oxytocin 3200→3263, JUVEDERM Voluma 4000→4063.
+
+## Final state
+
+```
+updates 0 · unchanged 127 · skippedOnHand 4 · ambiguous 0 · unmatched 3 · excluded 1
+```
+
+**119 prices applied to production** across three passes. Nothing ambiguous
+remains.
+
+## Still outstanding — 3 rows, none needing a price change
+
+Cagrilintide (Saltform) 5mg, Tesamorelin (Saltform) 10mg and 5mg are unmatched
+only because the catalog misspells them ("CAGRIL**E**NTIDE", "Tesamor**i**lin").
+All three already hold the workbook's price — ₱6600, ₱11900, ₱6200 — so nothing
+was lost. Fixing those two spellings would make the next run match them; it is a
+customer-visible rename and was left for the client.
 
 ## Known gaps
 
-- **No migration.** `price_php` already existed; only its values changed.
+- **No migration.** Only column values, two product renames, and one insert that
+  was reverted.
 - **The 4 on-hand-only rows** (Skin Repair SM1 ×2, DSIP, L-Carnitine) were
-  skipped by design. If the client wants their retail prices moved too, that is
-  a separate instruction against the `on_hand_*` columns.
-- **The rollback record** is the pre-apply dry run, which lists every
-  `from -> to`. It was written to the session scratchpad, not committed —
-  reproduce it from git history plus the workbook if it is ever needed.
-
-## Merge evidence
-
-```
-(RED)   test: require a reviewable plan before any price is changed
-(GREEN) feat: plan a price adjustment without touching a price
-        feat: add a dry-run-by-default price adjustment script
-```
+  skipped by design.
+- **Catalog hygiene.** The orphan rows behind the ambiguity — "Aicar " with a
+  trailing space, a second "MOTS-c", a second "Selank", the duplicated Rejuran —
+  are neither kahati nor on-hand. Removing them would stop this recurring. Not
+  done: it deletes catalog rows and is its own decision.
