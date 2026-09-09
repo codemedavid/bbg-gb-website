@@ -1,9 +1,10 @@
-import { SUPPORT_PHONE, viberUrl, whatsappUrl } from '@/lib/contact';
+import { SUPPORT_PHONE, WHATSAPP_GREEN, viberUrl, whatsappUrl } from '@/lib/contact';
 
 // Brand marks, not the app palette: a WhatsApp button in BBG green would read
 // as one more site control, and the whole point is that it is recognisable at
 // a glance as the app the customer already has open on their phone.
-const WHATSAPP_GREEN = '#25D366';
+// WHATSAPP_GREEN is shared from lib/contact because the home page's community
+// card paints the same mark; VIBER_PURPLE stays here, its only use.
 const VIBER_PURPLE = '#7360F2';
 
 // 28px below 400px, 32px above: at 320 the wordmark, both marks, the cart, the
