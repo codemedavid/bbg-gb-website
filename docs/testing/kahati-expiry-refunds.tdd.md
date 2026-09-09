@@ -1,0 +1,116 @@
+# Refunds for a hatian cancelled below its minimum — TDD evidence
+
+**Source plan:** none. This is finding #3 of three I reported in-session; the
+user prioritised them *"fix them in that order"* and, after #1 and #2 shipped,
+said *"do the 3"*.
+
+## The defect
+
+`order_item_refunds` was written in exactly one place: `lib/pasalo-server.ts`,
+the Pasalo close. A counter cancelled by the **expiry sweep** — one that never
+reached its minimum and never went through Pasalo — did three things:
+
+- cancelled the participants' orders,
+- emailed each customer about their refund (`kahatiCancelledEmail`),
+- fired a PostHog event carrying the refund amount,
+
+and recorded **no refund row**. So the money was owed, the customer had been
+told it was coming, and nothing in the system tracked whether it was ever
+actually sent. It never reached the refund panel or the refund export.
+
+The report was never the problem. `lib/report/pasalo-refund-server.ts:53-58`
+filters `order_item_refunds` by `createdAt` range alone — not by counter, not by
+stage — so rows written anywhere appear in it. Only the writing was missing.
+
+## User journey
+
+7. As an admin, a hatian cancelled for missing its minimum appears on the refund
+   sheet like any other refund, so nobody has to remember it by hand.
+
+## Task report
+
+Amounts are computed by `buildPasaloRefunds` (`lib/pasalo-refund.ts`) and written
+through `writeRefundRows` (`lib/pasalo-server.ts`, now exported) — the same
+rules and the same writer the Pasalo close uses. Two writers would be two
+chances to disagree about what a customer is owed, on the one table where that
+is unaffordable.
+
+`buildPasaloRefunds` needs every line the customer holds, not just the failed
+ones: a surviving line means their parcel still ships and their deposit stays
+earned. Lines on counters cancelled **earlier** are excluded — they were
+refunded when their own counter went, and counting them as survivors here would
+make the customer look like they were still getting a parcel, so their deposit
+would never come back from any counter at all.
+
+RED:
+
+```
+$ npx vitest run lib/kahati-server.test.ts
+× writes a refund row for the line on the cancelled counter
+× refunds the deposit the customer actually paid
+× does not book a second refund when the sweep runs again
+× keeps the deposit when the order survives on another counter
+  -> expected [] to have a length of 1 but got +0
+```
+
+GREEN:
+
+```
+$ npx vitest run lib/kahati-server.test.ts lib/kahati-cancellation-notice.test.ts \
+    lib/pasalo-server.test.ts
+ Test Files  3 passed (3)
+      Tests  50 passed (50)
+
+$ npx tsc --noEmit --pretty false     # exit 0
+
+$ npx vitest run
+ Test Files  289 passed (289)
+      Tests  3191 passed (3191)
+```
+
+## Test specification
+
+| # | What is guaranteed | Test | Type | Result |
+|---|--------------------|------|------|--------|
+| 1 | A cancelled hatian books a refund row against its counter | `lib/kahati-server.test.ts:writes a refund row for the line on the cancelled counter` | integration | PASS |
+| 2 | The refund returns the deposit actually collected, and the stored total is its parts | `…:refunds the deposit the customer actually paid` | integration | PASS |
+| 3 | A repeat sweep does not book a second refund | `…:does not book a second refund when the sweep runs again` | integration | PASS |
+| 4 | A customer still getting a parcel keeps their deposit; only the failed vials are owed | `…:keeps the deposit when the order survives on another counter` | integration | PASS |
+
+Test 3 rests on the unique index on `order_item_refunds.order_item_id` plus
+`onConflictDoNothing` — the schema calls that uniqueness "the anti-double-count
+guarantee", and this pins that it holds for the sweep as well as the close.
+
+## Coverage
+
+```
+File                 | % Stmts | % Branch | % Funcs | % Lines | Uncovered
+lib/kahati-server.ts |   85.11 |    83.87 |   77.77 |   85.11 | 195-197,305-389
+```
+
+Clears the 80% target. Lines 305-389 are `rollOpenKahatis`, exercised by its own
+suites rather than this file.
+
+## Known gaps and deliberate choices
+
+- **The deposit is refunded on the LAST of a customer's counters to fail**, not
+  spread across them. That falls out of reusing `buildPasaloRefunds`, whose
+  deposit pool is spent once per customer per batch. It is the correct total; it
+  just attributes the deposit to one line.
+- **The email was not reworded.** `kahatiCancelledEmail` still describes the
+  cancellation as it did; the refund row is a separate record for the admin.
+  A partial cancellation now reports a 0 refund and `orderCancelled: false`, but
+  no second template was written for it.
+- **Legacy mixed orders unchanged**, as in the previous cycle: an on-hand line
+  does not keep an order alive.
+- **No migration.** `order_item_refunds` already existed; only its writers grew.
+- **No browser/visual pass.** The refund panel and export were not changed, so
+  there was nothing new to look at — but the rows now appearing in them have not
+  been eyeballed in a browser.
+
+## Merge evidence
+
+```
+(RED)   test: reproduce a failed hatian that owes a refund nothing tracks
+(GREEN) fix: book the refund a cancelled hatian owes, so the sheet can see it
+```
