@@ -10,12 +10,14 @@
 // checkout or edit ever revisits, not the only path.
 //
 // A hatian succeeds at KAHATI_MIN_VIABLE_VIALS (7), not at the 10-vial cap. An
-// expired hatian at or above the minimum simply closes. Below it, the batch is
-// never ordered, so every participant's order is cancelled, any on-hand stock in
-// that order is returned, and the customer is emailed about their refund. An
-// admin cancelling a hatian outright runs the same release flow (cancelKahati).
+// expired hatian at or above the minimum simply closes. Below it the batch is
+// never ordered, so every participant's LINES on it are released, refunded and
+// emailed about. Their order is cancelled only when nothing else on it is going
+// ahead — another hatian that made its minimum, or on-hand retail stock, keeps
+// it alive and it is re-billed to what survived. An admin cancelling a hatian
+// outright runs the same release flow (cancelKahati).
 import { and, asc, eq, gte, inArray, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
-import { getDb, groupBuys, orders, orderItems, orderStatusHistory, products, settlements, users } from '@/lib/db';
+import { getDb, groupBuys, orders, orderItems, orderStatusHistory, settlements, users } from '@/lib/db';
 import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
 import { round2, VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail } from './email';
@@ -451,11 +453,14 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
 
   for (const order of affected) {
     const lines = linesOf(order.id);
-    // On-hand lines ride along with whatever the order still ships; they do not
-    // themselves keep it alive (see the legacy note above).
+    // Anything not on a dead counter survives — an on-hand line included. On-hand
+    // is RETAIL: the customer bought stock already sitting in the inventory, and
+    // a hatian falling short has nothing to do with it. So a legacy pre-split
+    // order holding both kinds ships its on-hand goods rather than being
+    // cancelled and having them clawed back out of the customer's hands.
     const survivors = lines.filter((line) =>
       line.groupBuyId == null || liveCounters.has(line.groupBuyId));
-    const keepsOrderAlive = survivors.some((line) => line.groupBuyId != null);
+    const keepsOrderAlive = survivors.length > 0;
 
     await db.transaction(async (tx) => {
       if (keepsOrderAlive) {
@@ -477,17 +482,10 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
         return;
       }
 
-      // Nothing of this order is being ordered, so there is no parcel. Any
-      // on-hand vials it drew go back to stock rather than being silently lost.
-      for (const line of lines.filter((l) => l.kind === 'product')) {
-        if (!line.productId) continue;
-        const vials = vialsForOrderLine(line.specSnapshot, line.qty);
-        await tx.update(products).set({
-          stock: sql`${products.stock} + ${vials}`,
-          soldCount: sql`GREATEST(${products.soldCount} - ${vials}, 0)`,
-        }).where(eq(products.id, line.productId));
-      }
-
+      // Nothing of this order is going ahead, so there is no parcel. There is
+      // no stock to return either: an on-hand line would have survived above
+      // and kept the order alive, so an order reaching here holds only vials
+      // that were never ordered from the supplier in the first place.
       await tx.update(orders).set({ status: 'cancelled', updatedAt: new Date() })
         .where(eq(orders.id, order.id));
       await tx.insert(orderStatusHistory).values({ orderId: order.id, status: 'cancelled', note });
