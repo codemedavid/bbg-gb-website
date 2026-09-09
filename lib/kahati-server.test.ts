@@ -24,7 +24,7 @@ vi.mock('@/lib/session', () => {
 
 const { sweepKahatis, closeFullKahati } = await import('./kahati-server');
 const { POST: placeOrder } = await import('@/app/api/orders/route');
-const { getDb, groupBuys, orders, orderItems, orderStatusHistory, emailLog, products } = await import('@/lib/db');
+const { getDb, groupBuys, orders, orderItems, orderItemRefunds, orderStatusHistory, emailLog, products } = await import('@/lib/db');
 const { resetDb, openBoards, makeUser, makeGroupBuy, makeProduct, checkoutRequest } = await import('@/lib/test/harness');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -359,5 +359,93 @@ describe('a hatian that fails inside a multi-counter order', () => {
     await sweepKahatis(await getDb());
 
     expect(await orderStatus(order.id)).toBe('cancelled');
+  });
+});
+
+
+// A hatian cancelled for missing its minimum owes its participants their money,
+// and said so in an email — but wrote no refund row. order_item_refunds was
+// only ever written by the Pasalo close (lib/pasalo-server.ts), so a counter
+// that expired short never reached the refund sheet or the refund export. The
+// money was owed, the customer was told, and nothing tracked whether it was
+// ever actually sent.
+//
+// The report itself was never the problem: it filters order_item_refunds by
+// date alone (lib/report/pasalo-refund-server.ts), so rows written here show up
+// in it without the report changing at all.
+describe('a hatian that fails owes a refund the sheet can see', () => {
+  const confirmPayment = async (orderId: string) => {
+    const db = await getDb();
+    await db.update(orders).set({ paymentStatus: 'confirmed' }).where(eq(orders.id, orderId));
+  };
+
+  it('writes a refund row for the line on the cancelled counter', async () => {
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const { order } = await joinKahati(gb.id, 3);
+    await confirmPayment(order.id);
+    await expire(gb.id);
+    const db = await getDb();
+
+    await sweepKahatis(db);
+
+    const rows = await db.select().from(orderItemRefunds)
+      .where(eq(orderItemRefunds.orderId, order.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].groupBuyId).toBe(gb.id);
+  });
+
+  // The deposit is what was actually collected at checkout, so it is what comes
+  // back when no parcel ships.
+  it('refunds the deposit the customer actually paid', async () => {
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const { order } = await joinKahati(gb.id, 3);
+    await confirmPayment(order.id);
+    await expire(gb.id);
+    const db = await getDb();
+
+    await sweepKahatis(db);
+
+    const [placed] = await db.select().from(orders).where(eq(orders.id, order.id));
+    const [refund] = await db.select().from(orderItemRefunds)
+      .where(eq(orderItemRefunds.orderId, order.id));
+    expect(Number(refund.depositPhp)).toBe(Number(placed.downpaymentPhp));
+    expect(Number(refund.amountPhp)).toBe(Number(refund.goodsPhp) + Number(refund.depositPhp));
+  });
+
+  // order_item_refunds.order_item_id is unique, and that uniqueness IS the
+  // anti-double-count guarantee. A repeat sweep must not book a second refund.
+  it('does not book a second refund when the sweep runs again', async () => {
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const { order } = await joinKahati(gb.id, 3);
+    await confirmPayment(order.id);
+    await expire(gb.id);
+    const db = await getDb();
+
+    await sweepKahatis(db);
+    await sweepKahatis(db);
+
+    const rows = await db.select().from(orderItemRefunds)
+      .where(eq(orderItemRefunds.orderId, order.id));
+    expect(rows).toHaveLength(1);
+  });
+
+  // The customer is still getting a parcel, so the deposit that reserves its
+  // place stays earned — only the failed vials are owed back. Refunding the
+  // deposit here would pack their surviving batch for free.
+  it('keeps the deposit when the order survives on another counter', async () => {
+    const failing = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const healthy = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1 });
+    const { order } = await joinKahati(failing.id, 3, [{ kind: 'group_buy', refId: healthy.id, qty: 2 }]);
+    await confirmPayment(order.id);
+    await expire(failing.id);
+    const db = await getDb();
+
+    await sweepKahatis(db);
+
+    const rows = await db.select().from(orderItemRefunds)
+      .where(eq(orderItemRefunds.orderId, order.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].groupBuyId).toBe(failing.id);
+    expect(Number(rows[0].depositPhp)).toBe(0);
   });
 });
