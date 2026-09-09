@@ -101,8 +101,25 @@ suites rather than this file.
   cancellation as it did; the refund row is a separate record for the admin.
   A partial cancellation now reports a 0 refund and `orderCancelled: false`, but
   no second template was written for it.
-- **Legacy mixed orders unchanged**, as in the previous cycle: an on-hand line
-  does not keep an order alive.
+- **Legacy mixed orders: resolved, not left open.** This was flagged as a
+  deliberate gap and the client answered it — *"onhand is onhand retail so no
+  need for any cancelled since the user is buying a onhand stocks in the
+  inventory"*. An on-hand line now keeps the order alive and the stock is never
+  clawed back. Own RED/GREEN cycle:
+
+  ```
+  (RED)   test: require a failed hatian to leave on-hand retail goods alone
+          × keeps the on-hand goods in a legacy pre-split mixed order
+            -> expected 50 to be 46
+  (GREEN) fix: never cancel on-hand retail goods because a hatian fell short
+          Tests  22 passed (22); full suite 289 files, 3191 passed
+  ```
+
+  This replaced `still restocks on-hand lines inside a legacy pre-split mixed
+  order`, which encoded the old behaviour deliberately. The restock loop in
+  `releaseKahatiOrders` became unreachable and was removed;
+  `vialsForOrderLine` stays, since the admin cancel path and
+  `lib/order-edit-server.ts` both still restock through it.
 - **No migration.** `order_item_refunds` already existed; only its writers grew.
 - **No browser/visual pass.** The refund panel and export were not changed, so
   there was nothing new to look at — but the rows now appearing in them have not
