@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, qs } from './api-client';
 import { useToast } from './store/toast';
-import type { AdminSettlement, CampaignPayload, Category, FeedbackFolder, FeedbackItem, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
+import type { AdminSettlement, CampaignPayload, Category, FeedbackFolder, FeedbackItem, PublicCoaFile, GroupBuy, HatianCommitment, MoqCampaign, MoqProduct, Order, OrderHistory, OrderItem, PaymentMethod, PaymentProof, Product } from './types';
 import type { CampaignParticipant, summariseCampaignParticipants } from './campaign-participants';
 import type { AccountRow } from './accounts';
 import type { StatsRange } from './analytics-range';
@@ -126,6 +126,12 @@ export const useAdminFeedbackFolder = (id: string | null) =>
     enabled: !!id,
   });
 
+// The COA gallery, admin view — the SAME list the storefront reads. A
+// certificate has no hidden state (see lib/coa-server.ts), so a separate
+// admin-only read could only ever drift from the page it is meant to manage.
+export const useAdminCoaFiles = () =>
+  useQuery({ queryKey: ['admin', 'coa'], queryFn: () => apiGet<PublicCoaFile[]>('/coa') });
+
 export const useAdminPaymentMethods = () => useQuery({ queryKey: ['admin', 'payment-methods'], queryFn: () => apiGet<PaymentMethod[]>('/admin/payment-methods') });
 // The MOQ shelf, admin view — includes archived rows, unlike the public list.
 export const useAdminMoqProducts = () =>
@@ -203,6 +209,11 @@ export function useMutate() {
     // Multipart so the screenshot rides along with the fields.
     saveFeedbackItem: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/feedback/items/${v.id}`, 'PATCH', v.body) : apiSend('/admin/feedback/items', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save the feedback.') }),
     deleteFeedbackItem: useMutation({ mutationFn: (id: string) => apiSend(`/admin/feedback/items/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete the feedback.') }),
+    // Multipart so the certificate rides along with the fields. Upload-only:
+    // there is no edit, because the document IS the row — a wrong file is
+    // deleted and re-uploaded rather than patched.
+    saveCoaFile: useMutation({ mutationFn: (body: FormData) => apiSend('/admin/coa', 'POST', body), onSuccess: invalidate, onError: toastError('Could not upload the COA.') }),
+    deleteCoaFile: useMutation({ mutationFn: (id: string) => apiSend(`/admin/coa/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete the COA.') }),
     // Multipart so the product image rides along with the fields.
     saveMoqProduct: useMutation({ mutationFn: (v: { id?: string; body: FormData }) => v.id ? apiSend(`/admin/moq-products/${v.id}`, 'PATCH', v.body) : apiSend('/admin/moq-products', 'POST', v.body), onSuccess: invalidate, onError: toastError('Could not save MOQ product.') }),
     deleteMoqProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/moq-products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete MOQ product.') }),

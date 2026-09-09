@@ -135,6 +135,19 @@ export const feedbackItemSchema = z.object({
   sortOrder: z.number().int().nonnegative().optional(),
 });
 
+// Text fields of one uploaded certificate of analysis. The document arrives as a
+// separate multipart File part, validated by lib/uploads, so it is not part of
+// this schema — the same split the feedback screenshot uses.
+//
+// Every field is optional: the smallest honest COA is a file and nothing else,
+// which is exactly what an admin has the moment the lab emails a sheet for a
+// batch whose product row does not exist yet.
+export const coaFileSchema = z.object({
+  label: z.string().trim().max(200).optional(),
+  batch: z.string().trim().max(40).nullable().optional(),
+  productId: z.string().uuid().optional(),
+});
+
 // Text fields of an MOQ product. The image arrives as a separate multipart File
 // part, validated by lib/uploads, so it is not part of this schema.
 export const moqProductSchema = z.object({

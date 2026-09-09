@@ -40,6 +40,24 @@ export type Product = {
 };
 export type CoaFile = { id: string; productId: string; batch: string | null; fileName: string; storageKey: string };
 
+// One certificate as the storefront reads it (GET /api/coa). `fileUrl` is always
+// one of this site's own /api/files paths and never a storage host's — see
+// lib/coa.ts — and the storage key is deliberately absent: a client has no use
+// for it that is not a way off bbgph.org.
+export type PublicCoaFile = {
+  id: string;
+  // The admin's label, or the uploaded file's name when they typed none.
+  label: string;
+  batch: string | null;
+  productId: string | null;
+  productName: string | null;
+  fileUrl: string;
+  // False for the scanned PDFs the labs actually send, which get a document tile
+  // rather than an <img>.
+  isImage: boolean;
+  uploadedAt: string;
+};
+
 export type GroupBuy = {
   id: string; name: string; pricePerKitPhp: string; totalSlots: number; claimedSlots: number;
   minVials: number; repackFeePhp: string;

@@ -1,9 +1,10 @@
 // The home page's shortcut cards.
 //
-// This asserts one thing the feature brief is specific about: feedback is
-// reachable from directly UNDER the order calculator. The card's position is
-// the requirement, not decoration — it is how customers were told to find it —
-// so DOM order is asserted rather than mere presence.
+// This asserts what the feature briefs were specific about: feedback is
+// reachable from directly UNDER the order calculator, and the COA gallery from
+// directly under the feedback. A card's position is the requirement, not
+// decoration — it is how customers were told to find it — so DOM order is
+// asserted rather than mere presence.
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -59,5 +60,48 @@ describe('Home shortcut cards', () => {
     await userEvent.click(screen.getByText('Customer feedback'));
 
     expect(push).toHaveBeenCalledWith('/feedback');
+  });
+
+  it('offers the batch lab results', () => {
+    setup();
+
+    expect(screen.getByText(/^COA/)).toBeInTheDocument();
+  });
+
+  it('puts the COA card directly under the customer feedback card', () => {
+    setup();
+
+    const feedback = screen.getByText('Customer feedback');
+    const coa = screen.getByText(/^COA/);
+
+    // Asked for in exactly those words: the lab results sit under the feedback.
+    // The two answer the same question from opposite ends — what other people
+    // got, and what the lab measured — so they are read together or not at all.
+    expect(feedback.compareDocumentPosition(coa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('opens the COA page when tapped', async () => {
+    setup();
+
+    await userEvent.click(screen.getByText(/^COA/));
+
+    expect(push).toHaveBeenCalledWith('/coa');
+  });
+
+  it('offers the WhatsApp community', () => {
+    setup();
+
+    expect(screen.getByRole('link', { name: /community/i })).toBeInTheDocument();
+  });
+
+  it('puts the community card last, after the feedback card', () => {
+    setup();
+
+    const feedback = screen.getByText('Customer feedback');
+    const community = screen.getByRole('link', { name: /community/i });
+
+    // The three cards above answer a question the customer arrived with; the
+    // community is the step after browsing, so it closes the stack.
+    expect(feedback.compareDocumentPosition(community) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

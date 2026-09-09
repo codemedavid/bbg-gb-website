@@ -24,6 +24,9 @@ const NAV = [
   // Customer feedback screenshots, filed into folders. Sits next to the
   // catalogue rows rather than the money ones: it is merchandising.
   { href: '/admin/feedback', label: 'Feedback', icon: '💬' },
+  // Lab certificates. Next to Feedback for the same reason: both are trust
+  // material a customer reads before committing, not money screens.
+  { href: '/admin/coa', label: 'COA Files', icon: '🔬' },
   // Registered accounts — the only view of a customer who has not ordered yet.
   { href: '/admin/accounts', label: 'Accounts', icon: '👥' },
   // Delivery of every notification. Without a screen for it, a failed send is

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
 import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY, type KahatiDownpaymentPolicy } from './kahati-downpayment';
-import type { Category, CheckoutPaymentMethod, FeedbackFolderDetail, PublicFeedbackFolder, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, PasaloCounter, Product, SettlementPreview } from './types';
+import type { Category, CheckoutPaymentMethod, FeedbackFolderDetail, PublicCoaFile, PublicFeedbackFolder, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, PasaloCounter, Product, SettlementPreview } from './types';
 
 export const usePackingFees = () =>
   useQuery({
@@ -140,6 +140,16 @@ export const useFeedbackFolder = (id?: string) =>
     queryKey: ['feedback-folder', id],
     queryFn: () => apiGet<FeedbackFolderDetail>(`/feedback/${id}`),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+  });
+
+// The COA gallery. Uploaded by an admin once a batch's lab sheet arrives, so it
+// caches for the same five minutes the feedback folders do rather than being
+// refetched on every mount like the live boards.
+export const useCoaFiles = () =>
+  useQuery({
+    queryKey: ['coa-files'],
+    queryFn: () => apiGet<PublicCoaFile[]>('/coa'),
     staleTime: 5 * 60 * 1000,
   });
 

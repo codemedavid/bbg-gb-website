@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/headers';
 import { GroupBuyCard } from '@/components/GroupBuyCard';
 import { JoinSheet } from '@/components/JoinSheet';
+import { CommunityCard } from '@/components/CommunityCard';
 import { useGroupBuys } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import type { GroupBuy } from '@/lib/types';
@@ -66,9 +67,9 @@ export default function HomePage() {
           <div className="text-[18px] font-bold text-brand-green">→</div>
         </button>
 
-        {/* Third in the stack and deliberately last: the two above answer a
-            question the customer came with, this one answers the question they
-            have before they commit — "has anyone actually received this?" */}
+        {/* The two above answer a question the customer came with; this one and
+            the COA card under it answer the question they have before they
+            commit — "has anyone actually received this, and was it tested?" */}
         <button onClick={() => router.push('/feedback')}
           className="mt-2.5 flex w-full items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-[#a9c88f] bg-white p-3.5 text-left">
           <div className="text-2xl">💬</div>
@@ -78,6 +79,25 @@ export default function HomePage() {
           </div>
           <div className="text-[18px] font-bold text-brand-green">→</div>
         </button>
+
+        {/* Under the feedback deliberately: the two answer the same question
+            from opposite ends. The card above is what other buyers got, this is
+            what the lab measured — and until now the lab sheet lived behind a
+            button on one product page that said "available on request". */}
+        <button onClick={() => router.push('/coa')}
+          className="mt-2.5 flex w-full items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-[#a9c88f] bg-white p-3.5 text-left">
+          <div className="text-2xl">🔬</div>
+          <div className="flex-1">
+            <div className="text-[14px] font-bold text-ink">COA — lab results</div>
+            <div className="text-[12px] text-ink-muted">Third-party tested. Tingnan ang certificate ng batch.</div>
+          </div>
+          <div className="text-[18px] font-bold text-brand-green">→</div>
+        </button>
+
+        {/* Closes the stack. The four cards above answer a question the
+            customer arrived with; this one is the step after browsing — the
+            room where the next batch actually gets announced. */}
+        <CommunityCard />
       </div>
       {joining && <JoinSheet g={joining} onClose={() => setJoining(null)} />}
     </>
