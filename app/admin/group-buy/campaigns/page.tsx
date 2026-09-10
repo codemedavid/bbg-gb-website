@@ -20,7 +20,7 @@ import type { MoqCampaign } from '@/lib/types';
 
 export default function AdminCampaignsPage() {
   const router = useRouter();
-  const { data: campaigns = [], isLoading } = useCampaigns();
+  const { data: campaigns = [], isLoading, error } = useCampaigns();
   const { deleteCampaign, campaignAction, startCycle } = useMutate();
   const confirm = useConfirm();
   const [extending, setExtending] = useState<MoqCampaign | null>(null);
@@ -151,6 +151,14 @@ export default function AdminCampaignsPage() {
 
       {isLoading ? (
         <div className="text-ink-muted">Loading…</div>
+      ) : error ? (
+        /* A feed that FAILED is not a board with nothing on it. Shown as the
+           empty state, a 500 reads as "every campaign is gone" and sends the
+           admin off to recreate campaigns that are all still there. */
+        <div role="alert" className="rounded-[16px] bg-[#fbe4e4] p-6 text-center shadow-card">
+          <div className="mb-1 font-bold text-[#b23b3b]">The board could not be loaded</div>
+          <div className="text-[13px] text-ink-body">{error.message}</div>
+        </div>
       ) : groups.length === 0 ? (
         <div className="rounded-[16px] bg-white p-8 text-center shadow-card">
           <div className="mb-2 text-4xl">🎯</div>

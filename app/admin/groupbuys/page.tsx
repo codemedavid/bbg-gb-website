@@ -421,7 +421,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
 }
 
 export default function AdminGroupBuysPage() {
-  const { data: gbs = [], isLoading } = useAdminGroupBuys();
+  const { data: gbs = [], isLoading, error } = useAdminGroupBuys();
   const { deleteGroupBuy, saveGroupBuy, startKahatiCycle } = useMutate();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<GroupBuy> | null>(null);
@@ -530,6 +530,14 @@ export default function AdminGroupBuysPage() {
           <Link href="/admin/cycles" className="ml-auto text-[12.5px] font-semibold text-brand-blue hover:underline">
             Past cycles →
           </Link>
+        </div>
+      )}
+
+      {/* A feed that failed is not an empty board — see the campaigns page. */}
+      {error && (
+        <div role="alert" className="rounded-[16px] bg-[#fbe4e4] p-6 text-center shadow-card">
+          <div className="mb-1 font-bold text-[#b23b3b]">The board could not be loaded</div>
+          <div className="text-[13px] text-ink-body">{error.message}</div>
         </div>
       )}
 
