@@ -95,7 +95,7 @@ describe('Kahati admin form', () => {
     const { ConfirmProvider } = await import('@/components/ConfirmDialog');
     render(<ConfirmProvider><AdminGroupBuysPage /></ConfirmProvider>);
 
-    await userEvent.click(screen.getByRole('button', { name: /new group buy/i }));
+    await userEvent.click(screen.getByRole('button', { name: /new hatian/i }));
 
     expect(screen.getByLabelText(/opens at/i)).toBeInTheDocument();
   });

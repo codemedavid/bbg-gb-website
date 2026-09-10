@@ -80,13 +80,13 @@ describe('AdminGroupBuysPage', () => {
     render(<Page />);
 
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
-    await screen.findByText('Edit group buy');
+    await screen.findByText('Edit hatian');
 
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot exceed/i);
     // The form stays open so the admin can correct the value.
-    expect(screen.getByText('Edit group buy')).toBeInTheDocument();
+    expect(screen.getByText('Edit hatian')).toBeInTheDocument();
     expect(saveMutate).toHaveBeenCalledTimes(1);
   });
 
@@ -95,11 +95,11 @@ describe('AdminGroupBuysPage', () => {
     render(<Page />);
 
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
-    await screen.findByText('Edit group buy');
+    await screen.findByText('Edit hatian');
 
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
-    await vi.waitFor(() => expect(screen.queryByText('Edit group buy')).not.toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.queryByText('Edit hatian')).not.toBeInTheDocument());
   });
 
   // Without a deadline field, every new kahati is created with closesAt: null, so
@@ -109,8 +109,8 @@ describe('AdminGroupBuysPage', () => {
     saveMutate.mockResolvedValue({});
     render(<Page />);
 
-    fireEvent.click(screen.getByRole('button', { name: /new group buy/i }));
-    await screen.findByText('New group buy');
+    fireEvent.click(screen.getByRole('button', { name: /new hatian/i }));
+    await screen.findByText('New hatian');
 
     fireEvent.change(screen.getByLabelText(/closes at/i), { target: { value: '2026-08-01T10:00' } });
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
@@ -118,6 +118,47 @@ describe('AdminGroupBuysPage', () => {
     await vi.waitFor(() => expect(saveMutate).toHaveBeenCalledTimes(1));
     const payload = saveMutate.mock.calls[0][0];
     expect(payload.closesAt).toEqual(expect.stringContaining('2026-08-01'));
+  });
+});
+
+// What this board is CALLED.
+//
+// The nav entry was renamed to "Hatian" (app/admin/layout.test.tsx) because the
+// campaign workflow next to it is the actual Group Buy. The page body was left
+// behind, so clicking "Hatian" landed the admin on a screen headed "Group Buys"
+// with a "+ New group buy" button — the two workflows read as swapped, which is
+// exactly what the rename was meant to stop. The board has to name itself the
+// same thing the nav does.
+describe('the board names itself Hatian', () => {
+  it('is headed Hatian rather than Group Buys', () => {
+    render(<Page />);
+
+    expect(screen.getByRole('heading', { level: 1, name: /^hatian$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /group buys?/i })).not.toBeInTheDocument();
+  });
+
+  it('creates a hatian, not a group buy', async () => {
+    render(<Page />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^\+ new hatian$/i }));
+
+    expect(await screen.findByText('New hatian')).toBeInTheDocument();
+  });
+
+  it('heads the edit form Edit hatian', async () => {
+    render(<Page />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+
+    expect(await screen.findByText('Edit hatian')).toBeInTheDocument();
+  });
+
+  // The search box is reached by its accessible name, which is the only label a
+  // screen reader gets — "Search group buys" points at the wrong board.
+  it('labels the search box for hatian counters', () => {
+    render(<Page />);
+
+    expect(screen.getByRole('searchbox', { name: /hatian/i })).toBeInTheDocument();
   });
 });
 
@@ -148,10 +189,10 @@ describe('hatian participants panel', () => {
   // An admin opening this panel is looking at one counter among several that
   // share a name, price and cap. Which one they are chasing payments for has to
   // be on the screen — the participant list alone does not say.
-  it('heads the panel with the group buy details', async () => {
+  it('heads the panel with the hatian details', async () => {
     await openPanel();
-    const details = screen.getByTestId('group-buy-details');
-    expect(details).toHaveTextContent(/campaign name/i);
+    const details = screen.getByTestId('hatian-details');
+    expect(details).toHaveTextContent(/hatian name/i);
     expect(details).toHaveTextContent('Bioglutide');
     expect(details).toHaveTextContent(/status/i);
     expect(details).toHaveTextContent('open');
@@ -168,7 +209,7 @@ describe('hatian participants panel', () => {
     try {
       render(<Page />);
       fireEvent.click(screen.getByRole('button', { name: /participants/i }));
-      const details = await screen.findByTestId('group-buy-details');
+      const details = await screen.findByTestId('hatian-details');
       expect(details).toHaveTextContent('Bioglutide');
       expect(screen.getByText(/walang sumali pa/i)).toBeInTheDocument();
     } finally {
@@ -257,7 +298,7 @@ describe('hatian participants panel', () => {
       fireEvent.click(screen.getByRole('button', { name: /close proof/i }));
 
       expect(screen.queryByTestId('proof-lightbox')).not.toBeInTheDocument();
-      expect(screen.getByTestId('group-buy-details')).toBeInTheDocument();
+      expect(screen.getByTestId('hatian-details')).toBeInTheDocument();
     });
   });
 
