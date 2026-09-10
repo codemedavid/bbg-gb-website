@@ -68,3 +68,10 @@ describe('marking where you are', () => {
     expect(navLink(/^dashboard$/i)[0]).not.toHaveAttribute('aria-current');
   });
 });
+
+describe('the cycle archives', () => {
+  it('has a nav entry of its own', () => {
+    render(<AdminLayout><div /></AdminLayout>);
+    expect(hrefOf(/cycle archives/i)).toBe('/admin/cycles');
+  });
+});

@@ -20,6 +20,9 @@ const NAV = [
   // live under /admin/group-buy. /admin/campaigns forwards there.
   { href: '/admin/group-buy', label: 'Group Buy', icon: '🎯' },
   { href: '/admin/moq-products', label: 'MOQ Products', icon: '🏷️' },
+  // Where every earlier cycle's counters, batches and orders went. The boards
+  // and the orders screen above show the current cycle only.
+  { href: '/admin/cycles', label: 'Cycle Archives', icon: '🗄️' },
   { href: '/admin/payment-methods', label: 'Payment Methods', icon: '💳' },
   // Customer feedback screenshots, filed into folders. Sits next to the
   // catalogue rows rather than the money ones: it is merchandising.

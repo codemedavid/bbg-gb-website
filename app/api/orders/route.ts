@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { getDb, orders, orderItems, orderPaymentProofs, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements, users } from '@/lib/db';
 import { ok, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
@@ -344,6 +344,15 @@ export const POST = handler(async (req: Request) => {
             if (err instanceof BatchAllocationError) throw new ApiError(409, err.message);
             throw err;
           });
+        // A batch belongs to the cycle its FIRST kit was taken in — that is
+        // what files it under that cycle in the archive once it ends, and what
+        // keeps it off the next cycle's board. Coalesced, so a batch that has
+        // already traded keeps its cycle when it takes more kits.
+        if (cycleKey) {
+          await tx.update(moqCampaigns)
+            .set({ cycleKey: sql`coalesce(${moqCampaigns.cycleKey}, ${cycleKey})` })
+            .where(inArray(moqCampaigns.id, fragments.map((f) => f.batch.id)));
+        }
 
         const unitPrice = Number(c.pricePerKitPhp);
         // The listing's fee. Whether it is actually charged is decided once for
@@ -435,7 +444,12 @@ export const POST = handler(async (req: Request) => {
           }
           const take = Math.min(remaining, openSlots);
           const [claimed] = await tx.update(groupBuys)
-            .set({ claimedSlots: sql`${groupBuys.claimedSlots} + ${take}` })
+            .set({
+              claimedSlots: sql`${groupBuys.claimedSlots} + ${take}`,
+              // The cycle this counter's first vial was taken in, kept once set
+              // — see the batch claim above.
+              cycleKey: sql`coalesce(${groupBuys.cycleKey}, ${cycleKey})`,
+            })
             .where(and(
               eq(groupBuys.id, current.id),
               // Each stage is guarded against its OWN deadline. A Pasalo

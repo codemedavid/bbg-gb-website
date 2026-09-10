@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useAdminGroupBuys, useAdminGroupBuyCommitments, useMutate } from '@/lib/admin-api';
 import { Modal, field, Labeled, btnPrimary, btnGhost, btnBoardAction, searchInput } from '@/components/admin-ui';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -427,7 +428,6 @@ export default function AdminGroupBuysPage() {
   const [viewing, setViewing] = useState<GroupBuy | null>(null);
 
   const [search, setSearch] = useState('');
-  const [showPast, setShowPast] = useState(false);
 
   // What the cycle will do, split the way the server splits it.
   //
@@ -447,19 +447,11 @@ export default function AdminGroupBuysPage() {
   const running = open.filter((g) => g.claimedSlots > 0);
   const idle = open.length - running.length;
 
-  // Every cycle seals each joined counter and opens a fresh one beside it, and
-  // the sealed one keeps its vials. Shown together, the board after a cycle
-  // reads as though the cycle removed nothing — last cycle's 6/10 beside this
-  // cycle's 0/10, product after product — and within a few cycles the past
-  // outnumbers the present. So the board is THIS cycle's: open and pasalo
-  // counters, which are the ones still trading. Ended counters are a click away,
-  // not the default view. Filtered here rather than at the API: the admin feed
-  // returns the whole board already, so a round trip would buy nothing.
-  const isLive = (g: GroupBuy) => g.status === 'open' || g.status === 'pasalo';
-  const past = gbs.filter((g) => !isLive(g));
-  const inView = showPast ? gbs : gbs.filter(isLive);
+  // This cycle's board. The feed already holds only the counters still trading
+  // and those that ended in the current cycle — every earlier cycle's counters
+  // are in Admin → Cycle archives — so the search is over what is shown.
   const query = search.trim().toLowerCase();
-  const shown = query ? inView.filter((g) => g.name.toLowerCase().includes(query)) : inView;
+  const shown = query ? gbs.filter((g) => g.name.toLowerCase().includes(query)) : gbs;
 
   // Ending every running counter at once — the start of a new trading cycle.
   // Confirmed, because customers are committed to these counters; deliberately
@@ -532,19 +524,12 @@ export default function AdminGroupBuysPage() {
               many counters exist, and a narrowed view silently contradicts it. */}
           {query && (
             <span className="text-[12.5px] text-ink-muted">
-              {shown.length} of {inView.length} counters
+              {shown.length} of {gbs.length} counters
             </span>
           )}
-          {past.length > 0 && (
-            <label className="ml-auto flex items-center gap-1.5 text-[12.5px] text-ink-muted">
-              <input
-                type="checkbox"
-                checked={showPast}
-                onChange={(e) => setShowPast(e.target.checked)}
-              />
-              Show {past.length} past counter{past.length === 1 ? '' : 's'}
-            </label>
-          )}
+          <Link href="/admin/cycles" className="ml-auto text-[12.5px] font-semibold text-brand-blue hover:underline">
+            Past cycles →
+          </Link>
         </div>
       )}
 

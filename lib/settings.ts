@@ -4,7 +4,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, paymentMethods, settings } from '@/lib/db';
 import { PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
-import { cycleAt, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
+import { cycleAt, cycleKeyOf, latestCycle, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
 import {
   KAHATI_DOWNPAYMENT_KEYS, isDownpaymentWaivableByCycle, parseKahatiDownpaymentPolicy,
   serializeKahatiDownpaymentPolicy, type KahatiDownpaymentPolicy,
@@ -198,6 +198,18 @@ export async function getCurrentCycle(now: Date = new Date()): Promise<Cycle | n
   const pausedUntil = await getSchedulePausedUntil();
   if (pausedUntil && now.getTime() < Date.parse(pausedUntil)) return null;
   return cycle;
+}
+
+/**
+ * The key of the cycle the admin is working — the latest one to have opened,
+ * whether or not it is still trading — or null when no schedule is set.
+ *
+ * Not subject to the pause: pausing closes the boards early, it does not
+ * un-name the cycle whose orders are being packed.
+ */
+export async function getLatestCycleKey(now: Date = new Date()): Promise<string | null> {
+  const cycle = latestCycle(await getScheduleRecurrence(), now);
+  return cycle ? cycleKeyOf(cycle) : null;
 }
 
 /** Whether both boards are live right now. */

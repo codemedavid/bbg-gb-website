@@ -62,6 +62,44 @@ describe('GET /api/campaigns', () => {
   });
 });
 
+// The admin board is THIS cycle's board. Ended batches from earlier cycles are
+// in the cycle archive, so a series does not show last cycle's 4/10 folded
+// under this cycle's 0/10 for every group buy on the board.
+describe('GET /api/campaigns — the admin sees this cycle\'s board', () => {
+  const PAST = '2026-08-29T14:00:00.000Z';
+  const listedIds = async () => ((await (await LIST()).json()).data as { id: string }[]).map((c) => c.id).sort();
+  const stamp = async (id: string, cycleKey: string) =>
+    (await getDb()).update(moqCampaigns).set({ cycleKey }).where(eq(moqCampaigns.id, id));
+
+  it('files an approved batch from an earlier cycle, keeps its open successor', async () => {
+    await signIn('admin');
+    const old = await makeMoqCampaign({ committed: 4, status: 'approved' });
+    await stamp(old.id, PAST);
+    const next = await makeMoqCampaign({ seriesId: old.seriesId, batchNo: 2 });
+
+    expect(await listedIds()).toEqual([next.id].sort());
+  });
+
+  it('keeps a batch approved in the current cycle', async () => {
+    await signIn('admin');
+    const { getCurrentCycle } = await import('@/lib/settings');
+    const approved = await makeMoqCampaign({ committed: 4, status: 'approved' });
+    await stamp(approved.id, (await getCurrentCycle())!.opensAt);
+
+    expect(await listedIds()).toEqual([approved.id]);
+  });
+
+  // The customer board is unchanged: joinable batches, whatever their cycle.
+  it('still shows a customer every open batch', async () => {
+    const open = await makeMoqCampaign({ committed: 1 });
+    await stamp(open.id, PAST);
+    const approved = await makeMoqCampaign({ committed: 4, status: 'approved' });
+    await stamp(approved.id, PAST);
+
+    expect(await listedIds()).toEqual([open.id, approved.id].sort());
+  });
+});
+
 describe('POST /api/campaigns (admin create)', () => {
   it('rejects non-admins', async () => {
     await signIn('customer');

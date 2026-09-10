@@ -7,6 +7,7 @@ import type { CampaignParticipant, summariseCampaignParticipants } from './campa
 import type { AccountRow } from './accounts';
 import type { StatsRange } from './analytics-range';
 import type { ReportSegment } from './report/segment';
+import type { CycleSummary } from './cycle-archive';
 
 const toastError = (fallback: string) => (err: unknown) =>
   useToast.getState().show(err instanceof Error ? err.message : fallback);
@@ -160,10 +161,28 @@ export const useCampaignParticipants = (id: string | null) =>
 // `segment` scopes the list to one board — on-hand, group buy or hatian — and is
 // applied on the server: the list is unpaginated, so splitting it in the browser
 // would still fetch every order to throw most of it away.
-export const useAdminOrders = ({ status, segment }: { status?: string; segment?: ReportSegment } = {}) =>
+// `cycle` is 'current' for the cycle being worked, a cycle key from the
+// archive, or absent for every order ever placed.
+export const useAdminOrders = ({ status, segment, cycle }: { status?: string; segment?: ReportSegment; cycle?: string } = {}) =>
   useQuery({
-    queryKey: ['admin', 'orders', status, segment],
-    queryFn: () => apiGet<(Order & { customerEmail: string })[]>(`/admin/orders${qs({ status, segment })}`),
+    queryKey: ['admin', 'orders', status, segment, cycle],
+    queryFn: () => apiGet<(Order & { customerEmail: string })[]>(`/admin/orders${qs({ status, segment, cycle })}`),
+  });
+
+// Admin → Cycle archives.
+export type AdminCycle = CycleSummary & { label: string; current: boolean };
+export type AdminCycleDetail = {
+  cycleKey: string; label: string; current: boolean;
+  kahatis: GroupBuy[]; campaigns: MoqCampaign[];
+  orders: (Order & { customerEmail: string })[];
+};
+export const useAdminCycles = () =>
+  useQuery({ queryKey: ['admin', 'cycles'], queryFn: () => apiGet<AdminCycle[]>('/admin/cycles') });
+export const useAdminCycle = (key: string | null) =>
+  useQuery({
+    queryKey: ['admin', 'cycle', key],
+    queryFn: () => apiGet<AdminCycleDetail>(`/admin/cycles/${encodeURIComponent(key!)}`),
+    enabled: !!key,
   });
 export const useAdminOrder = (id: string | null) =>
   useQuery({

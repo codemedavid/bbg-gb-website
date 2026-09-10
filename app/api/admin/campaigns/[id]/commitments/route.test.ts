@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, expect, vi } from 'vitest';
-import { getDb, orders, orderItems } from '@/lib/db';
+import { getDb, orders, orderItems, moqCampaigns } from '@/lib/db';
+import { eq } from 'drizzle-orm';
 import { resetDb, makeUser, makeMoqCampaign, signToken } from '@/lib/test/harness';
 import { GET } from './route';
 
@@ -136,5 +137,45 @@ describe('GET /api/admin/campaigns/[id]/commitments', () => {
     expect(summary.kits).toBe(5);
     expect(summary.packingFeesPhp).toBe(600);
     expect(summary.doubleChargedCount).toBe(0);
+  });
+});
+
+// A new cycle opens a fresh batch of every series. Its participants list starts
+// at zero: the previous cycle's joiners are filed under their own cycle.
+describe('participants are scoped to the batch\'s cycle', () => {
+  const PAST = '2026-08-29T14:00:00.000Z';
+  const NOW = '2026-09-05T14:00:00.000Z';
+  beforeEach(async () => {
+    await resetDb();
+    const admin = await makeUser({ role: 'admin' });
+    cookieToken = await signToken({ sub: admin.id, role: 'admin', email: admin.email });
+  });
+  const stamp = async (id: string, cycleKey: string) =>
+    (await getDb()).update(moqCampaigns).set({ cycleKey }).where(eq(moqCampaigns.id, id));
+
+  it('lists nobody on the batch a new cycle opened', async () => {
+    const u = await makeUser();
+    const old = await makeMoqCampaign({ moq: 10, committed: 2, status: 'approved' });
+    await stamp(old.id, PAST);
+    await commit({ userId: u.id, campaignId: old.id, orderNo: 'BBG-1', kits: 2, packingFeePhp: 300, totalPhp: 21100 });
+    const next = await makeMoqCampaign({ seriesId: old.seriesId, batchNo: 2 });
+    await stamp(next.id, NOW);
+
+    const fresh = await call(next.id);
+    expect(fresh.body.data.participants).toHaveLength(0);
+    const archived = await call(old.id);
+    expect(archived.body.data.participants).toHaveLength(1);
+  });
+
+  it('still gathers a batch that overflowed within the same cycle', async () => {
+    const u = await makeUser();
+    const first = await makeMoqCampaign({ moq: 10, committed: 10, status: 'completed' });
+    await stamp(first.id, NOW);
+    const second = await makeMoqCampaign({ seriesId: first.seriesId, batchNo: 2, committed: 1 });
+    await stamp(second.id, NOW);
+    await commit({ userId: u.id, campaignId: second.id, orderNo: 'BBG-2', kits: 1, packingFeePhp: 300, totalPhp: 10700 });
+
+    const res = await call(first.id);
+    expect(res.body.data.participants).toHaveLength(1);
   });
 });

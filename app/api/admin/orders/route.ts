@@ -1,8 +1,10 @@
-import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
+import { eq, inArray, type SQL } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, orders, users } from '@/lib/db';
+import { getDb, orders } from '@/lib/db';
+import { selectAdminOrders } from '@/lib/admin-orders-server';
 import { SEGMENT_BUY_TYPES, isReportSegment, REPORT_SEGMENTS } from '@/lib/report/segment';
+import { getLatestCycleKey } from '@/lib/settings';
 
 export const GET = handler(async (req: Request) => {
   await requireAdmin();
@@ -22,10 +24,16 @@ export const GET = handler(async (req: Request) => {
   // client-side split would still ship every order down the wire to discard
   // most of it.
   if (segment) where.push(inArray(orders.buyType, SEGMENT_BUY_TYPES[segment] as never));
-  const base = db.select({
-    id: orders.id, orderNo: orders.orderNo, status: orders.status, buyType: orders.buyType,
-    totalPhp: orders.totalPhp, shipName: orders.shipName, shipPhone: orders.shipPhone,
-    trackingNo: orders.trackingNo, createdAt: orders.createdAt, customerEmail: users.email,
-  }).from(orders).leftJoin(users, eq(orders.userId, users.id)).orderBy(desc(orders.createdAt));
-  return ok(where.length ? await base.where(and(...where)) : await base);
+  // `cycle=current` scopes the list to the cycle the team is working — the
+  // latest to have opened, trading or not. Any other value is a cycle key from
+  // the archive. Absent, every order is listed. Filtered here for the same
+  // reason the segment is.
+  const cycle = params.get('cycle');
+  if (cycle === 'current') {
+    const key = await getLatestCycleKey();
+    if (key) where.push(eq(orders.cycleKey, key));
+  } else if (cycle) {
+    where.push(eq(orders.cycleKey, cycle));
+  }
+  return ok(await selectAdminOrders(db, where));
 });

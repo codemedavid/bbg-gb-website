@@ -61,6 +61,59 @@ beforeEach(async () => {
   await resetDb();
 });
 
+// The admin board is THIS cycle's board. Every cycle seals each joined counter
+// and opens a successor beside it, and a list of every row ever written shows
+// last cycle's 6/10 next to this cycle's 0/10 for every product — which reads
+// exactly as "start new cycle removed nothing". Ended counters from earlier
+// cycles are in the cycle archive instead.
+describe('GET /api/admin/groupbuys — this cycle\'s board', () => {
+  const PAST = '2026-08-29T14:00:00.000Z';
+  const listedNames = async () => ((await (await GET()).json()).data as { name: string }[]).map((g) => g.name).sort();
+
+  beforeEach(async () => {
+    await signIn();
+    const { openBoards } = await import('@/lib/test/harness');
+    await openBoards();
+  });
+
+  it('lists every counter still trading, whatever cycle it was stamped with', async () => {
+    const db = await getDb();
+    const open = await makeGroupBuy({ name: 'Open' });
+    await db.update(groupBuys).set({ cycleKey: PAST }).where(eq(groupBuys.id, open.id));
+    const pasalo = await makeGroupBuy({ name: 'Pasalo', status: 'pasalo', claimedSlots: 5 });
+    await db.update(groupBuys).set({ cycleKey: PAST }).where(eq(groupBuys.id, pasalo.id));
+
+    expect(await listedNames()).toEqual(['Open', 'Pasalo']);
+  });
+
+  it('files a counter that ended in an earlier cycle', async () => {
+    const db = await getDb();
+    await makeGroupBuy({ name: 'This cycle' });
+    const old = await makeGroupBuy({ name: 'Last cycle', status: 'closed', claimedSlots: 6 });
+    await db.update(groupBuys).set({ cycleKey: PAST }).where(eq(groupBuys.id, old.id));
+
+    expect(await listedNames()).toEqual(['This cycle']);
+  });
+
+  it('keeps a counter that ended in the current cycle', async () => {
+    const db = await getDb();
+    const { getCurrentCycle } = await import('@/lib/settings');
+    const cycle = await getCurrentCycle();
+    const filled = await makeGroupBuy({ name: 'Filled today', status: 'closed', claimedSlots: 10 });
+    await db.update(groupBuys).set({ cycleKey: cycle!.opensAt }).where(eq(groupBuys.id, filled.id));
+
+    expect(await listedNames()).toEqual(['Filled today']);
+  });
+
+  // A finished counter with no cycle is from before cycles were named. It has
+  // no cycle to belong to, so it is not this one's.
+  it('files an ended counter that never traded under a cycle', async () => {
+    await makeGroupBuy({ name: 'Ancient', status: 'closed', claimedSlots: 3 });
+
+    expect(await listedNames()).toEqual([]);
+  });
+});
+
 describe('POST /api/admin/groupbuys', () => {
   it('rejects non-admins', async () => {
     await signIn('customer');

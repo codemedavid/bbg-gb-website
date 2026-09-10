@@ -39,7 +39,13 @@ const SEGMENT_BLURB: Record<ReportSegment, string> = {
  */
 export function OrdersBoard({ segment }: { segment?: ReportSegment }) {
   const [filter, setFilter] = useState('');
-  const { data: orders = [], isLoading } = useAdminOrders({ status: filter || undefined, segment });
+  // This cycle's orders, by default. A new cycle starts from zero here as it
+  // does on the boards; every earlier cycle is in Admin → Cycle archives, and
+  // "all cycles" is one click away for the search that spans them.
+  const [allCycles, setAllCycles] = useState(false);
+  const { data: orders = [], isLoading } = useAdminOrders({
+    status: filter || undefined, segment, cycle: allCycles ? undefined : 'current',
+  });
   const [selected, setSelected] = useState<string | null>(null);
 
   return (
@@ -72,11 +78,18 @@ export function OrdersBoard({ segment }: { segment?: ReportSegment }) {
         })}
       </nav>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map(([val, lbl]) => (
           <button key={val} onClick={() => setFilter(val)}
             className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold ${filter === val ? 'bg-brand-navy text-white' : 'bg-white text-ink-body'}`}>{lbl}</button>
         ))}
+        <label className="ml-auto flex items-center gap-1.5 text-[12.5px] text-ink-muted">
+          <input type="checkbox" checked={allCycles} onChange={(e) => setAllCycles(e.target.checked)} />
+          All cycles
+        </label>
+        <Link href="/admin/cycles" className="text-[12.5px] font-semibold text-brand-blue hover:underline">
+          Cycle archives →
+        </Link>
       </div>
 
       <div className="overflow-x-auto rounded-[16px] bg-white shadow-card">
@@ -96,7 +109,7 @@ export function OrdersBoard({ segment }: { segment?: ReportSegment }) {
                   <td className="px-4 py-3 text-ink-muted">{shortDate(o.createdAt)}</td>
                 </tr>
               )) : <tr><td className="px-4 py-6 text-ink-muted" colSpan={6}>
-                No {segment ? `${SEGMENT_LABEL[segment].toLowerCase()} ` : ''}orders.
+                No {segment ? `${SEGMENT_LABEL[segment].toLowerCase()} ` : ''}orders{allCycles ? '' : ' this cycle'}.
               </td></tr>}
           </tbody>
         </table>

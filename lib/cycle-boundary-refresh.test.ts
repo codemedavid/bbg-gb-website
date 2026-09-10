@@ -39,6 +39,7 @@ vi.mock('@/lib/session', () => {
 import { getDb, groupBuys, moqCampaigns, products, settings } from '@/lib/db';
 import { resetDb, makeProduct, makeGroupBuy, makeMoqCampaign, openBoards, closeBoards } from '@/lib/test/harness';
 import { refreshBoardsForNewCycle, BOARDS_REFRESHED_KEY } from './cycle-boundary-server';
+import { getCurrentCycle } from './settings';
 
 const loadCounter = async (id: string) => {
   const db = await getDb();
@@ -196,6 +197,41 @@ describe('refreshBoardsForNewCycle', () => {
     await refreshBoardsForNewCycle(db);
 
     expect((await loadCounter(counter.id)).status).toBe('open');
+  });
+
+  // Every listing the new cycle carries is named with it: the successors just
+  // opened, the empties brought forward. That is what files them under this
+  // cycle when they end, and what keeps them on the board until then.
+  it('names every listing it carries into the cycle', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const joined = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000, claimedSlots: 4 });
+    const empty = await makeGroupBuy({ name: 'Empty', pricePerKitPhp: 2000, claimedSlots: 0 });
+    const batch = await makeMoqCampaign({ committed: 0 });
+    const cycle = await getCurrentCycle();
+
+    await refreshBoardsForNewCycle(db);
+
+    expect((await loadCounter(empty.id)).cycleKey).toBe(cycle!.opensAt);
+    const [successor] = await db.select().from(groupBuys)
+      .where(and(eq(groupBuys.productId, product.id), eq(groupBuys.status, 'open')));
+    expect(successor.cycleKey).toBe(cycle!.opensAt);
+    const [carried] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, batch.id));
+    expect(carried.cycleKey).toBe(cycle!.opensAt);
+    // The sealed counter is not renamed: it traded last cycle.
+    expect((await loadCounter(joined.id)).cycleKey).toBeNull();
+  });
+
+  // A Pasalo counter is still deciding on LAST cycle's vials; carrying it over
+  // must not re-file it as this cycle's.
+  it('leaves a pasalo counter filed under the cycle it took its vials in', async () => {
+    const db = await getDb();
+    const counter = await makeGroupBuy({ pricePerKitPhp: 2000, claimedSlots: 5, status: 'pasalo' });
+    await db.update(groupBuys).set({ cycleKey: '2026-08-29T14:00:00.000Z' }).where(eq(groupBuys.id, counter.id));
+
+    await refreshBoardsForNewCycle(db);
+
+    expect((await loadCounter(counter.id)).cycleKey).toBe('2026-08-29T14:00:00.000Z');
   });
 
   // The board is polled, so two requests can land together and must not both

@@ -30,7 +30,8 @@ const {
   resetDb, makeUser, makeProduct, makeGroupBuy, makeMoqCampaign, makePaymentMethod,
   checkoutRequest, commitRequest, openBoards,
 } = await import('@/lib/test/harness');
-const { getDb, orders } = await import('@/lib/db');
+const { getDb, orders, groupBuys, moqCampaigns } = await import('@/lib/db');
+const { eq } = await import('drizzle-orm');
 const { getCurrentCycle } = await import('@/lib/settings');
 
 async function signIn() {
@@ -116,5 +117,44 @@ describe('the cycle an order was placed in', () => {
     const byType = new Map(rows.map((o) => [o.buyType, o.cycleKey]));
     expect(byType.get('solo')).toBeNull();
     expect(byType.get('kahati')).toBe((await getCurrentCycle())!.opensAt);
+  });
+});
+
+// The listing is stamped as well as the order. A counter or batch belongs to
+// the cycle its first commitment was placed in — that is what files it under
+// that cycle in the archive once it has ended, and what keeps last cycle's
+// listings off this cycle's board.
+describe('the cycle a listing traded in', () => {
+  it('stamps the counter with the cycle of its first commitment', async () => {
+    await signIn();
+    const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+
+    await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 2 }]));
+
+    const cycle = await getCurrentCycle();
+    const [row] = await (await getDb()).select().from(groupBuys).where(eq(groupBuys.id, gb.id));
+    expect(row.cycleKey).toBe(cycle!.opensAt);
+  });
+
+  it('stamps the batch with the cycle of its first commitment', async () => {
+    await signIn();
+    const c = await makeMoqCampaign({ moq: 10, perCustomerMin: 1 });
+
+    await POST(commitRequest(c.id, 1));
+
+    const cycle = await getCurrentCycle();
+    const [row] = await (await getDb()).select().from(moqCampaigns).where(eq(moqCampaigns.id, c.id));
+    expect(row.cycleKey).toBe(cycle!.opensAt);
+  });
+
+  it('keeps the cycle a counter already traded in', async () => {
+    await signIn();
+    const gb = await makeGroupBuy({ totalSlots: 10, minVials: 1 });
+    await (await getDb()).update(groupBuys).set({ cycleKey: '2026-08-29T14:00:00.000Z' }).where(eq(groupBuys.id, gb.id));
+
+    await POST(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 2 }]));
+
+    const [row] = await (await getDb()).select().from(groupBuys).where(eq(groupBuys.id, gb.id));
+    expect(row.cycleKey).toBe('2026-08-29T14:00:00.000Z');
   });
 });

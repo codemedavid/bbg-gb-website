@@ -73,6 +73,9 @@ export type GroupBuy = {
   kahatiVials?: number | null;
   pasaloClosesAt?: string | null;
   minViableVials?: number;
+  // The trading cycle this counter took its vials in (orders.cycle_key). What
+  // files it in the cycle archive once it has ended. Null until it trades.
+  cycleKey?: string | null;
 };
 
 /**
@@ -136,6 +139,8 @@ export type MoqCampaign = {
   // Which batch of which series this row is. seriesId resolves to the row's own
   // id for a first batch, so grouping by it always yields the whole series.
   seriesId: string; batchNo: number;
+  // The trading cycle this batch took its kits in — see GroupBuy.cycleKey.
+  cycleKey?: string | null;
   // Derived server-side.
   capacity: number;  // kits this batch holds — the denominator the UI shows
   progress: number;  // 0..1

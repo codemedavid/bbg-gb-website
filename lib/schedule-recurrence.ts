@@ -165,6 +165,20 @@ export function isRecurrenceOpen(r: ScheduleRecurrence, now: Date): boolean {
 }
 
 /**
+ * The most recent cycle to have opened at or before `now`, running or not.
+ *
+ * This is the cycle the team is WORKING: between one cycle's close and the
+ * next open, the boards are dark but the orders of the cycle that just closed
+ * are being paid, packed and settled, and every admin screen scoped "to this
+ * cycle" means that one. cycleAt answers whether customers may trade; this
+ * answers which cycle the admin is in.
+ */
+export function latestCycle(r: ScheduleRecurrence, now: Date): Cycle | null {
+  const resolved = resolve(r);
+  return resolved ? cycleOpenedBy(resolved, now) : null;
+}
+
+/**
  * The next cycle to OPEN after `now`.
  *
  * Strictly after, so asking this mid-cycle answers "the one after this" rather

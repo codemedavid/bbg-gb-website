@@ -210,6 +210,14 @@ export const groupBuys = pgTable('group_buys', {
   // retroactively re-decide finished batches, refunded ones included. Frozen
   // per counter, defaulting to the same 7 every existing row was made under.
   minViableVials: integer('min_viable_vials').notNull().default(7),
+  // The trading cycle this counter belongs to — orders.cycle_key of the cycle
+  // it took its vials in. Stamped by checkout on the first commitment, and by
+  // the cycle boundary on every counter it carries into a new cycle. It is
+  // what files a finished counter under its cycle in the archive, and what
+  // keeps last cycle's counters off this cycle's board: a board shows what is
+  // live plus what ended in the CURRENT cycle, nothing older. Null on rows
+  // that predate the column and never traded since.
+  cycleKey: varchar('cycle_key', { length: 40 }),
   // When this counter goes on the board. Null means "already there" — which is
   // every counter written before scheduling existed. A future date parks the row
   // at 'scheduled' until a sweep opens it (lib/kahati-server.ts openDueKahatis).
@@ -225,6 +233,7 @@ export const groupBuys = pgTable('group_buys', {
   // admin edit, a script or a console query all hit this same wall. Overflow
   // becomes the next counter (lib/kahati-server.ts closeFullKahati) instead.
   withinCap: check('group_buys_claimed_within_cap', sql`${t.claimedSlots} <= ${t.totalSlots}`),
+  cycleIdx: index('group_buys_cycle_idx').on(t.cycleKey),
   // At most one OPEN counter per product, enforced by the database.
   //
   // The hatian board reconciles itself against the product list on read
@@ -272,9 +281,12 @@ export const moqCampaigns = pgTable('moq_campaigns', {
   includedProducts: jsonb('included_products').notNull().default(sql`'[]'::jsonb`),
   arrivalGroup: arrivalGroupEnum('arrival_group').notNull().default('white_powder'),
   description: text('description'),
+  // The trading cycle this batch belongs to — see the note on group_buys.
+  cycleKey: varchar('cycle_key', { length: 40 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   seriesIdx: index('moq_campaigns_series_idx').on(t.seriesId),
+  cycleIdx: index('moq_campaigns_cycle_idx').on(t.cycleKey),
   // One batch number per series, enforced by the database. Two customers whose
   // commitments fill the same batch at the same instant both try to open its
   // successor; this is what stops them minting two "batch #2"s and splitting

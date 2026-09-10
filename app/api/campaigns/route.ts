@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { desc, ne } from 'drizzle-orm';
+import { desc, eq, inArray, ne, or } from 'drizzle-orm';
 import { requireAdmin, getSession } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { moqCampaignSchema } from '@/lib/moq-schemas';
-import { getPackingFees } from '@/lib/settings';
+import { getPackingFees, getLatestCycleKey } from '@/lib/settings';
+import { LIVE_CAMPAIGN_STATUSES } from '@/lib/cycle-archive';
 import { describeBatch } from '@/lib/group-buy';
 import { openDueBatches } from '@/lib/moq-batch-server';
 import { openingStatus } from '@/lib/campaign-schedule';
@@ -32,8 +33,18 @@ export const GET = handler(async () => {
   // "Start new cycle" button when it does.
   await refreshBoardsForNewCycle(db);
   const session = await getSession();
+  // A customer sees what can be joined. The admin sees THIS cycle's board:
+  // every batch still trading, plus those that ended in the current cycle. A
+  // batch that ended in an earlier cycle is in Admin → Cycle archives under
+  // that cycle, kits and all — listing it here is what made "Start new cycle"
+  // look as though it removed nothing.
+  const onBoard = async () => {
+    const cycleKey = await getLatestCycleKey();
+    const live = inArray(moqCampaigns.status, [...LIVE_CAMPAIGN_STATUSES]);
+    return cycleKey ? or(live, eq(moqCampaigns.cycleKey, cycleKey)) : live;
+  };
   const rows = await db.select().from(moqCampaigns)
-    .where(session?.role === 'admin' ? undefined : ne(moqCampaigns.status, 'scheduled'))
+    .where(session?.role === 'admin' ? await onBoard() : ne(moqCampaigns.status, 'scheduled'))
     .orderBy(desc(moqCampaigns.createdAt));
   return ok(rows.map(describeBatch));
 });

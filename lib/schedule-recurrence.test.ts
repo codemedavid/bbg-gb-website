@@ -7,7 +7,7 @@
 // this codebase is one mistake away from.
 import { describe, it, expect } from 'vitest';
 import {
-  cycleAt, nextCycle, isRecurrenceOpen, cycleKeyOf,
+  cycleAt, nextCycle, isRecurrenceOpen, cycleKeyOf, latestCycle,
   type ScheduleRecurrence,
 } from '@/lib/schedule-recurrence';
 
@@ -233,5 +233,25 @@ describe('cycleKeyOf', () => {
     const second = cycleAt(WED_TO_WED, new Date('2026-08-15T00:00:00.000Z'));
 
     expect(cycleKeyOf(first!)).not.toBe(cycleKeyOf(second!));
+  });
+});
+
+describe('latestCycle — the cycle the admin is working', () => {
+  // Saturday 04:00 -> Sunday 23:00 Manila, which is the live schedule.
+  const R = { openDay: 6 as const, openTime: '04:00', closeDay: 0 as const, closeTime: '23:00' };
+
+  it('is the running cycle while the boards are open', () => {
+    const c = latestCycle(R, new Date('2026-09-12T02:00:00.000Z'));  // Sat 10:00 Manila
+    expect(c?.opensAt).toBe('2026-09-11T20:00:00.000Z');
+  });
+
+  it('is the cycle that just closed while the boards are dark', () => {
+    const c = latestCycle(R, new Date('2026-09-10T00:44:00.000Z'));  // Thu 08:44 Manila
+    expect(c?.opensAt).toBe('2026-09-04T20:00:00.000Z');
+    expect(cycleAt(R, new Date('2026-09-10T00:44:00.000Z'))).toBeNull();
+  });
+
+  it('is null with no schedule', () => {
+    expect(latestCycle({ openDay: null, openTime: null, closeDay: null, closeTime: null }, new Date())).toBeNull();
   });
 });

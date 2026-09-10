@@ -35,8 +35,9 @@
 // is idempotent, so the cost of the bad case is one extra UPDATE against rows
 // that already match the catalog.
 // ---------------------------------------------------------------------------
-import { ne, sql } from 'drizzle-orm';
-import { getDb, settings } from '@/lib/db';
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { getDb, groupBuys, moqCampaigns, settings } from '@/lib/db';
+import { LIVE_KAHATI_STATUSES, LIVE_CAMPAIGN_STATUSES } from './cycle-archive';
 import { getCurrentCycle } from './settings';
 import { cycleKeyOf } from './schedule-recurrence';
 import { rollOpenKahatis } from './kahati-server';
@@ -83,6 +84,19 @@ async function claimCycle(db: Db, cycleKey: string): Promise<boolean> {
     })
     .returning({ key: settings.key });
   return claimed.length > 0;
+}
+
+async function stampLiveListings(db: Db, cycleKey: string): Promise<void> {
+  await db.update(groupBuys).set({ cycleKey })
+    .where(and(
+      inArray(groupBuys.status, [...LIVE_KAHATI_STATUSES]),
+      or(isNull(groupBuys.cycleKey), eq(groupBuys.claimedSlots, 0)),
+    ));
+  await db.update(moqCampaigns).set({ cycleKey })
+    .where(and(
+      inArray(moqCampaigns.status, [...LIVE_CAMPAIGN_STATUSES]),
+      or(isNull(moqCampaigns.cycleKey), eq(moqCampaigns.committed, 0)),
+    ));
 }
 
 /**
@@ -137,6 +151,14 @@ export async function refreshBoardsForNewCycle(
   } catch {
     // As above.
   }
+
+  // Every listing still trading now belongs to THIS cycle: the successors just
+  // opened, the empties carried forward, anything an admin created while the
+  // boards were dark. Naming them is what files them under this cycle in the
+  // archive when they end, and what keeps them on the board until then.
+  // A listing that already carries a cycle AND holds commitments keeps it —
+  // a Pasalo counter still deciding on last cycle's vials is last cycle's.
+  await stampLiveListings(db, cycleKeyOf(cycle));
 
   return {
     refreshed: true,
