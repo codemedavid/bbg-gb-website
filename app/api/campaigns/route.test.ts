@@ -28,7 +28,7 @@ const { GET: LIST, POST: CREATE } = await import('./route');
 const { POST: ACTION } = await import('./[id]/action/route');
 const { POST: COMMIT } = await import('@/app/api/orders/route');
 const { getDb, moqCampaigns, orders } = await import('@/lib/db');
-const { resetDb, openBoards, makeUser, makeMoqCampaign, commitRequest } = await import('@/lib/test/harness');
+const { resetDb, openBoards, closeBoards, makeUser, makeMoqCampaign, makeProduct, commitRequest } = await import('@/lib/test/harness');
 
 async function signIn(role: 'customer' | 'admin' = 'customer') {
   const user = await makeUser({ role });
@@ -97,6 +97,38 @@ describe('GET /api/campaigns — the admin sees this cycle\'s board', () => {
     await stamp(approved.id, PAST);
 
     expect(await listedIds()).toEqual([open.id, approved.id].sort());
+  });
+});
+
+// The board fills itself from the product list, the way the hatian board has
+// all along. Until now nothing on any route opened a campaign for a flagged
+// product — only a QA script did — so once every batch had been cancelled the
+// board stayed empty until somebody remembered to run it.
+describe('GET /api/campaigns — the board mirrors the product list', () => {
+  const listedNames = async () => ((await (await LIST()).json()).data as { name: string }[]).map((c) => c.name).sort();
+
+  it('opens a batch for every flagged product the board lacks', async () => {
+    await makeProduct({ name: 'NAD+', spec: '500mg', isGroupBuy: true, pricePhp: 3350 });
+    await makeProduct({ name: 'BPC-157', spec: '10mg', isGroupBuy: true, pricePhp: 2000 });
+
+    expect(await listedNames()).toEqual(['BPC-157 10mg', 'NAD+ 500mg']);
+  });
+
+  it('does so for an admin even while the storefront is closed', async () => {
+    await signIn('admin');
+    await closeBoards();
+    await makeProduct({ name: 'NAD+', spec: '500mg', isGroupBuy: true, pricePhp: 3350 });
+
+    expect(await listedNames()).toEqual(['NAD+ 500mg']);
+  });
+
+  it('does not open a second batch for a product that has one', async () => {
+    await makeProduct({ name: 'NAD+', spec: '500mg', isGroupBuy: true, pricePhp: 3350 });
+
+    await LIST();
+    await LIST();
+
+    expect(await listedNames()).toEqual(['NAD+ 500mg']);
   });
 });
 

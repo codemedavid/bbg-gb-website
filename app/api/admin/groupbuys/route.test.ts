@@ -114,6 +114,35 @@ describe('GET /api/admin/groupbuys — this cycle\'s board', () => {
   });
 });
 
+// The board fills itself from the product list. Until now only the PUBLIC
+// board read did that, and it is gated shut outside trading hours — so an
+// admin opening the board on a paused storefront, after every counter had
+// been cancelled, saw nothing and had no way to get the catalog back on it.
+describe('GET /api/admin/groupbuys — the board mirrors the product list', () => {
+  const listedNames = async () => ((await (await GET()).json()).data as { name: string }[]).map((g) => g.name).sort();
+
+  it('opens a counter for every flagged product, even while the storefront is closed', async () => {
+    await signIn();
+    const { closeBoards, makeProduct } = await import('@/lib/test/harness');
+    await closeBoards();
+    await makeProduct({ name: 'Retatrutide', spec: '10mg', isGroupBuy: true, isKahati: true, pricePhp: 9000 });
+    await makeProduct({ name: 'Tirzepatide', spec: '15mg', isGroupBuy: true, isKahati: true, pricePhp: 8000 });
+
+    expect(await listedNames()).toEqual(['Retatrutide 10mg', 'Tirzepatide 15mg']);
+  });
+
+  it('does not open a second counter for a product that has one', async () => {
+    await signIn();
+    const { makeProduct } = await import('@/lib/test/harness');
+    await makeProduct({ name: 'Retatrutide', spec: '10mg', isGroupBuy: true, isKahati: true, pricePhp: 9000 });
+
+    await GET();
+    await GET();
+
+    expect(await listedNames()).toEqual(['Retatrutide 10mg']);
+  });
+});
+
 describe('POST /api/admin/groupbuys', () => {
   it('rejects non-admins', async () => {
     await signIn('customer');
