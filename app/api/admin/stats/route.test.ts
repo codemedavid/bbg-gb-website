@@ -123,6 +123,38 @@ describe('GET /api/admin/stats packing-fee analytics', () => {
 // batch that ran 10–12 August do?". A chosen range has to reach every figure on
 // the page, not just a headline: totals, packing fees, the day-by-day chart and
 // the fast movers.
+describe('GET /api/admin/stats unfiltered, all-time dashboard', () => {
+  it('ranks fast movers over every order ever placed, not only the last thirty days', async () => {
+    const customer = await makeUser();
+    const old = await makeProduct({ name: 'Tirzepatide' });
+    const recent = await makeProduct({ name: 'Retatrutide' });
+    const longAgo = await addOrder(customer.id, 'BBG-OLD', 0, daysAgo(45));
+    await addItem(longAgo.id, old.id, 'Tirzepatide 10mg', 99);
+    const lately = await addOrder(customer.id, 'BBG-NEW', 0, daysAgo(2));
+    await addItem(lately.id, recent.id, 'Retatrutide 10mg', 7);
+
+    const body = await (await stats()).json();
+
+    expect(body.data.fastMoving.map((m: { name: string; unitsSold: number }) => [m.name, m.unitsSold]))
+      .toEqual([['Tirzepatide 10mg', 99], ['Retatrutide 10mg', 7]]);
+  });
+
+  it('summarises every order ever placed week by week, keyed by the Manila Monday', async () => {
+    const customer = await makeUser();
+    // A Sunday late at night in Manila is still that week; in UTC it is the same
+    // Sunday afternoon, so either reading keeps it out of the following Monday.
+    await addOrder(customer.id, 'BBG-W1A', 0, manila('2026-06-07', '23:30:00'));
+    await addOrder(customer.id, 'BBG-W1B', 0, manila('2026-06-02', '09:00:00'));
+    await addOrder(customer.id, 'BBG-W2', 0, manila('2026-06-08', '00:30:00'));
+    await addOrder(customer.id, 'BBG-VOID', 0, manila('2026-06-09'), 'cancelled');
+
+    const body = await (await stats()).json();
+
+    expect(body.data.dailySummary.map((d: { day: string; count: number; revenue: number }) => [d.day, d.count, d.revenue]))
+      .toEqual([['2026-06-01', 2, 2000], ['2026-06-08', 1, 1000]]);
+  });
+});
+
 describe('GET /api/admin/stats date-range filter', () => {
   const FROM = '2026-08-10';
   const TO = '2026-08-12';

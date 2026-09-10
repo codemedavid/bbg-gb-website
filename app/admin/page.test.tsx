@@ -182,6 +182,24 @@ describe('admin dashboard date filter', () => {
     expect(screen.getByText('Orders this week')).toBeInTheDocument();
   });
 
+  it('presents the unfiltered dashboard as all-time, with the chart bucketed by week', () => {
+    stats.data.dailySummary = [
+      { day: '2026-06-01', count: 2, revenue: 2000 },
+      { day: '2026-06-08', count: 1, revenue: 1000 },
+    ];
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/all-time performance/i)).toBeInTheDocument();
+    expect(screen.getByText('Weekly order summary · all time')).toBeInTheDocument();
+    expect(screen.getByText('Fast-moving items · all time')).toBeInTheDocument();
+    // Week buckets are labelled by their Monday, not by a weekday initial that
+    // would read "Mon" under every bar.
+    expect(screen.getByText('Jun 1')).toBeInTheDocument();
+    expect(screen.getByText('Jun 8')).toBeInTheDocument();
+    expect(screen.queryByText('Mon')).not.toBeInTheDocument();
+  });
+
   it('labels the summary chart for the range it is actually showing', async () => {
     stats.data.range = { from: '2026-08-10', to: '2026-08-12' };
     stats.data.totals.range = { count: 1, revenue: 100 };
