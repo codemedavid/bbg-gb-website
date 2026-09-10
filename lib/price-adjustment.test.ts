@@ -13,7 +13,7 @@ const sheetRow = (o: Partial<AdjustmentRow> = {}): AdjustmentRow => ({
 
 const product = (o: Partial<PriceableProduct> = {}): PriceableProduct => ({
   id: 'p1', name: 'Selank', spec: '10mg', code: 'SK10',
-  pricePhp: 3200, isKahati: true, isOnHand: false, ...o,
+  pricePhp: 3200, gbPricePerKitPhp: null, isKahati: true, isOnHand: false, ...o,
 });
 
 describe('planPriceAdjustment', () => {
@@ -21,7 +21,7 @@ describe('planPriceAdjustment', () => {
     const plan = planPriceAdjustment([sheetRow()], [product()]);
 
     expect(plan.updates).toEqual([
-      { row: 2, productId: 'p1', name: 'Selank', spec: '10mg', fromPhp: 3200, toPhp: 3263 },
+      { row: 2, productId: 'p1', name: 'Selank', spec: '10mg', fromPhp: 3200, fromGroupBuyPhp: null, toPhp: 3263 },
     ]);
   });
 
@@ -93,14 +93,30 @@ describe('planPriceAdjustment', () => {
 
   // lib/pricelist-match.ts already carries the client's standing exclusion:
   // the FUAN GTT is MOQ-shelf only and must not enter the group-buy catalog.
-  it('honours the standing exclusions', () => {
+  // The GTT exclusion is an IMPORT rule: "everything except the GTT" was about
+  // what becomes a catalog product. It says nothing about a GTT that is already
+  // in the catalog and on both boards — prod holds one, and on 2026-09-10 both
+  // its counter and its batch were still quoting the old money because the
+  // exclusion kept the sheet's price off it.
+  it('honours the standing exclusions for a row that matches nothing', () => {
     const plan = planPriceAdjustment(
       [sheetRow({ name: 'GTT FUAN', size: '1500mg', code: 'GTT1500', php: 3213 })],
-      [product({ id: 'gtt', name: 'GTT FUAN', spec: '1500mg' })],
+      [product()],
     );
 
     expect(plan.updates).toEqual([]);
+    expect(plan.unmatched).toEqual([]);
     expect(plan.excluded).toHaveLength(1);
+  });
+
+  it('reprices a product the import exclusion would have kept off the catalog', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'GTT FUAN', size: '1500mg', code: 'GTT1500', php: 3213 })],
+      [product({ id: 'gtt', name: 'GTT FUAN', spec: '1500MG', pricePhp: 3150 })],
+    );
+
+    expect(plan.excluded).toEqual([]);
+    expect(plan.updates.map((u) => [u.productId, u.toPhp])).toEqual([['gtt', 3213]]);
   });
 
   // Every row must come back under exactly one heading, or the report silently
@@ -133,7 +149,7 @@ describe('planPriceAdjustment', () => {
 
     const keys = Object.keys(plan.updates[0]);
     expect(keys.filter((k) => /onhand|on_hand/i.test(k))).toEqual([]);
-    expect(keys).toEqual(['row', 'productId', 'name', 'spec', 'fromPhp', 'toPhp']);
+    expect(keys).toEqual(['row', 'productId', 'name', 'spec', 'fromPhp', 'fromGroupBuyPhp', 'toPhp']);
   });
 });
 
@@ -229,6 +245,41 @@ describe('names the workbook spells differently from the catalog', () => {
 
     expect(plan.updates).toEqual([]);
     expect(plan.unmatched).toHaveLength(1);
+  });
+
+  // Two saltform products the catalog misspells: "Tesamorilin (Saltform)"
+  // (SALTTS5, SALTTS10) and "CAGRILENTIDE (SALTFORM)" (CGL5). Their prices
+  // already agree with the workbook, which is how three rows a run should have
+  // reported as unchanged came back as unmatched instead.
+  it('matches Tesamorelin (Saltform) to the catalog’s Tesamorilin', () => {
+    const plan = planPriceAdjustment(
+      [
+        sheetRow({ row: 29, name: 'Tesamorelin (Saltform)', size: '10mg', code: 'SALTTS10', php: 11900 }),
+        sheetRow({ row: 30, name: 'Tesamorelin (Saltform)', size: '5mg', code: 'SALTTS5', php: 6200 }),
+      ],
+      [
+        product({ id: 'ts10', name: 'Tesamorilin (Saltform)', spec: '10mg', pricePhp: 11900 }),
+        product({ id: 'ts5', name: 'Tesamorilin (Saltform)', spec: '5mg', pricePhp: 6200 }),
+        product({ id: 'plain10', name: 'Tesamorelin', spec: '10mg vial', pricePhp: 9663 }),
+      ],
+    );
+
+    expect(plan.unmatched).toEqual([]);
+    expect(plan.unchanged.map((u) => u.productId).sort()).toEqual(['ts10', 'ts5']);
+  });
+
+  it('matches Cagrilintide (Saltform) to the catalog’s CAGRILENTIDE (SALTFORM)', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Cagrilintide (Saltform)', size: '5mg', code: 'SALT-CGL5', php: 6600 })],
+      [
+        product({ id: 'salt', name: 'CAGRILENTIDE (SALTFORM)', spec: '5mg', pricePhp: 6600 }),
+        product({ id: 'plain', name: 'Cagrilintide', spec: '5mg vial', pricePhp: 5563 }),
+      ],
+    );
+
+    expect(plan.unmatched).toEqual([]);
+    expect(plan.updates).toEqual([]);
+    expect(plan.unchanged.map((u) => u.productId)).toEqual(['salt']);
   });
 
   // Created under the catalog's convention, which keeps the doses in the name
@@ -339,5 +390,47 @@ describe('JUVEDERM Volume', () => {
 
     expect(plan.updates).toEqual([]);
     expect(plan.unmatched).toHaveLength(1);
+  });
+});
+
+// A listing is seeded at the product's OWN group buy kit price when it carries
+// one, and only otherwise at the shop price (seededKitPrice). 102 of prod's 172
+// products carry one, and it is the old kit price under a second column: the
+// Sep 9 run moved products.price_php on 126 rows and left 45 of those overrides
+// where they were, so 50 of 122 open counters and 40 of 124 open batches went
+// on quoting last week's money. The workbook is headed FINAL PRICE — it is the
+// price of the boards, so a product is only "at the new price" when both
+// figures say so.
+describe('a product whose group buy price still says the old money', () => {
+  it('is repriced even though its shop price already moved', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Vilon', size: '20mg', code: 'VI20', php: 7263 })],
+      [product({ id: 'vi20', name: 'VILON', spec: '20mg', pricePhp: 7263, gbPricePerKitPhp: 7200 })],
+    );
+
+    expect(plan.unchanged).toEqual([]);
+    expect(plan.updates).toEqual([{
+      row: 2, productId: 'vi20', name: 'VILON', spec: '20mg',
+      fromPhp: 7263, fromGroupBuyPhp: 7200, toPhp: 7263,
+    }]);
+  });
+
+  it('is left alone once both prices say the new figure', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Vilon', size: '20mg', code: 'VI20', php: 7263 })],
+      [product({ id: 'vi20', name: 'VILON', spec: '20mg', pricePhp: 7263, gbPricePerKitPhp: 7263 })],
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.unchanged.map((u) => u.productId)).toEqual(['vi20']);
+  });
+
+  it('reports the group buy price it is moving from', () => {
+    const plan = planPriceAdjustment(
+      [sheetRow({ name: 'Cagrilintide', size: '10mg vial', code: 'CGL10', php: 8463 })],
+      [product({ id: 'cgl10', name: 'Cagrilintide', spec: '10mg vial', pricePhp: 8000, gbPricePerKitPhp: 7500 })],
+    );
+
+    expect(plan.updates.map((u) => [u.fromPhp, u.fromGroupBuyPhp, u.toPhp])).toEqual([[8000, 7500, 8463]]);
   });
 });

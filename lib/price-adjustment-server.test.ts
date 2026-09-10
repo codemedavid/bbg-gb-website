@@ -27,7 +27,7 @@ const update = (
   toPhp: number,
   overrides: Partial<PriceUpdate> = {},
 ): PriceUpdate => ({
-  row: 2, productId, name: 'Test Peptide', spec: '10mg', fromPhp, toPhp, ...overrides,
+  row: 2, productId, name: 'Test Peptide', spec: '10mg', fromPhp, fromGroupBuyPhp: null, toPhp, ...overrides,
 });
 
 const loadProduct = async (id: string) => {
@@ -124,17 +124,67 @@ describe('applyPriceUpdates', () => {
     expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2000);
   });
 
-  // The shop price is only the FALLBACK a listing is seeded at. A product
-  // carrying its own group buy price is listed at that, so moving the shop
-  // price must not move the board.
-  it('leaves a listing alone when the product prices the board separately', async () => {
+  // A listing is seeded at the product's OWN group buy kit price when it has
+  // one, and the shop price is only the fallback. This used to leave such a
+  // product's board alone on the theory that the override was a deliberate
+  // discount. In prod it is not: 102 of 172 products carry one, and it is the
+  // previous kit price under a second column — so the Sep 9 run moved the
+  // catalog and left 50 open counters and 40 open batches at last week's money.
+  // The workbook is the FINAL PRICE of the boards, so the override moves too.
+  it('moves the product’s own group buy price to the new figure', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000, gbPricePerKitPhp: 1800 });
+
+    await applyPriceUpdates(db, [update(product.id, 2000, 2263, { fromGroupBuyPhp: 1800 })]);
+
+    expect(Number((await loadProduct(product.id)).gbPricePerKitPhp)).toBe(2263);
+  });
+
+  it('carries the new price onto a counter seeded from the group buy price', async () => {
     const db = await getDb();
     const product = await makeProduct({ isKahati: true, pricePhp: 2000, gbPricePerKitPhp: 1800 });
     const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 1800 });
 
+    const report = await applyPriceUpdates(db, [update(product.id, 2000, 2263, { fromGroupBuyPhp: 1800 })]);
+
+    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2263);
+    expect(report.kahatis).toBe(1);
+  });
+
+  it('carries the new price onto a batch seeded from the group buy price', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isGroupBuy: true, pricePhp: 2000, gbPricePerKitPhp: 1800 });
+    const batch = await campaignFor({ id: product.id, name: 'Test Peptide' }, { pricePerKitPhp: '1800' });
+
+    await applyPriceUpdates(db, [update(product.id, 2000, 2263, { fromGroupBuyPhp: 1800 })]);
+
+    expect(Number((await loadBatch(batch.id)).pricePerKitPhp)).toBe(2263);
+  });
+
+  // The order calculator quotes the explicit per-piece group buy price ahead of
+  // the kit (lib/order-calc.ts vialPrice), while a counter charges its kit
+  // price divided by ten (perVialPrice). Leaving the piece where it was would
+  // quote one vial price on the calculator and charge another at the counter.
+  it('keeps the per-vial group buy price in step with the kit', async () => {
+    const db = await getDb();
+    const product = await makeProduct({
+      isKahati: true, pricePhp: 4850, gbPricePerKitPhp: 4850, gbPricePerPiecePhp: 485, gbVialsPerKit: 10,
+    });
+
+    await applyPriceUpdates(db, [update(product.id, 4850, 4913, { fromGroupBuyPhp: 4850 })]);
+
+    expect(Number((await loadProduct(product.id)).gbPricePerPiecePhp)).toBe(491.3);
+  });
+
+  it('gives a product no group buy price it did not already have', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+
     await applyPriceUpdates(db, [update(product.id, 2000, 2263)]);
 
-    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(1800);
+    const after = await loadProduct(product.id);
+    expect(after.gbPricePerKitPhp).toBeNull();
+    expect(after.gbPricePerPiecePhp).toBeNull();
   });
 
   it('applies every update it is given', async () => {

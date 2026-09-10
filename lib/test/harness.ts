@@ -125,6 +125,8 @@ export async function makeProduct(
     gbPricePerKitPhp: number | null; gbMinVials: number | null; gbMaxVialsPerBatch: number | null;
   }> = {},
 ): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
+    // The explicit per-vial group buy price and the kit size it divides by.
+    gbPricePerPiecePhp: number | null; gbVialsPerKit: number | null;
   const db = await getDb();
   const [cat] = await db.insert(categories).values({
     name: 'Peptides', slug: `peptides-${Math.random().toString(36).slice(2, 8)}`,
@@ -152,6 +154,8 @@ export async function makeProduct(
     gbPricePerKitPhp: overrides.gbPricePerKitPhp != null ? String(overrides.gbPricePerKitPhp) : null,
     gbMinVials: overrides.gbMinVials ?? null,
     gbMaxVialsPerBatch: overrides.gbMaxVialsPerBatch ?? null,
+    gbPricePerPiecePhp: overrides.gbPricePerPiecePhp != null ? String(overrides.gbPricePerPiecePhp) : null,
+    gbVialsPerKit: overrides.gbVialsPerKit ?? null,
   }).returning();
   return { id: row.id, pricePhp, onHandPiecePhp, onHandKitPhp };
 }
