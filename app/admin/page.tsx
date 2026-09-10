@@ -45,10 +45,15 @@ export default function DashboardPage() {
   const rangeLabel = served ? formatDateRange(served.from, served.to) : '';
 
   const maxRev = Math.max(1, ...data.dailySummary.map((d) => d.revenue));
-  const dayLabel = (iso: string) => new Date(iso).toLocaleDateString('en-US', { weekday: 'short' });
-  // A long range is a lot of bars; weekday initials stop being readable — or
-  // meaningful, once the same weekday appears three times — well before then.
-  const showDayLabels = data.dailySummary.length <= 14;
+  // Unfiltered, each bar is a Manila week keyed by its Monday, so the label is
+  // that date; a range is read day by day and a weekday says enough. Parsed as
+  // local midnight: a bare YYYY-MM-DD is UTC, and would print the day before
+  // anywhere west of Greenwich.
+  const barLabel = (ymd: string) => new Date(`${ymd}T00:00:00`)
+    .toLocaleDateString('en-US', served ? { weekday: 'short' } : { month: 'short', day: 'numeric' });
+  // A long series is a lot of bars; the labels stop being readable well before
+  // then.
+  const showBarLabels = data.dailySummary.length <= 14;
 
   return (
     <div className="flex flex-col gap-5">
@@ -56,7 +61,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="m-0 font-display text-[24px] font-bold">Dashboard</h1>
           <p className="mt-1 text-[13px] text-ink-muted">
-            {served ? `Performance for ${rangeLabel}.` : 'Weekly & monthly performance at a glance.'}
+            {served ? `Performance for ${rangeLabel}.` : 'All-time performance, with this week and month at a glance.'}
           </p>
         </div>
         <DateRangeFilter from={picked.from} to={picked.to} error={rangeError} onChange={setPicked} />
@@ -99,26 +104,29 @@ export default function DashboardPage() {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-[16px] bg-white p-5 shadow-card">
-          <div className="mb-4 text-[14px] font-bold">{served ? 'Daily order summary' : 'Weekly order summary'}</div>
+          <div className="mb-4 text-[14px] font-bold">{served ? 'Daily order summary' : 'Weekly order summary · all time'}</div>
           {data.dailySummary.length ? (
             <div className="flex h-40 items-end gap-1.5">
               {data.dailySummary.map((d) => (
                 <div key={d.day} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-                  {showDayLabels && <div className="text-[11px] font-semibold text-ink-body">{d.count}</div>}
+                  {showBarLabels && <div className="text-[11px] font-semibold text-ink-body">{d.count}</div>}
                   <div className="w-full rounded-t-md bg-gradient-to-t from-brand-blue to-brand-green" style={{ height: `${(d.revenue / maxRev) * 120 + 4}px` }} title={php(d.revenue)} />
-                  {showDayLabels && <div className="text-[10.5px] text-ink-muted">{dayLabel(d.day)}</div>}
+                  {showBarLabels && <div className="text-[10.5px] text-ink-muted">{barLabel(d.day)}</div>}
                 </div>
               ))}
             </div>
           ) : (
             <div className="py-10 text-center text-[13px] text-ink-muted">
-              {served ? 'No orders in the selected range.' : 'No orders in the last 7 days yet.'}
+              {served ? 'No orders in the selected range.' : 'No orders yet.'}
             </div>
           )}
         </div>
 
         <div className="rounded-[16px] bg-white p-5 shadow-card">
-          <div className="mb-4 text-[14px] font-bold">🔥 Fast-moving items</div>
+          <div className="mb-4 text-[14px] font-bold">
+            <span aria-hidden="true">🔥 </span>
+            <span>{served ? 'Fast-moving items' : 'Fast-moving items · all time'}</span>
+          </div>
           {data.fastMoving.length ? (
             <div className="flex flex-col gap-2.5">
               {data.fastMoving.slice(0, 8).map((item, i) => (

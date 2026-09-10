@@ -1,6 +1,7 @@
-// Admin dashboard analytics: order totals, packing fees, the day-by-day summary
-// and fast-moving items — over the standing week/month/all-time periods, or over
-// a calendar range the admin picked.
+// Admin dashboard analytics: order totals, packing fees, the order summary chart
+// and fast-moving items. Unfiltered, the dashboard is all-time — every order
+// ever placed, with the standing week/month figures for context; with a range,
+// the period figures narrow to the calendar days the admin picked.
 import { and, desc, eq, gte, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import { getDb, orders, orderItems, products, settlements } from './db';
 import { dateRangeBounds } from './report/week';
@@ -104,41 +105,53 @@ export async function packingFeesIn(w: Window): Promise<number> {
   return orderFees.total + settlementFees.total;
 }
 
-// Per-day order count + revenue, for the summary chart. Defaults to the last 7
-// days, which is what the unfiltered dashboard shows.
+// Order count + revenue for the summary chart. A chosen range is read day by
+// day. Without one the dashboard is all-time, and every order ever placed is
+// bucketed by week instead: a per-day series over a shop's whole history is
+// more bars than a chart can label, while weeks stay readable for years.
+//
+// Weeks are Manila weeks, keyed by their Monday, to match the weekly report.
+// The shift is a fixed +8h (Manila has no DST) rather than a named zone, so it
+// resolves identically on postgres-js and pglite.
+const MANILA_SHIFT = sql`interval '8 hours'`;
+const manilaWeek = sql`date_trunc('week', ${orders.createdAt} + ${MANILA_SHIFT})`;
+const utcDay = sql`date_trunc('day', ${orders.createdAt})`;
+
 export async function dailySummary(w?: Window) {
   const db = await getDb();
-  const period = w ? placedWithin(w) : gte(orders.createdAt, daysAgo(7));
+  const bucket = w ? utcDay : manilaWeek;
+  const period = w ? and(placedWithin(w), notCancelled) : notCancelled;
   return db.select({
-    day: sql<string>`to_char(date_trunc('day', ${orders.createdAt}), 'YYYY-MM-DD')`,
+    day: sql<string>`to_char(${bucket}, 'YYYY-MM-DD')`,
     count: sql<number>`count(*)::int`,
     revenue: sql<number>`coalesce(sum(${orders.totalPhp}), 0)::float`,
   }).from(orders)
-    .where(and(period, notCancelled))
-    .groupBy(sql`date_trunc('day', ${orders.createdAt})`)
-    .orderBy(sql`date_trunc('day', ${orders.createdAt})`);
+    .where(period)
+    .groupBy(bucket)
+    .orderBy(bucket);
 }
 
-// Fast-moving items — top products by units sold. Defaults to the last 30 days,
-// falling back to lifetime catalog leaders so a shop with no orders yet still
-// has something to show. A chosen range gets no such fallback: "nothing sold
-// between these dates" is the answer, and lifetime leaders would contradict it.
+// Fast-moving items — top products by units sold. Ranked over every order ever
+// placed by default, falling back to lifetime catalog leaders so a shop with no
+// orders yet still has something to show. A chosen range gets no such fallback:
+// "nothing sold between these dates" is the answer, and lifetime leaders would
+// contradict it.
 export async function fastMovingItems(limit = 8, w?: Window) {
   const db = await getDb();
-  const period = w ? placedWithin(w) : gte(orders.createdAt, daysAgo(30));
-  const recent = await db.select({
+  const period = w ? and(placedWithin(w), notCancelled) : notCancelled;
+  const sold = await db.select({
     productId: orderItems.productId,
     name: orderItems.nameSnapshot,
     unitsSold: sql<number>`sum(${orderItems.qty})::int`,
     revenue: sql<number>`coalesce(sum(${orderItems.lineTotalPhp}), 0)::float`,
   }).from(orderItems)
     .innerJoin(orders, sql`${orders.id} = ${orderItems.orderId}`)
-    .where(and(period, notCancelled))
+    .where(period)
     .groupBy(orderItems.productId, orderItems.nameSnapshot)
     .orderBy(desc(sql`sum(${orderItems.qty})`))
     .limit(limit);
 
-  if (recent.length > 0 || w) return recent;
+  if (sold.length > 0 || w) return sold;
 
   return db.select({
     productId: products.id, name: sql<string>`${products.name} || ' ' || ${products.spec}`,
@@ -149,7 +162,8 @@ export async function fastMovingItems(limit = 8, w?: Window) {
 /**
  * Everything the dashboard renders.
  *
- * With a `range`, the period-scoped figures — totals.range, packingFees.range,
+ * Without a `range`, the chart and the fast movers cover every order ever
+ * placed. With one, the period-scoped figures — totals.range, packingFees.range,
  * the day-by-day summary and the fast movers — narrow to those calendar days.
  * The lifetime totals and the pending-proof queue deliberately do not: one is
  * the context the range is read against, the other is a live work queue that
