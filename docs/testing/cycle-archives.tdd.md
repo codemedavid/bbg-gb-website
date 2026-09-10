@@ -60,3 +60,18 @@ once closed to the cycle archives … the past batches will go back to 0",
   returned 500. Remedy: stop the dev server, `npm run db:push`, restart.
 - Prod has NOT had `drizzle/0033_cycle_archive.sql` applied; it must be
   applied before pushing (see memory `cycle-archive-migration-0033`).
+
+## Addendum 2026-09-10 — "add all the products in the groupbuy and kahati"
+
+Journey: as the admin, opening either board lists a counter/batch for every
+flagged product, even while the storefront is paused, so the catalog is on the
+boards before the cycle opens.
+
+| Stage | Command | Result |
+|---|---|---|
+| RED (`test: reproduce the boards that stay empty…`) | `npx vitest run app/api/admin/groupbuys/route.test.ts app/api/campaigns/route.test.ts` | 5 failed: boards stayed `[]` |
+| GREEN (`fix: both boards open a listing…`) | same | 35 passed; full suite 3385 passed |
+
+Guarantees: `GET /api/admin/groupbuys` seeds a counter per flagged product
+(boards closed included, idempotent); `GET /api/campaigns` seeds a batch per
+flagged product for customers and for admins on a closed storefront, idempotent.
