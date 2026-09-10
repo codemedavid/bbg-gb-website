@@ -314,7 +314,7 @@ describe('names the workbook spells differently from the catalog', () => {
 
     expect(plan.unmatched).toEqual([]);
     expect(plan.updates).toEqual([
-      { row: row.row, productId: p.id, name: p.name, spec: p.spec, fromPhp: p.pricePhp, toPhp: to },
+      { row: row.row, productId: p.id, name: p.name, spec: p.spec, fromPhp: p.pricePhp, fromGroupBuyPhp: null, toPhp: to },
     ]);
   });
 });

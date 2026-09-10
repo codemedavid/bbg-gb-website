@@ -29,6 +29,13 @@ export type PriceableProduct = MatchableProduct & {
   id: string;
   code: string | null;
   pricePhp: number;
+  /**
+   * The product's own group buy KIT price, when it carries one. This — not the
+   * shop price — is what a listing on either board is seeded at
+   * (seededKitPrice), so a product is only at the workbook's price when both
+   * figures say so.
+   */
+  gbPricePerKitPhp: number | null;
   isKahati: boolean;
   isOnHand: boolean;
 };
@@ -46,7 +53,14 @@ export type PriceUpdate = {
   productId: string;
   name: string;
   spec: string;
+  /** The shop (kit) price before. */
   fromPhp: number;
+  /**
+   * The product's own group buy kit price before, or null when it has none.
+   * When present it moves to `toPhp` as well — it is the price the boards
+   * quote, and the workbook is the FINAL PRICE of the boards.
+   */
+  fromGroupBuyPhp: number | null;
   toPhp: number;
 };
 
@@ -96,14 +110,18 @@ export function planPriceAdjustment(
 
   for (const row of rows) {
     const listRow = asPricelistRow(row);
+    const matches = findMatches(listRow, products);
 
+    // An import-only exclusion decides what may become a catalog product; it
+    // has nothing to say about one that already is. So it excludes a row that
+    // matches nothing, and a row that matches a product is priced like any
+    // other. The other kind (a row priced 0) is wrong either way.
     const exclusion = excluded(listRow);
-    if (exclusion) {
+    if (exclusion && !(exclusion.importOnly && matches.length > 0)) {
       plan.excluded.push({ row: row.row, name: row.name, why: exclusion.why });
       continue;
     }
 
-    const matches = findMatches(listRow, products);
     if (matches.length === 0) {
       plan.unmatched.push({ row: row.row, name: row.name, size: row.size, code: row.code });
       continue;
@@ -151,7 +169,11 @@ export function planPriceAdjustment(
     }
 
     for (const product of chosen) {
-      if (product.pricePhp === row.php) {
+      // "At the new price" means BOTH prices. On 2026-09-09 the shop price had
+      // moved on 126 rows while 45 of their group buy prices still held the
+      // old figure, and the boards quote the latter.
+      const groupBuyAgrees = product.gbPricePerKitPhp == null || product.gbPricePerKitPhp === row.php;
+      if (product.pricePhp === row.php && groupBuyAgrees) {
         plan.unchanged.push({
           row: row.row, productId: product.id, name: product.name,
           why: 'already at the new price',
@@ -160,7 +182,7 @@ export function planPriceAdjustment(
       }
       plan.updates.push({
         row: row.row, productId: product.id, name: product.name, spec: product.spec,
-        fromPhp: product.pricePhp, toPhp: row.php,
+        fromPhp: product.pricePhp, fromGroupBuyPhp: product.gbPricePerKitPhp, toPhp: row.php,
       });
     }
   }

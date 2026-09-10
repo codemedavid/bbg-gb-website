@@ -91,6 +91,12 @@ export const ALIASES: Record<string, string> = {
   // The blends keep their doses in the catalog name (the shape TRC35 set), and
   // baseName strips them from the workbook label.
   'tirzepatide+retatrutide': 'tirzepatide20mg+retatrutide10mg',
+  // The catalog misspells both saltform products — "Tesamorilin (Saltform)"
+  // under SALTTS5/SALTTS10 and "CAGRILENTIDE (SALTFORM)" under CGL5 — and the
+  // workbook spells them correctly. baseName keeps the "(Saltform)" qualifier,
+  // so the plain Tesamorelin and Cagrilintide vials stay separate products.
+  tesamorelinsaltform: 'tesamorilinsaltform',
+  cagrilintidesaltform: 'cagrilentidesaltform',
 };
 
 export const aliasOf = (n: string): string => ALIASES[n] ?? n;
@@ -99,14 +105,29 @@ export const aliasOf = (n: string): string => ALIASES[n] ?? n;
 export const rowKey = (r: PricelistRow): string => aliasOf(norm(baseName(r.name)));
 export const productKey = (p: MatchableProduct): string => norm(p.name);
 
+export type Exclusion = {
+  why: string;
+  match: (r: PricelistRow) => boolean;
+  /**
+   * True for a rule about what may BECOME a catalog product. Such a rule has
+   * nothing to say about a product that is already in the catalog, so a price
+   * adjustment applies to one regardless. Absent for a rule about the row's
+   * own data (a price of 0), which is wrong to apply whether or not the
+   * product exists.
+   */
+  importOnly?: true;
+};
+
 /** Rows the import deliberately leaves out. */
-export const EXCLUSIONS: { why: string; match: (r: PricelistRow) => boolean }[] = [
+export const EXCLUSIONS: Exclusion[] = [
   {
-    // The client's instruction for this import: everything except the GTT.
-    // It stays on the MOQ shelf and must not become a catalog product an admin
-    // could add to a Group Buy campaign.
+    // The client's instruction for the import: everything except the GTT. It
+    // stays on the MOQ shelf and must not become a catalog product an admin
+    // could add to a Group Buy campaign. A GTT that IS in the catalog — prod
+    // holds one, on both boards — is priced off the sheet like anything else.
     why: 'FUAN GTT1500 is MOQ-shelf only — excluded from the group buy catalog',
     match: (r) => /gtt/i.test(r.name),
+    importOnly: true,
   },
   {
     // Listed at PHP 0 in the workbook. Importing it would mean inventing a

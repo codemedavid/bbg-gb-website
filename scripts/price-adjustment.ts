@@ -54,7 +54,9 @@ async function main() {
   const catalog = await db.select().from(products);
   const priceable: PriceableProduct[] = catalog.map((p) => ({
     id: p.id, name: p.name, spec: p.spec, code: p.code,
-    pricePhp: Number(p.pricePhp), isKahati: p.isKahati, isOnHand: p.isOnHand,
+    pricePhp: Number(p.pricePhp),
+    gbPricePerKitPhp: p.gbPricePerKitPhp == null ? null : Number(p.gbPricePerKitPhp),
+    isKahati: p.isKahati, isOnHand: p.isOnHand,
   }));
 
   const plan = planPriceAdjustment(rows, priceable);
@@ -71,7 +73,10 @@ async function main() {
     console.log('\n--- PRICE CHANGES ---');
     for (const u of plan.updates) {
       const delta = u.toPhp - u.fromPhp;
-      console.log(`  row ${u.row}  ${u.name} ${u.spec}: ${u.fromPhp} -> ${u.toPhp}  (${delta >= 0 ? '+' : ''}${delta})`);
+      // The group buy price is what the boards quote, so when the product
+      // carries one the report says where THAT is moving from.
+      const board = u.fromGroupBuyPhp == null ? '' : `  [group buy ${u.fromGroupBuyPhp} -> ${u.toPhp}]`;
+      console.log(`  row ${u.row}  ${u.name} ${u.spec}: ${u.fromPhp} -> ${u.toPhp}  (${delta >= 0 ? '+' : ''}${delta})${board}`);
     }
   }
   for (const [label, list] of [
