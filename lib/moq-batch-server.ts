@@ -141,11 +141,19 @@ export type CycleRollover = {
 // Start a new cycle across the whole board: end every running batch that has
 // commitments and open its successor.
 //
-// A batch with nothing committed is deliberately left alone. It is not running
-// in any sense a customer would recognise — it is merely listed — so sealing it
-// as 'approved' would record a supplier order nobody placed, and its successor
-// would be an identical empty row. The count of those comes back in the result
-// rather than being swallowed, so the caller can say what it did and did not do.
+// A batch with nothing committed is not SEALED. It is not running in any sense a
+// customer would recognise — it is merely listed — so sealing it as 'approved'
+// would record a supplier order nobody placed, and its successor would be an
+// identical empty row.
+//
+// It is not left untouched either. "Identical empty row" holds only while the
+// catalog stands still, and such a batch blocked its own replacement — the
+// seeder will not list a product a live batch already carries — so it kept the
+// terms it opened with indefinitely. Each one is RE-READ from its product in
+// place (refreshEmptyCampaign) and counted as `refreshed`.
+//
+// The count of empties comes back in the result rather than being swallowed, so
+// the caller can say what it did and did not do.
 //
 // Sequential, not concurrent: each roll is two writes against the same table and
 // the batch count is in the tens, so the simple loop is fast enough and keeps

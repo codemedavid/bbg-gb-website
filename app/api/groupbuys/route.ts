@@ -6,6 +6,7 @@ import { sweepKahatis } from '@/lib/kahati-server';
 import { kahatiProgressPercent, kahatiClaimedDisplay, sortHatiansByDemand } from '@/lib/kahati';
 import { requireBoardsOpen } from '@/lib/schedule-gate';
 import { openKahatisForGroupBuyProducts } from '@/lib/kahati-seed-bulk';
+import { refreshBoardsForNewCycle } from '@/lib/cycle-boundary-server';
 
 export const GET = handler(async () => {
   // Hatian and Group Buy run on one shared window. Checked before the sweep
@@ -17,6 +18,16 @@ export const GET = handler(async () => {
   // open to join. Without the sweep a hatian that filled and was never revisited
   // would sit on this board at 10/10 — listed, but with no room for anyone.
   await sweepKahatis(db);
+  // Then, if this is the first read of a new cycle, bring every counter nobody
+  // joined up to date with the catalog. Before the seeder below, not after: a
+  // counter that exists is refreshed, and only then does the seeder add one for
+  // a product that genuinely has none.
+  //
+  // This is what makes a new cycle actually reset the board. The admin's "Start
+  // new cycle" button does the same thing, but a cycle opens on the SCHEDULE and
+  // nobody presses anything then — which is how this board came to carry 63
+  // counters left over from August, at August's prices.
+  await refreshBoardsForNewCycle(db);
   // Then open a counter for any group-buy product that now lacks one, so the
   // hatian board reflects the current product list rather than whenever an
   // operator last ran a script. Idempotent through the product link, and after

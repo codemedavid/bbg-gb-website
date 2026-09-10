@@ -49,8 +49,17 @@ describe('the hatian board mirrors the group buy product list', () => {
   it('does not duplicate a product that already has an open counter', async () => {
     // Idempotence is the whole risk here: the board is read constantly, and a
     // reconcile that ran twice would stack duplicate counters for one product.
+    //
+    // Asserted on the ROW, not on the name. The counter was typed by hand but is
+    // LINKED to a product, and a linked counter's name belongs to the catalog —
+    // lib/listing-sync.ts has renamed one on a product edit all along, and the
+    // cycle refresh now does the same on the first read of a cycle. Pinning the
+    // hand-typed name here would pin that away, and this test is about counting
+    // rows, not about who names them.
     const product = await flagged('Retatrutide');
-    await makeGroupBuy({ name: 'Hand-made counter', totalSlots: 10, closesAt: new Date(Date.now() + DAY) });
+    const made = await makeGroupBuy({
+      name: 'Hand-made counter', totalSlots: 10, closesAt: new Date(Date.now() + DAY),
+    });
     const db = await getDb();
     await db.update(groupBuys).set({ productId: product.id });
 
@@ -58,7 +67,27 @@ describe('the hatian board mirrors the group buy product list', () => {
     await GET();
     await GET();
 
-    expect(await namesOf()).toEqual(['Hand-made counter']);
+    const rows = await db.select().from(groupBuys);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(made.id);
+  });
+
+  // The other half of the rule above, stated outright rather than left as a
+  // side effect of the test before it.
+  it('gives a linked hand-made counter the catalog’s name and price', async () => {
+    const product = await flagged('Retatrutide');
+    await makeGroupBuy({
+      name: 'Hand-made counter', pricePerKitPhp: 1234, totalSlots: 10,
+      closesAt: new Date(Date.now() + DAY),
+    });
+    const db = await getDb();
+    await db.update(groupBuys).set({ productId: product.id });
+
+    await GET();
+
+    const [row] = await db.select().from(groupBuys);
+    expect(row.name).toBe('Retatrutide 10mg');
+    expect(Number(row.pricePerKitPhp)).toBe(9000);
   });
 
   it('leaves an unflagged product off the board entirely', async () => {

@@ -1,0 +1,216 @@
+// The boards re-read themselves when a NEW CYCLE opens — without anyone pressing
+// anything.
+//
+// lib/cycle-refresh.test.ts pins WHAT a refresh does. This pins WHEN. The two
+// admin "Start new cycle" buttons are not the trigger the complaint was about:
+// the batch of 2026-09-09 was opened by moving the SCHEDULE, and the boards were
+// read hundreds of times after it opened while still showing August's listings
+// at August's prices. A reset that depends on an operator remembering two
+// buttons is the manual step that let 63 stale counters accumulate since Aug 12.
+//
+// So the first board read inside a cycle performs the refresh, the same lazy way
+// every other lifecycle transition in this app happens (sweepKahatis,
+// openDueBatches, the seeders). There is still no cron.
+//
+// It must happen ONCE per cycle, and that is the whole difficulty. "Have I
+// already refreshed this cycle" cannot be derived from the window — it is state
+// — so the cycle's own key is recorded when it is claimed. That is deliberately
+// not the "currently open" flag lib/schedule.ts warns against: a lost or corrupt
+// key makes a cycle refresh again, which is idempotent, rather than throwing the
+// storefront open.
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+
+// The campaigns board reads the session to decide whether to show scheduled
+// batches, and next/headers has no request context under vitest. Mocked as an
+// anonymous visitor, which is the audience this file is about: nobody is signed
+// in, nobody presses anything, the board just gets loaded.
+vi.mock('@/lib/session', () => {
+  class ApiError extends Error {
+    constructor(public status: number, message: string) { super(message); }
+  }
+  return {
+    ApiError,
+    getSession: async () => null,
+    requireSession: async () => { throw new ApiError(401, 'Authentication required.'); },
+    requireAdmin: async () => { throw new ApiError(403, 'Admin only.'); },
+  };
+});
+import { getDb, groupBuys, moqCampaigns, products, settings } from '@/lib/db';
+import { resetDb, makeProduct, makeGroupBuy, openBoards, closeBoards } from '@/lib/test/harness';
+import { refreshBoardsForNewCycle, BOARDS_REFRESHED_KEY } from './cycle-boundary-server';
+
+const loadCounter = async (id: string) => {
+  const db = await getDb();
+  const [row] = await db.select().from(groupBuys).where(eq(groupBuys.id, id));
+  return row;
+};
+
+const repriceProduct = async (id: string, pricePhp: number) => {
+  const db = await getDb();
+  await db.update(products).set({ pricePhp: String(pricePhp) }).where(eq(products.id, id));
+};
+
+/** Forget that this cycle was ever refreshed — what a brand-new cycle looks like. */
+const forgetRefreshedCycle = async () => {
+  const db = await getDb();
+  await db.delete(settings).where(eq(settings.key, BOARDS_REFRESHED_KEY));
+};
+
+beforeEach(async () => {
+  await resetDb();
+  await openBoards();
+});
+
+describe('refreshBoardsForNewCycle', () => {
+  it('re-reads the empty counters the first time it runs in a cycle', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000 });
+    await repriceProduct(product.id, 2263);
+
+    const result = await refreshBoardsForNewCycle(db);
+
+    expect(result.refreshed).toBe(true);
+    expect(result.kahatis).toBe(1);
+    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2263);
+  });
+
+  // The reason the claim has to be recorded. Without it every board read would
+  // reprice, and an admin who typed a deliberate discount into one counter would
+  // watch it revert on the next page load.
+  it('does not run twice in the same cycle', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000 });
+    await repriceProduct(product.id, 2263);
+
+    await refreshBoardsForNewCycle(db);
+    // The admin's own decision, made mid-cycle, after the refresh has run.
+    await db.update(groupBuys).set({ pricePerKitPhp: '1999' }).where(eq(groupBuys.id, counter.id));
+
+    const second = await refreshBoardsForNewCycle(db);
+
+    expect(second.refreshed).toBe(false);
+    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(1999);
+  });
+
+  it('runs again once the next cycle opens', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000 });
+
+    await refreshBoardsForNewCycle(db);
+    await repriceProduct(product.id, 2263);
+    // A fresh cycle is a different key, which is what unlocks the next refresh.
+    await forgetRefreshedCycle();
+
+    const next = await refreshBoardsForNewCycle(db);
+
+    expect(next.refreshed).toBe(true);
+    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2263);
+  });
+
+  // Nothing to reset while nothing is trading, and no cycle to key the claim on.
+  // Claiming one here would burn the next cycle's refresh on a dark board.
+  it('does nothing while the boards are closed', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000 });
+    await repriceProduct(product.id, 2263);
+    await closeBoards();
+
+    const result = await refreshBoardsForNewCycle(db);
+
+    expect(result.refreshed).toBe(false);
+    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2000);
+  });
+
+  it('re-reads both boards, not just the counters', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isGroupBuy: true, name: 'NAD+', spec: '500mg vial', pricePhp: 3350 });
+    const [batch] = await db.insert(moqCampaigns).values({
+      name: 'Stale name', pricePerKitPhp: '9999', moq: 10, committed: 0,
+      perCustomerMin: 1, shippingPhp: '150', status: 'open',
+      includedProducts: [{ productId: product.id, name: 'NAD+', outOfStock: false }],
+    }).returning();
+
+    const result = await refreshBoardsForNewCycle(db);
+
+    expect(result.campaigns).toBe(1);
+    const [row] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, batch.id));
+    expect(row.name).toBe('NAD+ 500mg vial');
+    expect(Number(row.pricePerKitPhp)).toBe(3350);
+  });
+
+  // A listing customers are committed to is a running batch. Only the two cycle
+  // buttons end one; a board read must never reprice it under its joiners.
+  it('leaves a joined counter alone', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000, claimedSlots: 4 });
+    await repriceProduct(product.id, 2263);
+
+    await refreshBoardsForNewCycle(db);
+
+    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2000);
+  });
+
+  // The board is polled, so two requests can land together and must not both
+  // decide the cycle is unclaimed.
+  //
+  // What this test actually proves is weaker than its name would suggest, and
+  // that is worth stating: PGlite serialises these three calls, so a naive
+  // read-then-write would pass it too. Real exclusivity rests on the guarded
+  // upsert in claimCycle, which is enforced by Postgres and cannot be exercised
+  // on this driver (the suite runs PGlite; production runs postgres-js). The
+  // test is kept as a regression guard on the once-per-cycle CONTRACT.
+  it('claims the cycle once across repeated calls', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000 });
+    await repriceProduct(product.id, 2263);
+
+    const results = await Promise.all([
+      refreshBoardsForNewCycle(db),
+      refreshBoardsForNewCycle(db),
+      refreshBoardsForNewCycle(db),
+    ]);
+
+    expect(results.filter((r) => r.refreshed)).toHaveLength(1);
+  });
+});
+
+// The complaint's own path: nobody presses anything, a customer just opens the
+// board. Reading the counter out of the RESPONSE rather than out of the table,
+// because the response is what the customer was shown the stale price in.
+describe('the board a customer actually loads', () => {
+  it('shows the catalog price on the first read of a new cycle', async () => {
+    const { GET } = await import('@/app/api/groupbuys/route');
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000, name: 'Test Peptide 10mg' });
+    await repriceProduct(product.id, 2263);
+
+    const body = await (await GET()).json();
+
+    const listed = body.data.find((g: { name: string }) => g.name === 'Test Peptide 10mg');
+    expect(Number(listed.pricePerKitPhp)).toBe(2263);
+  });
+
+  it('shows the catalog price on the Group Buy board too', async () => {
+    const { GET } = await import('@/app/api/campaigns/route');
+    const db = await getDb();
+    const product = await makeProduct({ isGroupBuy: true, name: 'NAD+', spec: '500mg vial', pricePhp: 3350 });
+    await db.insert(moqCampaigns).values({
+      name: 'Stale name', pricePerKitPhp: '9999', moq: 10, committed: 0,
+      perCustomerMin: 1, shippingPhp: '150', status: 'open',
+      includedProducts: [{ productId: product.id, name: 'NAD+', outOfStock: false }],
+    });
+
+    const body = await (await GET()).json();
+
+    const listed = body.data.find((c: { name: string }) => c.name === 'NAD+ 500mg vial');
+    expect(listed).toBeDefined();
+    expect(Number(listed.pricePerKitPhp)).toBe(3350);
+  });
+});

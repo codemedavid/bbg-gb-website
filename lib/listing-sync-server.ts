@@ -161,13 +161,31 @@ export async function refreshEmptyCampaign(
 
   const ids = includedProducts.map((entry) => entry.productId);
   const carried = await db.select().from(products).where(inArray(products.id, ids));
-  // A batch carrying several products keeps its own terms — campaignRefreshPatch
-  // relabels each entry and stops there — so every carried product is offered to
-  // it and the patch decides which of them may speak for the batch.
-  let patch: CampaignListingPatch = {};
+
+  // Every carried product is offered the batch, and campaignRefreshPatch decides
+  // what each may do with it: relabel its own entry always, and move the batch's
+  // own terms only when it is the sole product on it.
+  //
+  // The relabelling ACCUMULATES, which is why the array is threaded through the
+  // loop rather than each patch being computed against the stored one. Each call
+  // returns a whole new `includedProducts`, so feeding all of them the original
+  // array and merging the results kept only the last product's rename and
+  // silently dropped every earlier one.
+  let terms: CampaignListingPatch = {};
+  let relabelled = includedProducts;
   for (const product of carried) {
-    patch = { ...patch, ...campaignRefreshPatch(product as SeedableProduct, { ...batch, includedProducts }) };
+    const patch = campaignRefreshPatch(product as SeedableProduct, { ...batch, includedProducts: relabelled });
+    const { includedProducts: entries, ...rest } = patch;
+    if (entries) relabelled = entries;
+    terms = { ...terms, ...rest };
   }
+
+  // Compared by reference: campaignRefreshPatch returns a fresh array only when
+  // it actually renamed something, so an untouched batch is still the very array
+  // that was read and writes nothing.
+  const patch: CampaignListingPatch = relabelled === includedProducts
+    ? terms
+    : { ...terms, includedProducts: relabelled };
   if (!hasListingChanges(patch)) return false;
 
   const updated = await db.update(moqCampaigns).set(patch)

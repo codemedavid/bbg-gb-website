@@ -10,6 +10,7 @@ import { openDueBatches } from '@/lib/moq-batch-server';
 import { openingStatus } from '@/lib/campaign-schedule';
 import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
 import { assertCampaignProductsAreGroupBuy } from '@/lib/channel-guard';
+import { refreshBoardsForNewCycle } from '@/lib/cycle-boundary-server';
 
 // Public: list batches with derived MOQ progress and lifecycle outcome.
 //
@@ -25,6 +26,11 @@ export const GET = handler(async () => {
   await requireBoardsOpenOrAdmin();
   const db = await getDb();
   await openDueBatches(db);
+  // The first read of a new cycle brings every batch nobody joined up to date
+  // with the catalog — the mirror of what the hatian board does, and for the
+  // same reason: a cycle opens on the schedule, and nothing presses the admin's
+  // "Start new cycle" button when it does.
+  await refreshBoardsForNewCycle(db);
   const session = await getSession();
   const rows = await db.select().from(moqCampaigns)
     .where(session?.role === 'admin' ? undefined : ne(moqCampaigns.status, 'scheduled'))

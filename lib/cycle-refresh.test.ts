@@ -237,6 +237,48 @@ describe('rollOpenBatches — the same, on the Group Buy board', () => {
     expect(all[0].status).toBe('open');
   });
 
+  // The batch's own name is one string; the label inside included_products is
+  // another, and the cart and the admin sheet read that one. A refresh that
+  // moved only the first would leave the board and the cart disagreeing.
+  it('relabels the product’s own entry inside included_products', async () => {
+    const db = await getDb();
+    const product = await makeProduct({ isGroupBuy: true, name: 'Retatrutide', pricePhp: 4375 });
+    const batch = await campaignFor({ id: product.id, name: 'Reta' });
+
+    await rollOpenBatches(db);
+
+    expect((await loadBatch(batch.id)).includedProducts)
+      .toEqual([{ productId: product.id, name: 'Retatrutide', outOfStock: false }]);
+  });
+
+  // One product of several cannot speak for the batch: repricing a mixed batch
+  // from one of its members is how a campaign ends up charging for the wrong
+  // thing. Its members' own labels are still their own, so those come forward.
+  it('relabels a mixed batch without repricing or renaming it', async () => {
+    const db = await getDb();
+    const a = await makeProduct({ isGroupBuy: true, name: 'Retatrutide', spec: '10mg', pricePhp: 4375 });
+    const b = await makeProduct({ isGroupBuy: true, name: 'Tirzepatide', spec: '20mg', pricePhp: 4100 });
+    const batch = await campaignFor({ id: a.id, name: 'Reta' }, {
+      name: 'Weight-loss bundle',
+      pricePerKitPhp: '8000',
+      includedProducts: [
+        { productId: a.id, name: 'Reta', outOfStock: false },
+        { productId: b.id, name: 'Tirz', outOfStock: false },
+      ],
+    });
+
+    const result = await rollOpenBatches(db);
+
+    expect(result.refreshed).toBe(1);
+    const row = await loadBatch(batch.id);
+    expect(row.name).toBe('Weight-loss bundle');
+    expect(Number(row.pricePerKitPhp)).toBe(8000);
+    expect(row.includedProducts).toEqual([
+      { productId: a.id, name: 'Retatrutide', outOfStock: false },
+      { productId: b.id, name: 'Tirzepatide', outOfStock: false },
+    ]);
+  });
+
   it('leaves a batch that carries no catalog product alone', async () => {
     const db = await getDb();
     const id = randomUUID();

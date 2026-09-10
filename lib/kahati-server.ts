@@ -356,10 +356,19 @@ export type KahatiCycleRollover = {
 // — closing a hatian card by card leaves no successor, so each counter simply
 // left the board instead of reopening empty for the next cycle.
 //
-// A counter nobody joined is deliberately left alone. It is not running in any
-// sense a customer would recognise — it is merely listed — so sealing it would
-// record a batch that was never ordered and put an identical empty row in its
-// place. The count comes back in the result rather than being swallowed, so the
+// A counter nobody joined is not SEALED. It is not running in any sense a
+// customer would recognise — it is merely listed — so sealing it would record a
+// batch that was never ordered and put an identical empty row in its place.
+//
+// It is not left untouched either, and that distinction is the whole of this
+// fix. "Identical empty row" was only ever true while the catalog stood still.
+// Such a counter blocked its own replacement — the seeder will not list a
+// product that already carries an open counter — so it went on quoting the terms
+// it opened with for as long as it stayed listed, and a cycle across a board of
+// empty counters changed nothing at all. So each one is RE-READ from its product
+// in place (refreshEmptyKahati), and the count comes back as `refreshed`.
+//
+// The count of empties comes back in the result rather than being swallowed, so the
 // caller can say what it did NOT do.
 //
 // A counter that has ALREADY expired below KAHATI_MIN_VIABLE_VIALS is the one
