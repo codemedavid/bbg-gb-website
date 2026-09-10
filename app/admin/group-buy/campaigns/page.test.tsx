@@ -19,7 +19,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, back: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }));
 
-let feed: { data: MoqCampaign[]; isLoading: boolean } = { data: [], isLoading: false };
+let feed: { data: MoqCampaign[] | undefined; isLoading: boolean; error?: Error | null } = { data: [], isLoading: false };
 const deleteMutate = vi.fn();
 const actionMutate = vi.fn();
 const actionMutateAsync = vi.fn();
@@ -75,6 +75,21 @@ describe('the list', () => {
   it('says the board is empty rather than showing nothing at all', () => {
     render(<AdminCampaignsPage />);
     expect(screen.getByText(/no campaigns yet/i)).toBeInTheDocument();
+  });
+});
+
+// A feed that FAILED is not a board with nothing on it. The local database
+// behind its schema answered every admin read with a 500, and this page showed
+// "No campaigns yet" — sending the admin to create campaigns that were all
+// still there. The reason the server gave is what the admin needs to read.
+describe('when the board cannot be loaded', () => {
+  it('shows the server\'s reason instead of an empty board', () => {
+    feed = { data: undefined, isLoading: false, error: new Error('The database is behind schema.ts: column "cycle_key" does not exist.') };
+
+    render(<AdminCampaignsPage />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/column "cycle_key" does not exist/);
+    expect(screen.queryByText(/no campaigns yet/i)).not.toBeInTheDocument();
   });
 });
 

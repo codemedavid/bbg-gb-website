@@ -52,11 +52,11 @@ const OPEN_HATIAN = {
   id: 'gb1', name: 'Bioglutide', pricePerKitPhp: '10400', totalSlots: 10,
   claimedSlots: 5, minVials: 1, repackFeePhp: '150', status: 'open', arrivalGroup: 'white_powder',
 };
-const board: { current: Record<string, unknown>[] } = { current: [OPEN_HATIAN] };
+const board: { current: Record<string, unknown>[]; error: Error | null } = { current: [OPEN_HATIAN], error: null };
 const startCycleMutate = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
-  useAdminGroupBuys: () => ({ data: board.current, isLoading: false }),
+  useAdminGroupBuys: () => ({ data: board.error ? undefined : board.current, isLoading: false, error: board.error }),
   useAdminGroupBuyCommitments: () => ({ data: commitments.current, isLoading: false }),
   useMutate: () => ({
     saveGroupBuy: { mutateAsync: saveMutate, mutate: vi.fn(), isPending: false },
@@ -71,6 +71,7 @@ beforeEach(() => {
   saveMutate.mockReset();
   startCycleMutate.mockReset();
   board.current = [OPEN_HATIAN];
+  board.error = null;
 });
 
 describe('AdminGroupBuysPage', () => {
@@ -527,6 +528,18 @@ describe('board search', () => {
 // The board is this cycle's board; the feed already leaves out every earlier
 // cycle's counters (app/api/admin/groupbuys). What the page owes the admin is
 // the way to those.
+// A feed that failed is not an empty board — see the campaigns page test of
+// the same name.
+describe('when the board cannot be loaded', () => {
+  it('shows the server\'s reason instead of an empty board', () => {
+    board.error = new Error('The database is behind schema.ts: column "kahati_vials" does not exist.');
+
+    render(<Page />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/column "kahati_vials" does not exist/);
+  });
+});
+
 describe('past cycles', () => {
   it('links to the cycle archives', () => {
     render(<Page />);
