@@ -294,11 +294,13 @@ describe('Group Buy channel — a product with Group Buy on', () => {
     // accident: excluding a product from Kahati must not leak onto the board
     // that DOES sell it.
     await makeUnsplittable();
-    await makeMoqCampaign({ moq: 10, perCustomerMin: 1 });
+    const made = await makeMoqCampaign({ moq: 10, perCustomerMin: 1 });
 
     const body = await (await getCampaigns()).json();
 
-    expect(body.data).toHaveLength(1);
+    // The board also seeds a batch for the flagged product on read, so this
+    // asserts on the campaign's presence rather than on the board's length.
+    expect(body.data.map((c: { id: string }) => c.id)).toContain(made.id);
   });
 
   it('accepts a Group Buy commitment at checkout', async () => {

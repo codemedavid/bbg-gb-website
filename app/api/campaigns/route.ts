@@ -8,6 +8,7 @@ import { getPackingFees, getLatestCycleKey } from '@/lib/settings';
 import { LIVE_CAMPAIGN_STATUSES } from '@/lib/cycle-archive';
 import { describeBatch } from '@/lib/group-buy';
 import { openDueBatches } from '@/lib/moq-batch-server';
+import { openCampaignsForGroupBuyProducts } from '@/lib/campaign-seed-bulk';
 import { openingStatus } from '@/lib/campaign-schedule';
 import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
 import { assertCampaignProductsAreGroupBuy } from '@/lib/channel-guard';
@@ -32,6 +33,13 @@ export const GET = handler(async () => {
   // same reason: a cycle opens on the schedule, and nothing presses the admin's
   // "Start new cycle" button when it does.
   await refreshBoardsForNewCycle(db);
+  // Then open batch #1 for every flagged product not yet on the board — the
+  // mirror of what the hatian board does on read. Nothing on any route did
+  // this before; only a QA script did, so a board whose every batch had been
+  // cancelled stayed empty until somebody remembered to run it. After the
+  // cycle refresh, so a batch that exists is brought forward before a missing
+  // one is opened.
+  await openCampaignsForGroupBuyProducts();
   const session = await getSession();
   // A customer sees what can be joined. The admin sees THIS cycle's board:
   // every batch still trading, plus those that ended in the current cycle. A

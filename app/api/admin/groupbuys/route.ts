@@ -6,6 +6,7 @@ import { groupBuySchema } from '@/lib/admin-schemas';
 import { getPackingFees, getLatestCycleKey } from '@/lib/settings';
 import { LIVE_KAHATI_STATUSES } from '@/lib/cycle-archive';
 import { sweepKahatis } from '@/lib/kahati-server';
+import { openKahatisForGroupBuyProducts } from '@/lib/kahati-seed-bulk';
 import { KAHATI_MAX_VIALS } from '@/lib/kahati';
 import { openingStatus } from '@/lib/campaign-schedule';
 
@@ -15,6 +16,12 @@ export const GET = handler(async () => {
   // Resolve expired counters (cancel unfilled, close full) before listing so the
   // admin board reflects the real lifecycle state on load.
   await sweepKahatis(db);
+  // Then open a counter for every flagged product that lacks one. The public
+  // board does this on read too, but that read is gated shut outside trading
+  // hours — and the admin's board is where the catalog gets looked over BEFORE
+  // a cycle opens. A paused storefront with every counter cancelled used to
+  // show the admin an empty board with no way to get the products back on it.
+  await openKahatisForGroupBuyProducts();
   // This cycle's board: every counter still trading, plus the ones that ended
   // in the current cycle. A counter that ended in an earlier cycle is in
   // Admin → Cycle archives under that cycle, vials and all — listing it here
