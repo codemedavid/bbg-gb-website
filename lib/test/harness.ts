@@ -6,7 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { getDb, users, categories, products, groupBuys, moqCampaigns, moqProducts, paymentMethods } from '@/lib/db';
+import { getDb, users, categories, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settings } from '@/lib/db';
 import { hashPassword, signToken } from '@/lib/auth';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
@@ -67,6 +67,20 @@ export async function openBoards(): Promise<void> {
   await setScheduleRecurrence({
     openDay: today, openTime: '00:00', closeDay: today, closeTime: '00:00',
   });
+  // A cycle that is OPEN is a cycle already started: the first board read of a
+  // new cycle seals every joined listing and opens its successor, and a test
+  // that seeds a half-full counter and then reads the board is describing the
+  // middle of a cycle, not its first moment. Recording the claim here keeps
+  // those tests about what they say they are about. Tests of the boundary
+  // itself forget the claim again (forgetRefreshedCycle).
+  const { getCurrentCycle } = await import('@/lib/settings');
+  const { cycleKeyOf } = await import('@/lib/schedule-recurrence');
+  const { BOARDS_REFRESHED_KEY } = await import('@/lib/cycle-boundary-server');
+  const cycle = await getCurrentCycle(new Date());
+  if (!cycle) throw new Error('openBoards: the recurrence it just wrote is not open');
+  const db = await getDb();
+  await db.insert(settings).values({ key: BOARDS_REFRESHED_KEY, value: cycleKeyOf(cycle) })
+    .onConflictDoUpdate({ target: settings.key, set: { value: cycleKeyOf(cycle) } });
 }
 
 /**

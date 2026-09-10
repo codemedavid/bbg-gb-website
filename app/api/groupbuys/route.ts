@@ -18,10 +18,11 @@ export const GET = handler(async () => {
   // open to join. Without the sweep a hatian that filled and was never revisited
   // would sit on this board at 10/10 — listed, but with no room for anyone.
   await sweepKahatis(db);
-  // Then, if this is the first read of a new cycle, bring every counter nobody
+  // Then, if this is the first read of a new cycle, start it: seal every counter
+  // joined last cycle (opening its successor) and bring every counter nobody
   // joined up to date with the catalog. Before the seeder below, not after: a
-  // counter that exists is refreshed, and only then does the seeder add one for
-  // a product that genuinely has none.
+  // counter that exists is rolled or refreshed, and only then does the seeder
+  // add one for a product that genuinely has none.
   //
   // This is what makes a new cycle actually reset the board. The admin's "Start
   // new cycle" button does the same thing, but a cycle opens on the SCHEDULE and

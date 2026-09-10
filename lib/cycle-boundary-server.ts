@@ -1,17 +1,18 @@
-// The boards re-read themselves when a new cycle opens.
+// The boards start their new cycle themselves when the schedule opens one.
 //
-// lib/listing-sync.ts decides WHAT a refresh does to one listing. This decides
-// WHEN it happens to all of them, and the answer is: on the first board read
-// inside a cycle the boards have not yet been refreshed for.
+// lib/kahati-server.ts rollOpenKahatis and lib/moq-batch-server.ts
+// rollOpenBatches decide WHAT a new cycle does to each listing: seal the ones
+// people joined and open their successors, re-read the empty ones from the
+// catalog. This decides WHEN it happens to all of them, and the answer is: on
+// the first board read inside a cycle that has not yet been started.
 //
-// The two admin "Start new cycle" buttons already refresh (rollOpenKahatis,
-// rollOpenBatches), and they remain the control for ENDING batches people have
-// joined. But they cannot be the only trigger for the reset. A cycle is opened
-// by the SCHEDULE — an admin edits the recurrence, or simply waits for 22:00
-// Manila — and nothing about that press a button. The boards of 2026-09-09 were
-// read continuously after their cycle opened and went on showing August's
-// listings at August's prices, because the reset was waiting on an operator to
-// remember it.
+// The two admin "Start new cycle" buttons run the same roll, and remain the way
+// to end a cycle EARLY. But they cannot be the only trigger. A cycle is opened
+// by the SCHEDULE — an admin edits the recurrence, or simply waits for the
+// opening hour — and nothing about that presses a button. The boards of
+// 2026-09-09 were read continuously after their cycle opened and went on
+// showing August's listings at August's prices, and the previous cycle's joined
+// counters, because the reset was waiting on an operator to remember it.
 //
 // So this rides the same lazy reconciliation every other lifecycle transition
 // here rides (sweepKahatis, openDueBatches, the two seeders). There is still no
@@ -34,11 +35,12 @@
 // is idempotent, so the cost of the bad case is one extra UPDATE against rows
 // that already match the catalog.
 // ---------------------------------------------------------------------------
-import { and, eq, ne, sql } from 'drizzle-orm';
-import { getDb, groupBuys, moqCampaigns, settings } from '@/lib/db';
+import { ne, sql } from 'drizzle-orm';
+import { getDb, settings } from '@/lib/db';
 import { getCurrentCycle } from './settings';
 import { cycleKeyOf } from './schedule-recurrence';
-import { refreshEmptyKahati, refreshEmptyCampaign } from './listing-sync-server';
+import { rollOpenKahatis } from './kahati-server';
+import { rollOpenBatches } from './moq-batch-server';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
@@ -48,13 +50,19 @@ export const BOARDS_REFRESHED_KEY = 'boards_refreshed_for_cycle';
 export type BoardRefreshResult = {
   /** False when the cycle was already claimed, or when nothing is trading. */
   refreshed: boolean;
-  /** Hatian counters brought forward. Zero unless this call won the claim. */
+  /** Empty hatian counters brought forward. Zero unless this call won the claim. */
   kahatis: number;
-  /** Campaign batches brought forward. Zero unless this call won the claim. */
+  /** Empty campaign batches brought forward. Zero unless this call won the claim. */
   campaigns: number;
+  /** Joined hatian counters sealed, each with a fresh successor opened. */
+  sealedKahatis: number;
+  /** Joined campaign batches sealed, each with the next batch opened. */
+  sealedCampaigns: number;
 };
 
-const NOTHING: BoardRefreshResult = { refreshed: false, kahatis: 0, campaigns: 0 };
+const NOTHING: BoardRefreshResult = {
+  refreshed: false, kahatis: 0, campaigns: 0, sealedKahatis: 0, sealedCampaigns: 0,
+};
 
 /**
  * Claim this cycle's refresh, atomically. True exactly once per cycle key.
@@ -78,20 +86,30 @@ async function claimCycle(db: Db, cycleKey: string): Promise<boolean> {
 }
 
 /**
- * Brings every listing nobody joined up to date, once per cycle.
+ * Starts the new cycle on both boards, once per cycle.
  *
  * Called from the two board routes, after their sweeps and BEFORE their seeders:
- * a listing that exists is refreshed first, and only then does the seeder add
- * one for a product that genuinely has none. The other order would open a
- * correctly-priced listing and then have nothing left to refresh, which works by
- * accident and reads as though the order does not matter.
+ * a listing that exists is rolled or refreshed first, and only then does the
+ * seeder add one for a product that genuinely has none. The other order would
+ * open a correctly-priced listing and then have nothing left to refresh, which
+ * works by accident and reads as though the order does not matter.
  *
  * A dark board does nothing at all. There is no cycle to key the claim on, and
  * claiming one anyway would spend the next cycle's refresh on a closed board.
  *
- * Only EMPTY listings move; refreshEmptyKahati and refreshEmptyCampaign guard
- * every write on that. A listing people are committed to is a running batch, and
- * only the admin cycle controls end one.
+ * This is the SAME operation as the two admin "Start new cycle" buttons —
+ * rollOpenKahatis and rollOpenBatches — because a cycle boundary is what those
+ * buttons stand in for. Every listing people joined belongs to the cycle that
+ * just ended: the boards were shut between its close and this open, so nothing
+ * on them can have been joined in the new cycle yet. Each one is sealed, its
+ * commitments staying with it, and an empty successor opens in its place;
+ * listings nobody joined are re-read from the catalog. Before this, the
+ * boundary only repriced empties and left last cycle's joined counters trading
+ * on as if they were this cycle's, until an operator remembered the button.
+ *
+ * Once claimed, a cycle is never rolled again by a board read: anything joined
+ * from here on is this cycle's running batch, and only the admin controls end
+ * one early.
  */
 export async function refreshBoardsForNewCycle(
   db: Db,
@@ -102,34 +120,29 @@ export async function refreshBoardsForNewCycle(
 
   if (!await claimCycle(db, cycleKeyOf(cycle))) return NOTHING;
 
-  // Read after the claim is won, so the loser of a race does not spend two
-  // queries fetching rows it will not touch.
-  const counters = await db.select().from(groupBuys)
-    .where(and(eq(groupBuys.status, 'open'), eq(groupBuys.claimedSlots, 0)));
-  const batches = await db.select().from(moqCampaigns)
-    .where(and(eq(moqCampaigns.status, 'open'), eq(moqCampaigns.committed, 0)));
-
-  let kahatis = 0;
-  let campaigns = 0;
-
-  // Sequential and individually contained, for the reason rollOpenKahatis is:
-  // the boards are tens of rows, and one listing whose product cannot be read
-  // must not abort the reset for every other listing on the board.
-  for (const counter of counters) {
-    try {
-      if (await refreshEmptyKahati(db, counter)) kahatis += 1;
-    } catch {
-      // Left as it was. The next cycle tries again, and the board is still
-      // readable — which is the point of not letting this throw into a GET.
-    }
+  // Each roll is individually contained: one listing whose product cannot be
+  // read must not abort the reset for every other listing on the board, and
+  // neither board's failure may throw into a customer's GET. rollOpenKahatis
+  // contains per counter already; rollOpenBatches does not, so it is wrapped
+  // here and its progress up to the failure stands.
+  let kahati = { rolled: [] as unknown[], refreshed: 0 };
+  let campaign = { rolled: [] as unknown[], refreshed: 0 };
+  try {
+    kahati = await rollOpenKahatis(db, now);
+  } catch {
+    // Left as it was. The next cycle tries again, and the board is still readable.
   }
-  for (const batch of batches) {
-    try {
-      if (await refreshEmptyCampaign(db, batch)) campaigns += 1;
-    } catch {
-      // As above.
-    }
+  try {
+    campaign = await rollOpenBatches(db, now);
+  } catch {
+    // As above.
   }
 
-  return { refreshed: true, kahatis, campaigns };
+  return {
+    refreshed: true,
+    kahatis: kahati.refreshed,
+    campaigns: campaign.refreshed,
+    sealedKahatis: kahati.rolled.length,
+    sealedCampaigns: campaign.rolled.length,
+  };
 }

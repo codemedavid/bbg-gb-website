@@ -524,6 +524,69 @@ describe('board search', () => {
   });
 });
 
+// Every cycle seals each joined counter and opens a fresh one beside it, and
+// the sealed one keeps its vials. Listed together, the board after a cycle reads
+// as though "Start new cycle" removed nothing: last cycle's 6/10 sits next to
+// this cycle's 0/10, product after product, and the sealed rows outnumber the
+// live ones within a few cycles. The board is this cycle's; the past is a click
+// away, not the default view.
+describe('past counters', () => {
+  const LIVE = { ...OPEN_HATIAN, id: 'live', name: 'Bioglutide', claimedSlots: 0 };
+  const SEALED = { ...OPEN_HATIAN, id: 'sealed', name: 'Bioglutide (Aug)', status: 'closed', claimedSlots: 6 };
+  const CANCELLED = { ...OPEN_HATIAN, id: 'gone', name: 'KLOW (Aug)', status: 'cancelled', claimedSlots: 2 };
+  const PASALO = { ...OPEN_HATIAN, id: 'pasalo', name: 'Reta (pasalo)', status: 'pasalo', claimedSlots: 5 };
+
+  it('hides sealed and cancelled counters by default', () => {
+    board.current = [LIVE, SEALED, CANCELLED];
+
+    render(<Page />);
+
+    expect(screen.getByText('Bioglutide')).toBeInTheDocument();
+    expect(screen.queryByText('Bioglutide (Aug)')).not.toBeInTheDocument();
+    expect(screen.queryByText('KLOW (Aug)')).not.toBeInTheDocument();
+  });
+
+  // A pasalo counter is still trading, and still owes an answer.
+  it('keeps a pasalo counter on the board', () => {
+    board.current = [LIVE, PASALO];
+
+    render(<Page />);
+
+    expect(screen.getByText('Reta (pasalo)')).toBeInTheDocument();
+  });
+
+  it('shows the past counters when asked, and says how many there are', () => {
+    board.current = [LIVE, SEALED, CANCELLED];
+
+    render(<Page />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /past counter/i }));
+
+    expect(screen.getByText('Bioglutide (Aug)')).toBeInTheDocument();
+    expect(screen.getByText('KLOW (Aug)')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /2 past counters/i })).toBeInTheDocument();
+  });
+
+  // Nothing to reveal means no control to reveal it.
+  it('offers no toggle when nothing has ended', () => {
+    board.current = [LIVE];
+
+    render(<Page />);
+
+    expect(screen.queryByRole('checkbox', { name: /past counter/i })).not.toBeInTheDocument();
+  });
+
+  it('searches within whichever view is showing', () => {
+    board.current = [LIVE, SEALED];
+
+    render(<Page />);
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'Aug' } });
+
+    expect(screen.getByText(/no counter matches/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /past counter/i }));
+    expect(screen.getByText('Bioglutide (Aug)')).toBeInTheDocument();
+  });
+});
+
 // "Sa kahati po? Then sa pasalo if sino ang nag commit?" — asked in the buyers'
 // group chat, and unanswerable from this panel. It listed everyone who
 // committed to a counter without saying which of the two selling windows they

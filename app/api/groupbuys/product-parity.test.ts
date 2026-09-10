@@ -82,6 +82,13 @@ describe('the hatian board mirrors the group buy product list', () => {
     });
     const db = await getDb();
     await db.update(groupBuys).set({ productId: product.id });
+    // A stale counter is re-read on the first board read of a NEW cycle, and
+    // openBoards records the cycle as already started. Forget that, so this
+    // read is the one that starts it.
+    const { settings } = await import('@/lib/db');
+    const { eq } = await import('drizzle-orm');
+    const { BOARDS_REFRESHED_KEY } = await import('@/lib/cycle-boundary-server');
+    await db.delete(settings).where(eq(settings.key, BOARDS_REFRESHED_KEY));
 
     await GET();
 

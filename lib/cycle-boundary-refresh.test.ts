@@ -19,7 +19,7 @@
 // key makes a cycle refresh again, which is idempotent, rather than throwing the
 // storefront open.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 // The campaigns board reads the session to decide whether to show scheduled
 // batches, and next/headers has no request context under vitest. Mocked as an
@@ -37,7 +37,7 @@ vi.mock('@/lib/session', () => {
   };
 });
 import { getDb, groupBuys, moqCampaigns, products, settings } from '@/lib/db';
-import { resetDb, makeProduct, makeGroupBuy, openBoards, closeBoards } from '@/lib/test/harness';
+import { resetDb, makeProduct, makeGroupBuy, makeMoqCampaign, openBoards, closeBoards } from '@/lib/test/harness';
 import { refreshBoardsForNewCycle, BOARDS_REFRESHED_KEY } from './cycle-boundary-server';
 
 const loadCounter = async (id: string) => {
@@ -60,6 +60,9 @@ const forgetRefreshedCycle = async () => {
 beforeEach(async () => {
   await resetDb();
   await openBoards();
+  // openBoards records the cycle as already started, which is right for every
+  // other test. This file is about the moment BEFORE that.
+  await forgetRefreshedCycle();
 });
 
 describe('refreshBoardsForNewCycle', () => {
@@ -143,17 +146,56 @@ describe('refreshBoardsForNewCycle', () => {
     expect(Number(row.pricePerKitPhp)).toBe(3350);
   });
 
-  // A listing customers are committed to is a running batch. Only the two cycle
-  // buttons end one; a board read must never reprice it under its joiners.
-  it('leaves a joined counter alone', async () => {
+  // A counter people joined LAST cycle is last cycle's batch. When the schedule
+  // opens the next cycle, nobody has pressed "Start new cycle", and the board
+  // must not go on offering the previous cycle's counter — vials and all — as
+  // though it were this cycle's. The boundary seals it and opens its successor,
+  // exactly as the button does; the commitments stay on the sealed row.
+  it('seals a joined counter and opens an empty successor', async () => {
     const db = await getDb();
     const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
     const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000, claimedSlots: 4 });
-    await repriceProduct(product.id, 2263);
+
+    const result = await refreshBoardsForNewCycle(db);
+
+    expect(result.sealedKahatis).toBe(1);
+    const sealed = await loadCounter(counter.id);
+    expect(sealed.status).toBe('closed');
+    expect(sealed.claimedSlots).toBe(4);
+    const open = await db.select().from(groupBuys)
+      .where(and(eq(groupBuys.productId, product.id), eq(groupBuys.status, 'open')));
+    expect(open).toHaveLength(1);
+    expect(open[0].claimedSlots).toBe(0);
+  });
+
+  it('seals a joined batch and opens the next batch in its series', async () => {
+    const db = await getDb();
+    const batch = await makeMoqCampaign({ committed: 3, moq: 10 });
+
+    const result = await refreshBoardsForNewCycle(db);
+
+    expect(result.sealedCampaigns).toBe(1);
+    const [old] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, batch.id));
+    expect(old.status).not.toBe('open');
+    expect(old.committed).toBe(3);
+    const open = await db.select().from(moqCampaigns)
+      .where(and(eq(moqCampaigns.seriesId, batch.seriesId), eq(moqCampaigns.status, 'open')));
+    expect(open).toHaveLength(1);
+    expect(open[0].committed).toBe(0);
+    expect(open[0].batchNo).toBe(2);
+  });
+
+  // Mid-cycle, a joined counter is a running batch: the claim is already spent,
+  // so a later board read must never end it under its joiners.
+  it('does not seal a counter joined after the cycle was claimed', async () => {
+    const db = await getDb();
+    await refreshBoardsForNewCycle(db);
+    const product = await makeProduct({ isKahati: true, pricePhp: 2000 });
+    const counter = await makeGroupBuy({ productId: product.id, pricePerKitPhp: 2000, claimedSlots: 4 });
 
     await refreshBoardsForNewCycle(db);
 
-    expect(Number((await loadCounter(counter.id)).pricePerKitPhp)).toBe(2000);
+    expect((await loadCounter(counter.id)).status).toBe('open');
   });
 
   // The board is polled, so two requests can land together and must not both
