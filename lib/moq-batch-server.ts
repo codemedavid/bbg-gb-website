@@ -10,7 +10,7 @@
 // stale read and push a batch past its cap. That is what makes 11/10
 // unreachable rather than merely unlikely — no application-level check can
 // promise the same under concurrency.
-import { and, asc, desc, eq, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import { getDb, moqCampaigns } from '@/lib/db';
 import { MOQ_BATCH_MAX_KITS, batchCapacity, canRollBatch, isBatchFull, nextBatchDeadline } from './group-buy';
 import { refreshEmptyCampaign } from './listing-sync-server';
@@ -136,6 +136,12 @@ export type CycleRollover = {
    * listings the cycle actually changed.
    */
   refreshed: number;
+  /**
+   * Campaigns whose every batch had ended — approved mid-cycle, with nothing
+   * open behind it — given a fresh batch at 0 in the same series. A cycle
+   * takes a campaign back to zero; it never takes it off the board.
+   */
+  reopened: number;
 };
 
 // Start a new cycle across the whole board: end every running batch that has
@@ -182,7 +188,42 @@ export async function rollOpenBatches(db: Db, now: Date = new Date()): Promise<C
     const result = await rollBatch(db, batch);
     if (result) rolled.push(result);
   }
-  return { rolled, skippedEmpty, refreshed };
+  const reopened = await reopenApprovedSeries(db);
+  return { rolled, skippedEmpty, refreshed, reopened };
+}
+
+// Approving a batch ends it and leaves its series with nothing open, and the
+// seeder will not open another: an approved batch still carries its products
+// (lib/campaign-seed-bulk.ts LIVE_STATUSES). Between cycles that is right —
+// the campaign is proceeding — but on the NEXT cycle it would mean the campaign
+// is simply gone from the board. A cycle takes every campaign back to 0; it
+// does not remove one. So every series whose newest batch is approved and
+// which has no open or scheduled batch gets the successor an admin's Roll
+// would have given it. Cancelled series are left alone: that was a decision.
+async function reopenApprovedSeries(db: Db): Promise<number> {
+  const approved = await db.select().from(moqCampaigns)
+    .where(eq(moqCampaigns.status, 'approved'))
+    .orderBy(asc(moqCampaigns.createdAt));
+  if (!approved.length) return 0;
+  const stillOpen = await db.select({ seriesId: moqCampaigns.seriesId }).from(moqCampaigns)
+    .where(inArray(moqCampaigns.status, ['open', 'scheduled']));
+  const openSeries = new Set(stillOpen.map((b) => b.seriesId));
+
+  // Newest batch per series, so the successor continues from the right number.
+  const newestBySeries = new Map<string, BatchRow>();
+  for (const batch of approved) {
+    const key = seriesOf(batch);
+    const seen = newestBySeries.get(key);
+    if (!seen || batch.batchNo > seen.batchNo) newestBySeries.set(key, batch);
+  }
+
+  let reopened = 0;
+  for (const [seriesId, batch] of newestBySeries) {
+    if (openSeries.has(seriesId)) continue;
+    await openSuccessor(db, batch);
+    reopened += 1;
+  }
+  return reopened;
 }
 
 // Open the batch that follows a completed one. Successors inherit the terms

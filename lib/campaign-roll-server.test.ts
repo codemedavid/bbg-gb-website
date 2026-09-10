@@ -155,6 +155,50 @@ describe('rollOpenBatches', () => {
     expect(second.rolled).toHaveLength(0);
   });
 
+  // Approving a batch mid-cycle ends it with nothing open in its series, and
+  // the seeder will not open another — an approved batch still "carries" the
+  // product. Left like that, the campaign would simply not be on the next
+  // cycle's board. A cycle does not remove a campaign; it takes it back to 0.
+  it('reopens a campaign whose only batch was approved, at 0, in the same series', async () => {
+    const db = await getDb();
+    const approved = await makeMoqCampaign({ committed: 4, status: 'approved' });
+
+    const result = await rollOpenBatches(db);
+
+    expect(result.reopened).toBe(1);
+    const open = await db.select().from(moqCampaigns)
+      .where(and(eq(moqCampaigns.seriesId, approved.seriesId), eq(moqCampaigns.status, 'open')));
+    expect(open).toHaveLength(1);
+    expect(open[0]).toMatchObject({ committed: 0, batchNo: 2 });
+    const [old] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, approved.id));
+    expect(old).toMatchObject({ status: 'approved', committed: 4 });
+  });
+
+  it('does not reopen a series that already has an open batch', async () => {
+    const db = await getDb();
+    const approved = await makeMoqCampaign({ committed: 4, status: 'approved' });
+    await makeMoqCampaign({ seriesId: approved.seriesId, batchNo: 2 });
+
+    const result = await rollOpenBatches(db);
+
+    expect(result.reopened).toBe(0);
+    const rows = await db.select().from(moqCampaigns).where(eq(moqCampaigns.seriesId, approved.seriesId));
+    expect(rows).toHaveLength(2);
+  });
+
+  // Cancelled is the admin's decision; the seeder reopens the product in a new
+  // series if it is still flagged for group buy, which is the existing rule.
+  it('leaves a cancelled campaign cancelled', async () => {
+    const db = await getDb();
+    const cancelled = await makeMoqCampaign({ committed: 4, status: 'cancelled' });
+
+    const result = await rollOpenBatches(db);
+
+    expect(result.reopened).toBe(0);
+    const rows = await db.select().from(moqCampaigns).where(eq(moqCampaigns.seriesId, cancelled.seriesId));
+    expect(rows).toHaveLength(1);
+  });
+
   it('rolls each series independently', async () => {
     const db = await getDb();
     const a = await makeMoqCampaign({ committed: 1 });

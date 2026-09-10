@@ -59,10 +59,12 @@ export type BoardRefreshResult = {
   sealedKahatis: number;
   /** Joined campaign batches sealed, each with the next batch opened. */
   sealedCampaigns: number;
+  /** Campaigns whose batch was approved last cycle, given a fresh batch at 0. */
+  reopenedCampaigns: number;
 };
 
 const NOTHING: BoardRefreshResult = {
-  refreshed: false, kahatis: 0, campaigns: 0, sealedKahatis: 0, sealedCampaigns: 0,
+  refreshed: false, kahatis: 0, campaigns: 0, sealedKahatis: 0, sealedCampaigns: 0, reopenedCampaigns: 0,
 };
 
 /**
@@ -140,7 +142,7 @@ export async function refreshBoardsForNewCycle(
   // contains per counter already; rollOpenBatches does not, so it is wrapped
   // here and its progress up to the failure stands.
   let kahati = { rolled: [] as unknown[], refreshed: 0 };
-  let campaign = { rolled: [] as unknown[], refreshed: 0 };
+  let campaign = { rolled: [] as unknown[], refreshed: 0, reopened: 0 };
   try {
     kahati = await rollOpenKahatis(db, now);
   } catch {
@@ -166,5 +168,6 @@ export async function refreshBoardsForNewCycle(
     campaigns: campaign.refreshed,
     sealedKahatis: kahati.rolled.length,
     sealedCampaigns: campaign.rolled.length,
+    reopenedCampaigns: campaign.reopened,
   };
 }

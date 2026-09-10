@@ -186,6 +186,22 @@ describe('refreshBoardsForNewCycle', () => {
     expect(open[0].batchNo).toBe(2);
   });
 
+  // A campaign the admin approved last cycle has nothing open in its series.
+  // The new cycle gives it a fresh batch at 0 rather than leaving it off the
+  // board — a cycle never removes a campaign.
+  it('brings an approved campaign back at 0', async () => {
+    const db = await getDb();
+    const approved = await makeMoqCampaign({ committed: 4, status: 'approved' });
+
+    const result = await refreshBoardsForNewCycle(db);
+
+    expect(result.reopenedCampaigns).toBe(1);
+    const open = await db.select().from(moqCampaigns)
+      .where(and(eq(moqCampaigns.seriesId, approved.seriesId), eq(moqCampaigns.status, 'open')));
+    expect(open).toHaveLength(1);
+    expect(open[0].committed).toBe(0);
+  });
+
   // Mid-cycle, a joined counter is a running batch: the claim is already spent,
   // so a later board read must never end it under its joiners.
   it('does not seal a counter joined after the cycle was claimed', async () => {
