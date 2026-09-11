@@ -69,12 +69,26 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
   const { id } = await ctx.params;
   const b = schema.parse(await req.json());
   const db = await getDb();
-  const [order] = await db.select().from(orders).where(eq(orders.id, id));
-  if (!order) throw new ApiError(404, 'Order not found.');
 
-  const paymentStatus = paymentVerdictFor(b.paymentStatus, b.status, order.paymentStatus);
+  // The order is read INSIDE the transaction, under a row lock, because the
+  // release below is guarded on its status and that guard has to be true at the
+  // moment of the write rather than at some earlier moment. Read outside, two
+  // admins cancelling the same order — a double-click is enough — both saw
+  // 'pending', both concluded they were the transition into 'cancelled', and
+  // both released: a hatian lost twice the vials the order held, an MOQ counter
+  // dropped twice the commitment, and an on-hand product was restocked twice,
+  // inventing stock that was never bought. Nothing errored, so nothing was
+  // noticed until a batch went to the supplier short.
+  //
+  // FOR UPDATE makes the second request wait for the first to commit, and the
+  // re-read it then does sees status = 'cancelled', so it skips the release —
+  // the same way the repeat-cancel case has always behaved sequentially.
+  const { updated, order, paymentStatus } = await db.transaction(async (tx) => {
+    const [order] = await tx.select().from(orders).where(eq(orders.id, id)).for('update');
+    if (!order) throw new ApiError(404, 'Order not found.');
 
-  const updated = await db.transaction(async (tx) => {
+    const paymentStatus = paymentVerdictFor(b.paymentStatus, b.status, order.paymentStatus);
+
     const [row] = await tx.update(orders).set({
       status: b.status as never,
       paymentStatus,
@@ -173,7 +187,7 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
         }
       }
     }
-    return row;
+    return { updated: row, order, paymentStatus };
   });
 
   // Only when it actually moved. A fulfilment-only change logging a payment

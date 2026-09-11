@@ -38,9 +38,11 @@ function indexesInSchema(): Set<string> {
     } catch {
       continue; // not a pgTable — enums, helpers, constants
     }
-    for (const idx of config.indexes) names.add(idx.config.name);
+    // Drizzle types both names as optional — an index or constraint may be left
+    // unnamed, in which case Postgres picks one and no migration can name it.
+    for (const idx of config.indexes) if (idx.config.name) names.add(idx.config.name);
     // A unique() on a column produces an index too, under the constraint's name.
-    for (const uq of config.uniqueConstraints) names.add(uq.name);
+    for (const uq of config.uniqueConstraints) if (uq.name) names.add(uq.name);
   }
   return names;
 }

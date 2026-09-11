@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { resolveStorageDriver } from './storage-driver';
+import { DEV_JWT_SECRET } from './jwt-config';
 
 // Whitespace/newlines are never valid unencoded in a connection URL, but they
 // sneak in when the value is pasted into a dashboard with a line wrap — strip
@@ -11,7 +12,12 @@ export const env = {
   databaseUrl: sanitizeUrl(process.env.DATABASE_URL),
   // Where PGlite persists when databaseUrl is empty. Tests use 'memory://'.
   pglitePath: process.env.PGLITE_PATH || './.pglite',
-  jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret-change-me',
+  // Falls back to a value committed in this repository, which is safe only
+  // because scripts/check-config.ts refuses to build a production deploy that
+  // relies on it and lib/auth.ts refuses to sign with it there. See
+  // lib/jwt-config.ts.
+  jwtSecret: process.env.JWT_SECRET || DEV_JWT_SECRET,
+  rawJwtSecret: process.env.JWT_SECRET,
   // Storage/admin operations reuse the same project URL as the client. Fall back to
   // NEXT_PUBLIC_SUPABASE_URL so only the (server-only) service key must be set separately.
   supabaseUrl: sanitizeUrl(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
@@ -49,6 +55,11 @@ export const env = {
   port: Number(process.env.PORT || 4000),
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   isProd: process.env.NODE_ENV === 'production',
+  // Narrower than isProd: the deploy customers actually log into, rather than
+  // any build that happens to run with NODE_ENV=production — which includes a
+  // local `next start` used for QA. Guards that would break that QA key off
+  // this, so they match the deploy gate in scripts/check-config.ts exactly.
+  isProductionDeploy: process.env.VERCEL_ENV === 'production',
 };
 
 export const BUCKETS = { proofs: 'payment-proofs', coa: 'coa-files', qr: 'payment-qr', moq: 'moq-images', feedback: 'feedback' } as const;

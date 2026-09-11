@@ -688,7 +688,13 @@ export const emailLog = pgTable('email_log', {
   status: varchar('status', { length: 20 }).notNull().default('unknown'),
   error: text('error'),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  // "What failed to send, most recent first" is the only question this table is
+  // ever asked interactively, and it is exactly this pair. Declared here as well
+  // as in drizzle/0029 because schema.ts is what `drizzle-kit generate` diffs
+  // against: an index it cannot see is an index the next migration DROPs.
+  statusSentAtIdx: index('email_log_status_sent_at_idx').on(t.status, t.sentAt.desc()),
+}));
 
 // ---- Customer feedback -------------------------------------------------
 //
