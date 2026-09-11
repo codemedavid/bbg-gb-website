@@ -1,13 +1,19 @@
 // Every index a migration created must also be declared in schema.ts.
 //
-// schema.ts is the input to `drizzle-kit generate`, so an index that exists only
-// in a migration is invisible to it: the next generated migration drops the
-// index as "removed from the schema". Nothing fails, no test goes red, and a
-// query that was fast becomes a sequential scan on a table that only grows.
+// schema.ts is what every reader treats as the shape of the database, so an
+// index that exists only in a migration makes it lie: `drizzle-kit generate`
+// diffs against this file and emits a DROP for what it cannot see, and anyone
+// reading it to decide whether a query is covered concludes it is not.
 //
-// scripts/check-schema.ts cannot catch this — lib/db/drift.ts compares columns
-// and enum labels, not indexes, and the pglite suite builds its tables from
+// Nothing else catches it. scripts/check-schema.ts compares columns and enum
+// labels only (lib/db/drift.ts), and the pglite suite builds its tables from
 // schema.ts, so schema and database agree there by construction.
+//
+// Worth knowing when reading a failure here: drizzle/ is 35 migrations deep
+// while drizzle/meta stops at 0012, because the recent ones are hand-written
+// SQL rather than generated. So the DROP above is what generate WOULD do, not
+// something waiting to happen on the next deploy — the live cost today is a
+// schema file that misstates the database.
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

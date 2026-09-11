@@ -690,9 +690,16 @@ export const emailLog = pgTable('email_log', {
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   // "What failed to send, most recent first" is the only question this table is
-  // ever asked interactively, and it is exactly this pair. Declared here as well
-  // as in drizzle/0029 because schema.ts is what `drizzle-kit generate` diffs
-  // against: an index it cannot see is an index the next migration DROPs.
+  // ever asked interactively, and it is exactly this pair.
+  //
+  // drizzle/0029 created it; this declaration was missing, so schema.ts — the
+  // file every other reader treats as the shape of the database — did not know
+  // about an index the database has had since. That matters whenever the
+  // declared shape is taken at its word: `drizzle-kit generate` diffs against
+  // it and would emit a DROP, and anyone reading this file to decide whether a
+  // query is covered would conclude it is not. Declaring it changes no live
+  // database; the index is already there. lib/db/index-drift.test.ts keeps the
+  // two sides in step from here on.
   statusSentAtIdx: index('email_log_status_sent_at_idx').on(t.status, t.sentAt.desc()),
 }));
 
