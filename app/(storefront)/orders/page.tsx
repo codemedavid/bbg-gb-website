@@ -44,6 +44,7 @@ const toBatchOrder = (o: Order): BatchOrder => ({
   orderId: o.id, orderNo: o.orderNo, status: o.status, buyType: o.buyType,
   cycleKey: o.cycleKey ?? null,
   totalPhp: Number(o.totalPhp), downpaymentPhp: Number(o.downpaymentPhp ?? 0),
+  paymentStatus: o.paymentStatus ?? null, settlementStatus: o.settlementStatus ?? null,
   placedAt: o.createdAt, commitments: o.commitments ?? [],
 });
 

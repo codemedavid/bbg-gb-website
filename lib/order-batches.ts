@@ -68,9 +68,33 @@ export type BatchOrder = {
   cycleKey: string | null;
   totalPhp: number;
   downpaymentPhp: number;
+  /** orders.payment_status - what checkout took, and whether an admin verified it. */
+  paymentStatus?: string | null;
+  /** The hatian settlement that collects the balance, if one was submitted. */
+  settlementStatus?: string | null;
   placedAt: string;
   commitments: CommitmentLine[];
 };
+
+/**
+ * What is still to collect on one order.
+ *
+ * Checkout takes different money on the two kinds of order, so "confirmed"
+ * means different things. A group buy is paid in full at checkout: once an
+ * admin confirms it, nothing is owed. A hatian order's checkout takes only the
+ * packing fee, and its balance is collected by the settlement - so only a PAID
+ * settlement clears it. Reading 'confirmed' as "paid in full" there would hide
+ * every hatian balance the moment its ₱150 cleared.
+ *
+ * An unverified proof clears nothing on either: a screenshot is not a payment
+ * until someone has checked it.
+ */
+function amountOwed(order: BatchOrder): number {
+  if (order.status === 'cancelled') return 0;
+  if (order.buyType === 'kahati') return order.settlementStatus === 'paid' ? 0 : orderBalance(order);
+  if (order.paymentStatus === 'confirmed' || order.paymentStatus === 'not_due') return 0;
+  return orderBalance(order);
+}
 
 export type BatchOrderView = Omit<BatchOrder, 'commitments'> & {
   commitments: StagedCommitmentLine[];
@@ -131,9 +155,7 @@ export function groupOrdersIntoBatches(orders: readonly BatchOrder[]): OrderBatc
     const commitments = order.commitments.map((line) => ({ ...line, verdict: commitmentVerdict(line) }));
     for (const line of commitments) batch[BUCKET[line.verdict]] += line.vials;
 
-    if (order.status !== 'cancelled') {
-      batch.amountDuePhp = round2(batch.amountDuePhp + orderBalance(order));
-    }
+    batch.amountDuePhp = round2(batch.amountDuePhp + amountOwed(order));
     if (order.placedAt < batch.placedAt) batch.placedAt = order.placedAt;
     batch.orders.push({ ...order, commitments });
     byCycle.set(key, batch);
