@@ -182,3 +182,21 @@ describe('OrderProofSection — when adding is not offered', () => {
     expect(screen.getByText(/no proof of payment attached/i)).toBeInTheDocument();
   });
 });
+
+// A hatian whose counters have all closed owes its balance through the final
+// checkout, not here. Offering this uploader is how KH-2794's balance screenshot
+// ended up somewhere no settlement could read it.
+describe('OrderProofSection — a hatian balance that is ready to settle', () => {
+  it('sends the customer to Settle now instead of offering the uploader', () => {
+    show({ status: 'payment_confirmed', settleInstead: true });
+
+    expect(fileInput()).toBeNull();
+    expect(screen.getByRole('link', { name: /settle now/i })).toHaveAttribute('href', '/settle');
+  });
+
+  it('still shows what the customer already sent', () => {
+    show({ status: 'payment_confirmed', settleInstead: true, proofs: [proof(1)] });
+
+    expect(screen.getByText('Proof #1')).toBeInTheDocument();
+  });
+});

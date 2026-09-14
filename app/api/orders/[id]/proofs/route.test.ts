@@ -358,3 +358,54 @@ describe('GET /api/orders/[id] — the customer sees what they have sent', () =>
     expect(data.proofs).toHaveLength(2);
   });
 });
+
+// KH-2794: every hatian on the order had closed, the customer paid the ₱6,327.50
+// balance and attached the screenshot HERE. Nothing reads a balance off this
+// uploader — only a settlement clears it — so My Orders kept saying "ready to
+// settle" and the admin Settlements queue never saw the payment. Once the
+// balance is due, the only honest answer is "pay it through Settle now".
+describe('POST /api/orders/[id]/proofs — a hatian balance goes through Settle now', () => {
+  /** A hatian commitment carrying its checkout proof, optionally with the counter closed. */
+  async function hatianOrder({ closed }: { closed: boolean }) {
+    const { openBoards, makeGroupBuy } = await import('@/lib/test/harness');
+    const { getDb, orders, groupBuys } = await import('@/lib/db');
+    const { eq } = await import('drizzle-orm');
+    await openBoards();
+    const gb = await makeGroupBuy({ minVials: 1, pricePerKitPhp: 9000, repackFeePhp: 150, totalSlots: 100 });
+    const res = await placeOrder(checkoutRequest([{ kind: 'group_buy', refId: gb.id, qty: 3 }], { proofCount: 1 }));
+    expect(res.status).toBe(201);
+    const db = await getDb();
+    if (closed) await db.update(groupBuys).set({ status: 'closed' }).where(eq(groupBuys.id, gb.id));
+    const [order] = await db.select().from(orders);
+    return order;
+  }
+
+  it('refuses a late proof once every hatian on the order has closed, and points to Settle now', async () => {
+    await signIn();
+    const order = await hatianOrder({ closed: true });
+
+    const res = await addProofs(addProofRequest(1), ctx(order.id));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/settle now/i);
+  });
+
+  it('files nothing when it sends the balance to Settle now', async () => {
+    await signIn();
+    const order = await hatianOrder({ closed: true });
+    const before = (await proofsOf(order.id)).length;
+
+    await addProofs(addProofRequest(1), ctx(order.id));
+
+    expect(await proofsOf(order.id)).toHaveLength(before);
+  });
+
+  // While the counter is still filling nothing but the checkout payment is due,
+  // so a customer topping that up must still be able to evidence it.
+  it('still accepts one while the hatian is filling', async () => {
+    await signIn();
+    const order = await hatianOrder({ closed: false });
+
+    expect((await addProofs(addProofRequest(1), ctx(order.id))).status).toBe(201);
+  });
+});
