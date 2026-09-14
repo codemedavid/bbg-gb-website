@@ -106,6 +106,64 @@ describe('groupOrdersIntoBatches', () => {
     expect(batches[0].amountDuePhp).toBe(3120 - 150);
   });
 
+  // "ganito sya talaga kaht paid na?" — GB-2801 was confirmed at ₱79,050 and the
+  // batch still read "Babayaran: ₱85,377.50", the paid order plus KH-2794's
+  // balance. A group buy is paid in full at checkout, so once an admin confirms
+  // that payment nothing on it is left to collect.
+  it('leaves a confirmed group buy out of what the batch owes', () => {
+    const batches = groupOrdersIntoBatches([
+      order({ orderId: 'gb', orderNo: 'GB-2801', buyType: 'group_buy', cycleKey: AUG,
+        totalPhp: 79050, downpaymentPhp: 0, paymentStatus: 'confirmed' }),
+      order({ orderId: 'kh', orderNo: 'KH-2794', cycleKey: AUG,
+        totalPhp: 6477.5, downpaymentPhp: 150, paymentStatus: 'proof_submitted' }),
+    ]);
+    expect(batches[0].amountDuePhp).toBe(6327.5);
+  });
+
+  it('owes nothing on an order with no payment due', () => {
+    const batches = groupOrdersIntoBatches([
+      order({ orderId: 'gb', buyType: 'group_buy', cycleKey: AUG, totalPhp: 5000, downpaymentPhp: 0, paymentStatus: 'not_due' }),
+    ]);
+    expect(batches[0].amountDuePhp).toBe(0);
+  });
+
+  // A screenshot is not a verified payment. Until an admin confirms it, the
+  // money is still owed — the same rule the payment badge follows.
+  it('still counts a group buy whose proof nobody has verified', () => {
+    const batches = groupOrdersIntoBatches([
+      order({ orderId: 'gb', buyType: 'group_buy', cycleKey: AUG, totalPhp: 5000, downpaymentPhp: 0, paymentStatus: 'proof_submitted' }),
+    ]);
+    expect(batches[0].amountDuePhp).toBe(5000);
+  });
+
+  // On a hatian order 'confirmed' covers only what checkout took — the packing
+  // fee. The balance is collected by the settlement, so confirming the checkout
+  // payment must NOT wipe it off the batch.
+  it('keeps a hatian balance owed after its checkout payment is confirmed', () => {
+    const batches = groupOrdersIntoBatches([
+      order({ orderId: 'kh', cycleKey: AUG, totalPhp: 3120, downpaymentPhp: 150, paymentStatus: 'confirmed' }),
+    ]);
+    expect(batches[0].amountDuePhp).toBe(3120 - 150);
+  });
+
+  it('owes nothing on a hatian order whose settlement was paid', () => {
+    const batches = groupOrdersIntoBatches([
+      order({ orderId: 'kh', cycleKey: AUG, totalPhp: 3120, downpaymentPhp: 150,
+        paymentStatus: 'confirmed', settlementStatus: 'paid' }),
+    ]);
+    expect(batches[0].amountDuePhp).toBe(0);
+  });
+
+  it('still counts a hatian balance whose settlement is under review or was cancelled', () => {
+    for (const settlementStatus of ['proof_review', 'cancelled'] as const) {
+      const batches = groupOrdersIntoBatches([
+        order({ orderId: 'kh', cycleKey: AUG, totalPhp: 3120, downpaymentPhp: 150,
+          paymentStatus: 'confirmed', settlementStatus }),
+      ]);
+      expect(batches[0].amountDuePhp).toBe(3120 - 150);
+    }
+  });
+
   it('counts the vials that got in, are still filling, and fell through', () => {
     const batches = groupOrdersIntoBatches([
       order({
