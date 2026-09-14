@@ -13,7 +13,7 @@
 // disappear" with none of the compensating explanation, because the toast then
 // names an item they did not lose.
 import { describe, it, expect } from 'vitest';
-import { staleCheckoutLine, matchesStaleLine } from '@/lib/checkout-error';
+import { staleCheckoutLine, matchesStaleLine, unavailableCheckoutLines } from '@/lib/checkout-error';
 
 type Line = { key: string; kind: string; refId: string; name: string };
 
@@ -60,6 +60,52 @@ describe('matching a closed kahati', () => {
       kahatiLine('gb-3', 'Retatrutide 10mg XL'),
     ];
     expect(cart.filter((l) => matchesStaleLine(l, stale)).map((l) => l.refId)).toEqual(['gb-1']);
+  });
+});
+
+describe('a closed kahati named by id', () => {
+  // Once the server names the counter by id, the name is only for the reader:
+  // matching falls back to the name solely for a message that carries no id.
+  it('matches on the id when the message carries one', () => {
+    expect(staleCheckoutLine('Kahati "Retatrutide 10mg" is already closed: gb-9')).toEqual({ refId: 'gb-9' });
+  });
+
+  it('never drops a same-named line that is a different counter', () => {
+    const stale = staleCheckoutLine('Kahati "Retatrutide 10mg" is already closed: gb-old')!;
+    expect(matchesStaleLine(kahatiLine('gb-new', 'Retatrutide 10mg'), stale)).toBe(false);
+    expect(matchesStaleLine(kahatiLine('gb-old', 'Retatrutide 10mg'), stale)).toBe(true);
+  });
+});
+
+describe('every dead line in one refusal', () => {
+  it('reads the refIds the server listed, in order', () => {
+    const body = {
+      success: false,
+      error: 'Group buy not found: a',
+      data: { unavailable: [
+        { refId: 'a', kind: 'group_buy', name: 'Retatrutide (Salt Form) 20mg vial' },
+        { refId: 'b', kind: 'moq_campaign', name: 'Retatrutide 10mg vial' },
+      ] },
+    };
+    expect(unavailableCheckoutLines(body)).toEqual([
+      { refId: 'a', name: 'Retatrutide (Salt Form) 20mg vial' },
+      { refId: 'b', name: 'Retatrutide 10mg vial' },
+    ]);
+  });
+
+  it('returns nothing for a refusal that carries no list', () => {
+    expect(unavailableCheckoutLines({ success: false, error: 'Only 3 left in stock.', data: null })).toEqual([]);
+    expect(unavailableCheckoutLines({})).toEqual([]);
+    expect(unavailableCheckoutLines(null)).toEqual([]);
+  });
+
+  it('skips malformed entries rather than trusting them — this decides what is DELETED', () => {
+    const body = { data: { unavailable: [{ refId: 'a', name: 'A' }, { name: 'no id' }, 'junk', { refId: 42, name: 'B' }] } };
+    expect(unavailableCheckoutLines(body)).toEqual([{ refId: 'a', name: 'A' }]);
+  });
+
+  it('ignores a list that is not a list', () => {
+    expect(unavailableCheckoutLines({ data: { unavailable: 'a,b' } })).toEqual([]);
   });
 });
 
