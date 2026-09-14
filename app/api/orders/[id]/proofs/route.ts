@@ -5,6 +5,7 @@ import { requireSession, ApiError } from '@/lib/session';
 import { validateAndStoreProofs } from '@/lib/proof';
 import { acceptsMoreProofs } from '@/lib/order-status';
 import { checkoutLog } from '@/lib/checkout-log';
+import { readySettlementOrders } from '@/lib/settlement-server';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -39,6 +40,16 @@ export const POST = handler(async (req: Request, ctx: Ctx) => {
     throw new ApiError(400, order.status === 'cancelled'
       ? 'This order was cancelled, so no further payment is due.'
       : 'This order has already shipped — please contact us about any further payment.');
+  }
+
+  // A hatian whose counters have all closed owes its balance through the final
+  // checkout. A screenshot filed here is invisible to it: no settlement records
+  // the payment, so My Orders keeps asking for money already sent and the admin
+  // Settlements queue never sees it. Read through the same query the "ready to
+  // settle" prompt uses, so the refusal and the prompt cannot disagree.
+  const ready = await readySettlementOrders(db, session.sub);
+  if (ready.some((o) => o.id === id)) {
+    throw new ApiError(409, 'This hatian is ready to settle — please pay the balance through Settle now on My Orders.');
   }
 
   const form = await req.formData();

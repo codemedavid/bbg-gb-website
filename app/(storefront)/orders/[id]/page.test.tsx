@@ -16,9 +16,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, back, replace, prefetch: vi.fn() }),
 }));
 
-const state = { detail: undefined as unknown, isLoading: false };
+const state = { detail: undefined as unknown, isLoading: false, preview: undefined as unknown };
 vi.mock('@/lib/queries', () => ({
   useOrderDetail: () => ({ data: state.detail, isLoading: state.isLoading }),
+  useSettlementPreview: () => ({ data: state.preview }),
 }));
 
 const auth = { user: { id: 'u1' } as unknown, loading: false };
@@ -83,6 +84,7 @@ beforeEach(() => {
   replace.mockReset();
   state.detail = detail;
   state.isLoading = false;
+  state.preview = undefined;
   auth.user = { id: 'u1' };
   auth.loading = false;
 });
@@ -123,6 +125,29 @@ describe('order information', () => {
 
     expect(screen.getByText('BBG-2419')).toBeInTheDocument();
     expect(screen.getAllByText('Shipped').length).toBeGreaterThan(0);
+  });
+});
+
+// KH-2794's balance screenshot went into this page's uploader, where no
+// settlement could read it. An order the "ready to settle" quote holds pays its
+// balance through Settle now instead.
+describe('a hatian balance ready to settle', () => {
+  const hatian = { ...detail, order: { ...detail.order, status: 'payment_confirmed', buyType: 'kahati' } };
+
+  it('sends the customer to Settle now instead of offering the uploader', async () => {
+    state.detail = hatian;
+    state.preview = { orders: [{ id: 'o9' }], totals: { totalPhp: 6327.5 } };
+    await renderPage();
+
+    expect(screen.getByRole('link', { name: /settle now/i })).toHaveAttribute('href', '/settle');
+  });
+
+  it('keeps the uploader for an order the quote does not hold', async () => {
+    state.detail = hatian;
+    state.preview = { orders: [{ id: 'someone-else' }], totals: { totalPhp: 0 } };
+    await renderPage();
+
+    expect(screen.queryByRole('link', { name: /settle now/i })).toBeNull();
   });
 });
 

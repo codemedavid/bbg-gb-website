@@ -10,6 +10,7 @@
 // landed. A customer who cannot see last night's upload has no way to tell
 // whether it worked, and their only recourse is to place a second order.
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { ProofUploader } from '@/components/ProofUploader';
 import { MAX_PROOFS } from '@/lib/proof-limits';
@@ -21,18 +22,20 @@ type Props = {
   orderId: string;
   status: string;
   proofs: PaymentProof[];
+  /** A hatian ready to settle: its balance is paid through Settle now, not here. */
+  settleInstead?: boolean;
 };
 
-export function OrderProofSection({ orderId, status, proofs }: Props) {
+export function OrderProofSection({ orderId, status, proofs, settleInstead = false }: Props) {
   const qc = useQueryClient();
   const [picked, setPicked] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const remaining = MAX_PROOFS - proofs.length;
-  // Both conditions, and both are also enforced by the route: the screen only
+  // All three conditions are also enforced by the route: the screen only
   // decides whether to ask.
-  const canAdd = acceptsMoreProofs(status) && remaining > 0;
+  const canAdd = !settleInstead && acceptsMoreProofs(status) && remaining > 0;
 
   const submit = async () => {
     if (picked.length === 0 || submitting) return;
@@ -93,6 +96,21 @@ export function OrderProofSection({ orderId, status, proofs }: Props) {
         </ul>
       ) : (
         <p className="mb-3 text-[13px] text-ink-muted">No proof of payment attached yet.</p>
+      )}
+
+      {/* The balance of a closed hatian is paid at the final checkout. A
+          screenshot attached here would reach no settlement, so the customer
+          would keep being asked for money they already sent. */}
+      {settleInstead && (
+        <div className="rounded-[12px] border border-[#a9c88f] bg-[#f2f8ec] p-3">
+          <p className="mb-2.5 text-[12.5px] leading-snug text-ink-body">
+            Ready to settle — bayaran ang balance sa Settle now para mabilang ang iyong bayad.
+          </p>
+          <Link href="/settle"
+            className="block w-full rounded-[10px] bg-brand-green px-3 py-2.5 text-center text-[13px] font-bold text-white active:scale-[.99]">
+            Settle now →
+          </Link>
+        </div>
       )}
 
       {canAdd && (

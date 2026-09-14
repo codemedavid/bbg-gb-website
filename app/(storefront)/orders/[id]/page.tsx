@@ -7,7 +7,7 @@ import { OrderItemList } from '@/components/OrderItemList';
 import { OrderItemsEditor, type OrderItemDraft } from '@/components/OrderItemsEditor';
 import { OrderStatusTrail } from '@/components/OrderStatusTrail';
 import { OrderProofSection } from '@/components/OrderProofSection';
-import { useOrderDetail } from '@/lib/queries';
+import { useOrderDetail, useSettlementPreview } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { apiSend } from '@/lib/api-client';
 import { useToast } from '@/lib/store/toast';
@@ -63,6 +63,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const qc = useQueryClient();
   const toast = useToast((s) => s.show);
   const { data, isLoading } = useOrderDetail(id);
+  // Same quote the "ready to settle" prompt reads: an order in it pays its
+  // balance through Settle now, so its uploader is swapped for that link.
+  const { data: settlePreview } = useSettlementPreview();
   const { user, loading: isCheckingSession } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -210,6 +213,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <OrderProofSection
               orderId={order.id}
               status={order.status}
+              settleInstead={settlePreview?.orders.some((o) => o.id === order.id) ?? false}
               proofs={proofs.length > 0 || !proofUrl ? proofs : [
                 { id: 'legacy', url: proofUrl, sortOrder: 0, amountPhp: null, reference: null },
               ]}
