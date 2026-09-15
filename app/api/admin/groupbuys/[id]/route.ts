@@ -5,6 +5,7 @@ import { getDb, groupBuys, orderItems } from '@/lib/db';
 import { groupBuyPatchSchema } from '@/lib/admin-schemas';
 import { isKahatiFull, KAHATI_MIN_VIABLE_VIALS } from '@/lib/kahati';
 import { cancelKahati, closeFullKahati, notifyKahatiCancellations } from '@/lib/kahati-server';
+import { passPriceDropToCommitments } from '@/lib/kahati-reprice-server';
 
 export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   await requireAdmin();
@@ -56,8 +57,17 @@ export const PATCH = handler(async (req: Request, ctx: { params: Promise<{ id: s
     return ok(row);
   }
 
-  const [row] = await db.update(groupBuys).set(patch).where(eq(groupBuys.id, id)).returning();
-  if (!row) throw new ApiError(404, 'Group buy not found.');
+  // A price correction and the commitments it corrects are one write: a lowered
+  // counter price reaches the vials already committed to it (KH-2737 paid ₱630
+  // on a counter the next buyer joined at ₱450). A raised one never does.
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(groupBuys).set(patch).where(eq(groupBuys.id, id)).returning();
+    if (!updated) throw new ApiError(404, 'Group buy not found.');
+    if (Number(updated.pricePerKitPhp) < Number(current.pricePerKitPhp)) {
+      await passPriceDropToCommitments(tx, id, updated.pricePerKitPhp);
+    }
+    return updated;
+  });
 
   // An edit that leaves the counter open but full closes the hatian and opens
   // the sibling batch, exactly as reaching the cap at checkout does. This keys

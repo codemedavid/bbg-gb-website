@@ -17,12 +17,15 @@
 //     free-text row an admin typed by hand, and nothing in the catalog speaks
 //     for it.
 //
-// Past orders are unaffected either way: order lines snapshot the name and unit
-// price they were placed at (order_items.name_snapshot / unit_price_php), so a
-// repriced counter changes what the NEXT joiner pays, never what an existing
-// one owes.
+// Past orders keep the price they were placed at (order_items.unit_price_php) —
+// with one exception on the hatian board: a price that FALLS on an open counter
+// is passed on to the vials already committed there
+// (lib/kahati-reprice-server.ts), so two people splitting one kit never pay
+// different money for the same vial. A price that rises reaches only the NEXT
+// joiner.
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, products, groupBuys, moqCampaigns } from '@/lib/db';
+import { passPriceDropToCommitments } from './kahati-reprice-server';
 import {
   kahatiListingPatch, campaignListingPatch, hasListingChanges,
   kahatiRefreshPatch, campaignRefreshPatch, type CampaignListingPatch,
@@ -81,6 +84,10 @@ async function syncKahatis(db: Db, before: SeedableProduct, after: SeedableProdu
       .where(and(eq(groupBuys.id, row.id), eq(groupBuys.status, 'open')))
       .returning({ id: groupBuys.id });
     changed += updated.length;
+    if (updated.length && patch.pricePerKitPhp != null
+      && Number(patch.pricePerKitPhp) < Number(row.pricePerKitPhp)) {
+      await passPriceDropToCommitments(db, row.id, patch.pricePerKitPhp);
+    }
   }
   return changed;
 }
