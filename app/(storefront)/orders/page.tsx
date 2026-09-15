@@ -4,13 +4,14 @@ import { useRouter } from 'next/navigation';
 import { SectionHeader } from '@/components/headers';
 import { OrderItemList } from '@/components/OrderItemList';
 import { OrderStatusTrail } from '@/components/OrderStatusTrail';
-import { useOrders, useSettlementPreview } from '@/lib/queries';
+import { useCurrentCycle, useOrders, useSettlementPreview } from '@/lib/queries';
 import { useAuth } from '@/lib/useAuth';
 import { php, shortDate } from '@/lib/format';
+import { formatPht } from '@/lib/schedule';
 import { collectedAmountLabel } from '@/lib/kahati-downpayment';
 import { STATUS_LABEL, STATUS_BADGE, orderBadge } from '@/lib/order-status';
 import { useToast } from '@/lib/store/toast';
-import { groupOrdersIntoBatches, type BatchOrder, type StagedCommitmentLine } from '@/lib/order-batches';
+import { batchPhase, groupOrdersIntoBatches, type BatchOrder, type BatchPhase, type CurrentCycle, type StagedCommitmentLine } from '@/lib/order-batches';
 import { neededToQualify } from '@/lib/kahati-quantity';
 import type { Order } from '@/lib/types';
 
@@ -35,6 +36,23 @@ function CommitmentRow({ line, testId }: { line: StagedCommitmentLine; testId: s
       <span>{line.kahatiName} x{line.vials}</span>
       <span>{said}</span>
     </div>
+  );
+}
+
+// Ongoing or Done, beside each batch title. Without it the customer behind
+// KH-2919 read this week's "Kulang pa" rows as belonging to the Aug 31 batch
+// printed right under them, and took a live notice for a stale one.
+const PHASE_PANEL: Record<BatchPhase, string> = {
+  ongoing: 'border-[1.5px] border-[#a9c88f] bg-[#f7fbf2]',
+  done: 'border border-line-soft bg-white/60',
+};
+
+function BatchPhaseChip({ phase, current }: { phase: BatchPhase; current: CurrentCycle | null }) {
+  return (
+    <span data-testid="batch-phase"
+      className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${phase === 'ongoing' ? 'bg-brand-green text-white' : 'bg-surface-mist text-ink-muted'}`}>
+      {phase === 'ongoing' && current ? `Ongoing · closes ${formatPht(current.closesAt)}` : 'Done'}
+    </span>
   );
 }
 
@@ -186,6 +204,7 @@ export default function OrdersPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { data: orders = [], isLoading } = useOrders(!!user);
+  const { data: currentCycle = null } = useCurrentCycle();
   // OrderCard still renders the full Order; the batch view only decides the
   // grouping and the verdicts, so the original rows are kept to hand.
   const byId = new Map(orders.map((o) => [o.id, o]));
@@ -207,18 +226,25 @@ export default function OrdersPage() {
   return (
     <>
       <SectionHeader title="📦 My Orders" sub="Track status · download COA" />
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 p-4 md:p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
         <SettlePrompt />
         {isLoading || loading ? <div className="py-16 text-center text-[13px] text-ink-muted">Loading…</div>
-          : orders.length ? groupOrdersIntoBatches(orders.map(toBatchOrder)).map((batch) => (
+          : orders.length ? groupOrdersIntoBatches(orders.map(toBatchOrder)).map((batch) => {
+            const phase = batchPhase(batch.cycleKey, currentCycle);
+            // Each batch is its own panel, title inside it, so the rows of one
+            // batch can never read as sitting under the next batch's title.
+            return (
             <section
               key={batch.cycleKey ?? 'unbatched'}
               data-testid={`order-batch-${batch.cycleKey ?? 'earlier'}`}
-              className="flex flex-col gap-3"
+              className={`flex flex-col gap-3 rounded-[18px] p-2.5 ${phase ? PHASE_PANEL[phase] : 'border border-line-soft'}`}
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-[12px] bg-surface-mist px-3.5 py-2.5">
-                <div className="text-[13px] font-bold text-ink">
-                  {batch.cycleKey ? `Batch ng ${shortDate(batch.placedAt)}` : 'Mga naunang order'}
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] bg-white px-3.5 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[13px] font-bold text-ink">
+                    {batch.cycleKey ? `Batch ng ${shortDate(batch.placedAt)}` : 'Mga naunang order'}
+                  </span>
+                  {phase && <BatchPhaseChip phase={phase} current={currentCycle} />}
                 </div>
                 {/* "Kasi inaantay lang nila magkano babayaran" - one figure for
                     the whole batch, so nobody has to be messaged the amount. */}
@@ -235,7 +261,8 @@ export default function OrdersPage() {
                 </div>
               ))}
             </section>
-          ))
+            );
+          })
           : <div className="py-16 text-center text-[13px] text-ink-muted">No orders yet. Sali sa kahati o mag-shop! 🛒</div>}
       </div>
     </>

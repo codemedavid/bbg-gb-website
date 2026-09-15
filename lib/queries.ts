@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from './api-client';
 import type { PackingFees } from './pricing';
+import type { CurrentCycle } from './order-batches';
 import { DEFAULT_KAHATI_DOWNPAYMENT_POLICY, type KahatiDownpaymentPolicy } from './kahati-downpayment';
 import type { Category, CheckoutPaymentMethod, FeedbackFolderDetail, PublicCoaFile, PublicFeedbackFolder, GroupBuy, KahatiCommitments, MoqCampaign, MoqProduct, Order, OrderDetail, PasaloCounter, Product, SettlementPreview } from './types';
 
@@ -166,6 +167,17 @@ export const useSettlementPreview = (enabled = true) =>
     queryFn: () => apiGet<SettlementPreview>('/settlements/preview'),
     enabled,
     staleTime: 0,
+  });
+
+// The cycle both boards are trading in, or null between cycles. Its own cache
+// entry rather than the packing fees' five minutes: a cycle closing is what
+// turns a batch from Ongoing to Done on My Orders.
+export const useCurrentCycle = () =>
+  useQuery({
+    queryKey: ['current-cycle'],
+    queryFn: () => apiGet<{ currentCycle?: CurrentCycle | null }>('/settings')
+      .then((d) => d.currentCycle ?? null),
+    staleTime: 60 * 1000,
   });
 
 export const useOrders = (enabled = true) =>

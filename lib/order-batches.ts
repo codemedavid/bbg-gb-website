@@ -170,3 +170,25 @@ export function groupOrdersIntoBatches(orders: readonly BatchOrder[]): OrderBatc
 
   return unbatched ? [...batched, unbatched] : batched;
 }
+
+/** The cycle both boards are trading in, as the public settings route reports it. */
+export type CurrentCycle = { key: string; closesAt: string };
+
+export type BatchPhase = 'ongoing' | 'done';
+
+/**
+ * Whether a batch is still collecting.
+ *
+ * KH-2919's "Kulang pa - 3 more vials" was right: that counter was short, in a
+ * batch with a day left to run. But the rows sat directly above the Aug 31
+ * batch's title and nothing said which batch was live, so the customer read it
+ * as a batch that had already shipped still asking for vials.
+ *
+ * Only the cycle trading right now is ongoing. Between cycles, or while the
+ * boards are paused, nothing is collecting - the batch that closed last
+ * included. Orders from before cycles existed are not a batch and have no phase.
+ */
+export function batchPhase(cycleKey: string | null, current: CurrentCycle | null): BatchPhase | null {
+  if (cycleKey === null) return null;
+  return current?.key === cycleKey ? 'ongoing' : 'done';
+}
