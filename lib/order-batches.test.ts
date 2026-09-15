@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { commitmentVerdict, groupOrdersIntoBatches, type BatchOrder, type CommitmentLine } from './order-batches';
+import { batchPhase, commitmentVerdict, groupOrdersIntoBatches, type BatchOrder, type CommitmentLine } from './order-batches';
 
 const line = (o: Partial<CommitmentLine> = {}): CommitmentLine => ({
   kahatiName: 'Retatrutide', vials: 2, lineTotalPhp: 1800,
@@ -189,5 +189,34 @@ describe('groupOrdersIntoBatches', () => {
     const input = [order({ orderId: 'a', cycleKey: AUG })];
     groupOrdersIntoBatches(input);
     expect(input[0].commitments[0]).not.toHaveProperty('verdict');
+  });
+});
+
+// KH-2919's customer read "Kulang pa - 3 more vials" and took it for the Aug 31
+// batch that had already shipped: the rows sat directly above that batch's
+// title, and nothing on the page said which batch was still running. The
+// counters were right; the page never said the batch was live.
+describe('batchPhase', () => {
+  const SEP10 = '2026-09-10T14:30:00.000Z';
+  const AUG29 = '2026-08-29T14:00:00.000Z';
+  const current = { key: SEP10, closesAt: '2026-09-16T04:00:00.000Z' };
+
+  it('calls the batch of the cycle still trading ongoing', () => {
+    expect(batchPhase(SEP10, current)).toBe('ongoing');
+  });
+
+  it('calls a batch from an earlier cycle done', () => {
+    expect(batchPhase(AUG29, current)).toBe('done');
+  });
+
+  // Between cycles, or while paused, nothing is trading - so no batch is still
+  // collecting, including the one that closed most recently.
+  it('calls every batch done while no cycle is trading', () => {
+    expect(batchPhase(SEP10, null)).toBe('done');
+  });
+
+  // Orders from before cycles existed are not a batch, so they have no phase.
+  it('gives orders that belong to no batch no phase', () => {
+    expect(batchPhase(null, current)).toBeNull();
   });
 });

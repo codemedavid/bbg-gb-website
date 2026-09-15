@@ -3,7 +3,7 @@
 // Without a prompt here a customer has no way to know their completed hatians
 // are waiting to be settled, and the packing fee would never be collected.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
@@ -18,10 +18,12 @@ vi.mock('@/lib/useAuth', () => ({
 const state = {
   orders: [] as unknown[],
   preview: { orders: [] as unknown[], totals: { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 } },
+  currentCycle: null as { key: string; closesAt: string } | null,
 };
 vi.mock('@/lib/queries', () => ({
   useOrders: () => ({ data: state.orders, isLoading: false }),
   useSettlementPreview: () => ({ data: state.preview, isLoading: false }),
+  useCurrentCycle: () => ({ data: state.currentCycle, isLoading: false }),
 }));
 
 const OrdersPage = (await import('./page')).default;
@@ -61,6 +63,7 @@ beforeEach(() => {
   push.mockReset();
   state.orders = [kahatiOrder];
   state.preview = { orders: [], totals: { balancePhp: 0, packingFeePhp: 0, totalPhp: 0 } };
+  state.currentCycle = null;
 });
 
 describe('settle prompt on My Orders', () => {
@@ -249,6 +252,41 @@ describe('my orders, by batch', () => {
     render(<OrdersPage />, { wrapper });
 
     expect(await screen.findByTestId('batch-amount-due')).toHaveTextContent('2,550');
+  });
+
+  // KH-2919, 2026-09-15: "Kulang pa - 3 more vials" was right for this week's
+  // batch, but the rows sat directly above "Batch ng Aug 31" and nothing said
+  // which batch was still running, so the customer read it as a notice about a
+  // batch that had already shipped.
+  describe('whether each batch is still running', () => {
+    const SEP10 = '2026-09-10T14:30:00.000Z';
+    const twoBatches = () => [
+      batched({ id: 'new', orderNo: 'KH-2919', cycleKey: SEP10, createdAt: '2026-09-15T02:23:32.000Z',
+        commitments: [commitment({ claimedSlots: 4 })] }),
+      batched({ id: 'old', orderNo: 'KH-2729', cycleKey: AUG, createdAt: '2026-08-31T12:32:55.000Z',
+        commitments: [commitment({ counterStatus: 'closed' })] }),
+    ];
+
+    it('says the batch of the cycle still trading is ongoing, and when it closes', async () => {
+      state.currentCycle = { key: SEP10, closesAt: '2026-09-16T04:00:00.000Z' };
+      state.orders = twoBatches();
+      render(<OrdersPage />, { wrapper });
+
+      const phase = within(await screen.findByTestId(`order-batch-${SEP10}`)).getByTestId('batch-phase');
+      expect(phase).toHaveTextContent(/ongoing/i);
+      // Manila time: the schedule is set in Manila, and so is every customer.
+      expect(phase).toHaveTextContent(/Sep 16.*12:00\s?PM/);
+    });
+
+    it('says a batch from an earlier cycle is done', async () => {
+      state.currentCycle = { key: SEP10, closesAt: '2026-09-16T04:00:00.000Z' };
+      state.orders = twoBatches();
+      render(<OrdersPage />, { wrapper });
+
+      const phase = within(await screen.findByTestId(`order-batch-${AUG}`)).getByTestId('batch-phase');
+      expect(phase).toHaveTextContent(/done/i);
+      expect(phase).not.toHaveTextContent(/ongoing/i);
+    });
   });
 });
 
