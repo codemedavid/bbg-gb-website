@@ -564,15 +564,15 @@ export const POST = handler(async (req: Request) => {
         ? kahatiDownpaymentDue(downpaymentPolicy, { subtotal: totals.subtotal, packingFee: totals.packingFee })
         : 0;
 
-      // Nothing was paid and no proof exists, so there is nothing for an admin
-      // to verify — parking it in 'proof_review' would queue a review that can
-      // never resolve. The commitment moves straight on in the FULFILMENT flow.
-      //
-      // What this deliberately no longer does is treat that as a statement
-      // about money. 'payment_confirmed' is a fulfilment position here and
-      // nothing more; whether a payment was actually received and checked is
-      // paymentStatus's job, immediately below.
-      const status = confirmOnly ? 'payment_confirmed' : 'proof_review';
+      // Every checkout lands in 'proof_review' (Payment Pending), including a
+      // confirm-only commitment that owes nothing today. 'payment_confirmed' is
+      // what an admin sets after checking money (app/api/admin/orders/[id]/status),
+      // and a checkout writing it put "Payment Confirmed" on KH-2892 and 20 other
+      // orders nobody had paid or reviewed — admins were moving them back by hand.
+      // The ₱0 order's balance is proven at the final checkout (Settle), which
+      // requires a proof; paymentStatus 'not_due' below keeps it out of the
+      // proof-verification queue until then.
+      const status = 'proof_review';
 
       // …and the money, separately and honestly. A checkout can only ever
       // report 'not_due', 'proof_submitted' or 'pending' — checkoutPaymentStatus
@@ -646,7 +646,7 @@ export const POST = handler(async (req: Request) => {
         orderId: order.id,
         status,
         note: confirmOnly
-          ? 'Order confirmed — no downpayment due, this customer already has a kahati commitment in progress'
+          ? 'Order placed — no downpayment due, this customer already has a kahati commitment in progress; balance is paid at final checkout'
           : 'Order placed',
       });
 
