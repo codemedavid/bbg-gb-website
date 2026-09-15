@@ -88,9 +88,12 @@ describe('repeat kahati checkout', () => {
     expect(body.data.order.paymentProofKey).toBeNull();
   });
 
-  it('confirms a no-payment commitment instead of parking it in proof review', async () => {
-    // Nothing was paid, so there is no proof for an admin to verify. Leaving it
-    // at 'proof_review' would queue a review that can never resolve.
+  it('never marks a no-payment commitment Payment Confirmed — it waits as Payment Pending', async () => {
+    // KH-2892: a repeat commitment owes ₱0 today, but nothing was paid and no
+    // admin looked at anything, so the admin drawer must not read "Payment
+    // Confirmed". The balance is proven at the final checkout (Settle), which
+    // requires a proof. Admins had been moving these back to 'proof_review' by
+    // hand; only an admin may ever put an order into 'payment_confirmed'.
     await signIn();
     const kahati = await makeGroupBuy({ minVials: 1, pricePerKitPhp: 9000 });
     await joinFirstKahati(kahati.id);
@@ -101,7 +104,9 @@ describe('repeat kahati checkout', () => {
     ));
     const body = await res.json();
 
-    expect(body.data.order.status).toBe('payment_confirmed');
+    expect(res.status).toBe(201);
+    expect(body.data.order.status).toBe('proof_review');
+    expect(body.data.order.paymentStatus).toBe('not_due');
   });
 
   it('still claims the vials on a confirm-only commitment', async () => {

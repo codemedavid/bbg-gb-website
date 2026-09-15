@@ -156,7 +156,8 @@ describe('kahati downpayment under the default policy', () => {
     const { body } = await join(kahati.id, 3, { withProof: false });
 
     expect(Number(body.data.order.downpaymentPhp)).toBe(0);
-    expect(body.data.order.status).toBe('payment_confirmed');
+    // Waived is not verified: it waits as Payment Pending until the final checkout.
+    expect(body.data.order.status).toBe('proof_review');
   });
 });
 
