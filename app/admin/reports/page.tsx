@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, qs } from '@/lib/api-client';
 import { useToast } from '@/lib/store/toast';
@@ -13,6 +13,7 @@ import type { SegmentedWeeklyReport, WeeklyReport } from '@/lib/report/build';
 import { SegmentReport } from './SegmentReport';
 import { RefundExport } from './RefundExport';
 import { PasaloRefundPanel } from './PasaloRefundPanel';
+import { PasaloItemsReport } from './PasaloItemsReport';
 
 // Reports hub: pick any inclusive calendar range and read On-Hand, Group Buy,
 // and Kahati independently. Each segment has its own rollups and workbook,
@@ -25,6 +26,7 @@ export default function AdminReportsPage() {
   // Which batch preset is showing. Cleared the moment either date is typed by
   // hand, so the picker can never claim a range the admin has since edited.
   const [cycleKey, setCycleKey] = useState('');
+  const choseRange = useRef(false);
   const showToast = useToast((s) => s.show);
 
   // The batches themselves, dated by their own orders. A cycle opens at 22:00
@@ -36,7 +38,18 @@ export default function AdminReportsPage() {
   });
   const cycles = cycleData?.cycles ?? [];
 
+  // Start on the newest available batch, not last week's calendar window.
+  useEffect(() => {
+    const latest = cycleData?.cycles[0];
+    if (choseRange.current || !latest) return;
+    choseRange.current = true;
+    setCycleKey(latest.cycleKey);
+    setFrom(latest.from);
+    setTo(latest.to);
+  }, [cycleData]);
+
   const pickCycle = (key: string) => {
+    choseRange.current = true;
     setCycleKey(key);
     const cycle = cycles.find((c) => c.cycleKey === key);
     if (!cycle) return;
@@ -45,15 +58,15 @@ export default function AdminReportsPage() {
   };
 
   // A hand-typed date is a custom range by definition, whatever the picker said.
-  const typeFrom = (value: string) => { setCycleKey(''); setFrom(value); };
-  const typeTo = (value: string) => { setCycleKey(''); setTo(value); };
+  const typeFrom = (value: string) => { choseRange.current = true; setCycleKey(''); setFrom(value); };
+  const typeTo = (value: string) => { choseRange.current = true; setCycleKey(''); setTo(value); };
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'report', 'range', from, to],
+    queryKey: ['admin', 'report', 'range', from, to, cycleKey],
     queryFn: () => apiGet<{ from: string; to: string; report: WeeklyReport; segments: SegmentedWeeklyReport }>(
-      `/admin/report/weekly${qs({ from, to })}`,
+      `/admin/report/weekly${qs({ from, to, cycleKey: cycleKey || undefined })}`,
     ),
-    enabled: !!from && !!to && to >= from,
+    enabled: !!cycleData && (choseRange.current || cycles.length === 0) && !!from && !!to && to >= from,
   });
   const segments = data?.segments;
 
@@ -114,6 +127,8 @@ export default function AdminReportsPage() {
         </div>
       </div>
 
+      <PasaloItemsReport cycle={cycles.find(c => c.cycleKey === cycleKey)} />
+
       {isLoading || !segments
         ? <div className="text-ink-muted">Loading report…</div>
         : REPORT_SEGMENTS.map((segment) => (
@@ -130,7 +145,10 @@ export default function AdminReportsPage() {
       {/* The Pasalo stage, above the supplier-shortfall export because it comes
           first in time: a batch is decided here, and only what could not be
           filled AFTER that is reconciled against the supplier's sheet below. */}
-      <PasaloRefundPanel from={from} to={to} />
+      <details className="rounded-[16px] border border-line-soft bg-white p-4">
+        <summary className="cursor-pointer font-semibold">Refund records and Pasalo stage controls (selected date range)</summary>
+        <PasaloRefundPanel from={from} to={to} />
+      </details>
 
       {/* Sits under the segment reports because it answers the question that
           comes after them: the batch was ordered, it arrived short, now who is

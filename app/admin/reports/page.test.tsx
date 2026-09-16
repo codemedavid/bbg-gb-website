@@ -1,20 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
 import type { WeeklyReport } from '@/lib/report/build';
-import { addDays, mostRecentFullWeekMonday } from '@/lib/report/week';
 import { useToast } from '@/lib/store/toast';
 
-// The page picks the week itself and defaults to the most recent full one, so
-// that — not the mocked response — is the Monday it exports under.
-const SELECTED_MONDAY = mostRecentFullWeekMonday(new Date());
-// …and the end date the page defaults to, six days later. The filename carries
-// both: "BBG-Week-<from>" on a workbook whose range was not a week is what let a
-// one-week batch sheet be reconciled against months of counters.
-const SELECTED_END = addDays(SELECTED_MONDAY, 6);
+// Reports default to the latest batch returned by the picker.
+const SELECTED_MONDAY = '2026-08-30';
+const SELECTED_END = '2026-09-04';
 
 const half = (invoice: string, code: string, name: string, buyType: 'solo' | 'group_buy' | 'kahati'): WeeklyReport => ({
   weekNo: 21, rangeLabel: 'Mon May 25 – Sun May 31', orderCount: 1,
@@ -84,6 +79,16 @@ beforeEach(() => {
 });
 
 describe('AdminReportsPage', () => {
+  it('defaults to the latest batch and opens with the product list before the refund history', async () => {
+    render(<Page />, { wrapper });
+    await waitFor(() => expect(screen.getByLabelText(/report batch/i)).toHaveValue(BATCH.cycleKey));
+    expect(screen.getByLabelText(/report start date/i)).toHaveValue(BATCH.from);
+    expect(screen.getByLabelText(/report end date/i)).toHaveValue(BATCH.to);
+    expect(screen.getByRole('heading', { name: 'Items for Pasalo / Bunuan' })).toBeInTheDocument();
+    const history = screen.getByText('Refund records and Pasalo stage controls (selected date range)').closest('details');
+    expect(history).not.toHaveAttribute('open');
+  });
+
   it('offers calendar controls for a custom date range', () => {
     render(<Page />, { wrapper });
 
