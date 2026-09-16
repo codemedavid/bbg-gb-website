@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   KAHATI_MAX_VIALS, KAHATI_MIN_VIABLE_VIALS, isKahatiFull, isKahatiViable,
+  kahatiMinViableVials,
   resolveExpiredKahatiStatus, nextKahatiClosesAt, kahatiProgressPercent, kahatiBadge,
   kahatiClaimedDisplay,
 } from './kahati';
@@ -43,6 +44,47 @@ describe('isKahatiViable', () => {
   });
   it('is false on an empty hatian', () => {
     expect(isKahatiViable(0)).toBe(false);
+  });
+});
+
+// A counter's cap is not always ten. A product whose kit holds 5 pairs opens a
+// 5-slot counter, and 7 of 5 vials is a threshold nothing can cross: every such
+// hatian would be cancelled at its deadline however many people joined, and the
+// board would promise a "7-vial minimum" on a counter that holds five. The
+// minimum is the same 7-in-10 proportion measured against the counter's own cap.
+describe('kahatiMinViableVials', () => {
+  it('is the familiar 7 on a full ten-vial kit', () => {
+    expect(kahatiMinViableVials(KAHATI_MAX_VIALS)).toBe(KAHATI_MIN_VIABLE_VIALS);
+  });
+
+  it('scales to a smaller kit rather than sitting above its cap', () => {
+    expect(kahatiMinViableVials(5)).toBe(4);
+    expect(kahatiMinViableVials(5)).toBeLessThanOrEqual(5);
+  });
+
+  it('never asks for more vials than the counter can hold', () => {
+    for (const cap of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+      expect(kahatiMinViableVials(cap)).toBeLessThanOrEqual(cap);
+      expect(kahatiMinViableVials(cap)).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe('a counter whose kit holds fewer than ten vials', () => {
+  it('becomes viable at its own scaled minimum', () => {
+    expect(isKahatiViable(3, 5)).toBe(false);
+    expect(isKahatiViable(4, 5)).toBe(true);
+  });
+
+  it('closes at its deadline once it reaches that minimum', () => {
+    expect(resolveExpiredKahatiStatus(4, 5)).toBe('closed');
+    expect(resolveExpiredKahatiStatus(3, 5)).toBe('cancelled');
+  });
+
+  it('reads GOOD TO GO rather than counting down to a threshold it cannot reach', () => {
+    expect(kahatiBadge('open', 4, 5)).toBe('GOOD TO GO');
+    expect(kahatiBadge('open', 2, 5)).toBe('2 MORE TO GO');
+    expect(kahatiBadge('open', 5, 5)).toBe('FULL');
   });
 });
 

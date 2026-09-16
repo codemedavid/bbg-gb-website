@@ -15,7 +15,7 @@ import { ProofUploader } from '@/components/ProofUploader';
 import { PaymentMethodPicker } from '@/components/PaymentMethodPicker';
 import { php } from '@/lib/format';
 import { refundNoticeFor } from '@/lib/kahati-downpayment';
-import { friendlyCheckoutError, matchesStaleLine, staleCheckoutLine } from '@/lib/checkout-error';
+import { friendlyCheckoutError, matchesStaleLine, staleCheckoutLine, unavailableCheckoutLines } from '@/lib/checkout-error';
 import { SHIPPING_OPTIONS, DEFAULT_COURIER } from '@/lib/report/constants';
 
 export default function CheckoutPage() {
@@ -108,13 +108,24 @@ export default function CheckoutPage() {
   // three. ProofUploader owns the previews and the remove buttons.
   const [proofs, setProofs] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const submissionLock = useRef(false);
+  const reportError = (message: string) => {
+    setSubmissionError(message);
+    toast(message);
+  };
   // Minted once per submission and reused on retries, so the server can
   // recognize a resubmitted checkout and replay the original orders instead of
   // creating duplicates. A fresh submission after success gets a fresh key.
   const idempotencyKey = useRef<string | null>(null);
 
+  const prefilledUser = useRef<string | null>(null);
   useEffect(() => {
-    if (user) { setName(user.name); setPhone(user.phone || ''); setAddress(user.address || ''); }
+    if (user && prefilledUser.current !== user.id) {
+      prefilledUser.current = user.id;
+      setName(user.name); setPhone(user.phone || ''); setAddress(user.address || '');
+    }
   }, [user]);
 
   // Default to the first method of each kind once loaded; keep valid if the list
@@ -150,7 +161,18 @@ export default function CheckoutPage() {
   }, [authStatus, router]);
 
   const place = async () => {
-    if ((proofs.length === 0 && !confirmOnly) || !items.length || submitting) return;
+    if (!canPlace || submitting || submissionLock.current) return;
+    const deliveryError = name.trim().length < 2 || name.trim().length > 120
+      ? 'Enter your full name (2–120 characters).'
+      : phone.trim().length < 7 || phone.trim().length > 40
+        ? 'Enter a valid mobile number (7–40 characters).'
+        : address.trim().length < 5 || address.trim().length > 500
+          ? 'Enter your complete delivery address (5–500 characters).'
+          : '';
+    if (deliveryError) { reportError(deliveryError); return; }
+    submissionLock.current = true;
+    setSubmissionError('');
+    setNeedsLogin(false);
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -163,9 +185,9 @@ export default function CheckoutPage() {
         kind: i.kind, refId: i.refId, qty: i.qty, unit: i.unit,
         quotedUnitPricePhp: lineUnitPrice(i),
       }))));
-      fd.append('shipName', name);
-      fd.append('shipPhone', phone);
-      fd.append('shipAddress', address);
+      fd.append('shipName', name.trim());
+      fd.append('shipPhone', phone.trim());
+      fd.append('shipAddress', address.trim());
       // Written in the cart, carried through here, saved onto every order this
       // checkout creates.
       if (note.trim()) fd.append('note', note.trim());
@@ -178,7 +200,13 @@ export default function CheckoutPage() {
       fd.append('courier', courier);
       // Appended under one repeated field name; the route reads getAll('proof').
       for (const proof of proofs) fd.append('proof', proof);
-      if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
+      if (!idempotencyKey.current) {
+        // randomUUID is unavailable on HTTP LAN previews and some older browsers.
+        // getRandomValues still supplies a cryptographically random retry key.
+        idempotencyKey.current = typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+      }
       fd.append('idempotencyKey', idempotencyKey.current);
       const res = await fetch('/api/orders', { method: 'POST', body: fd, credentials: 'include' });
       const json = await res.json().catch(() => ({}));
@@ -187,11 +215,25 @@ export default function CheckoutPage() {
         // closed hatian) would loop the same 400 on every retry — the cart is
         // persisted, so it never heals on its own. Drop the dead line, keep
         // the rest of the cart, and say so without exposing raw ids.
+        // Every dead line the server listed, removed together. One per attempt
+        // meant a fresh proof upload per line and items vanishing one by one,
+        // explained only by a toast gone in two seconds. The proofs stay
+        // attached, so placing again is one tap.
+        const listed = res.status === 400 ? unavailableCheckoutLines(json) : [];
+        const deadLines = items.filter((i) => listed.some((l) => l.refId === i.refId));
+        if (deadLines.length > 0) {
+          for (const line of deadLines) removeLine(line.key);
+          reportError(
+            `Your order was not placed. ${deadLines.length === 1 ? 'This item is' : 'These items are'} no longer available and ${deadLines.length === 1 ? 'was' : 'were'} removed from your cart: ${deadLines.map((l) => l.name).join(', ')}. Your payment proof is still attached — check your new total, then place your order again.`,
+          );
+          setSubmitting(false);
+          return;
+        }
         const stale = res.status === 400 ? staleCheckoutLine(json.error ?? '') : null;
         const deadLine = stale && items.find((i) => matchesStaleLine(i, stale));
         if (deadLine) {
           removeLine(deadLine.key);
-          toast(`"${deadLine.name}" is no longer available and was removed from your cart.`);
+          reportError(`"${deadLine.name}" is no longer available and was removed from your cart.`);
           setSubmitting(false);
           return;
         }
@@ -204,14 +246,15 @@ export default function CheckoutPage() {
           qc.invalidateQueries({ queryKey: ['groupbuys'] });
           qc.invalidateQueries({ queryKey: ['campaigns'] });
           qc.invalidateQueries({ queryKey: ['moq-products'] });
-          toast(json.error);
+          reportError(json.error);
           setSubmitting(false);
           return;
         }
         // The upload-config 503 carries deploy jargon; friendlyCheckoutError
         // gives the customer a retryable message instead. Stock/validation
         // errors still show their own actionable text.
-        toast(friendlyCheckoutError(res.status, json.error ?? ''));
+        setNeedsLogin(res.status === 401);
+        reportError(friendlyCheckoutError(res.status, json.error ?? ''));
         setSubmitting(false);
         return;
       }
@@ -236,8 +279,10 @@ export default function CheckoutPage() {
       const more = rest.length ? `?more=${encodeURIComponent(rest.join(','))}` : '';
       router.replace(`/success/${first}${more}`);
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not place order. Please try again.');
+      reportError('We couldn’t confirm your order. Check your connection and try again here so we can check for an existing order.');
       setSubmitting(false);
+    } finally {
+      submissionLock.current = false;
     }
   };
 
@@ -261,7 +306,7 @@ export default function CheckoutPage() {
     <OverlayShell>
       <BackHeader title="Checkout" onBack={() => router.push('/cart')} showHome />
       {cartEmpty ? (
-        <div className="mx-auto w-full max-w-xl p-4"><CheckoutItemsCard /></div>
+        <div className="mx-auto w-full max-w-xl p-4">{submissionError && <p role="alert" className="mb-3 text-sm text-[#a33]">{submissionError}</p>}<CheckoutItemsCard /></div>
       ) : (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-3.5 p-4 lg:grid lg:max-w-none lg:grid-cols-[1fr_360px] lg:items-start lg:gap-5 lg:p-6">
         <div className="flex flex-col gap-3.5">
@@ -402,7 +447,13 @@ export default function CheckoutPage() {
         <div className="text-[11.5px] leading-relaxed text-ink-muted">
           🛬 Tip: white powder peptides ship first; salt forms, blends &amp; liquids arrive 3–5 days later — place them in separate orders to avoid delays.
         </div>
-        <button onClick={place} disabled={!canPlace || submitting}
+        {submissionError && (
+          <div role="alert" className="rounded-[12px] border border-[#e6b8b8] bg-white p-3 text-[13px] leading-relaxed text-[#a33]">
+            <p className="m-0">{submissionError}</p>
+            {needsLogin && <a href="/login?next=%2Fcheckout" className="mt-2 inline-block font-bold underline">Sign in to continue</a>}
+          </div>
+        )}
+        <button onClick={place} aria-busy={submitting} disabled={!canPlace || submitting}
           className={`block w-full rounded-[12px] py-[15px] text-center text-[15px] font-bold text-white ${canPlace && !submitting ? 'bg-brand-green active:scale-[.99]' : 'bg-[#b9c6b4]'}`}>
           {submitting ? 'Placing…' : confirmOnly ? 'Confirm order' : proofs.length ? 'Place order' : 'Upload proof to place order'}
         </button>

@@ -116,10 +116,11 @@ type StoredBatch = {
   batchNo: number;
 };
 
-export function describeBatch<T extends StoredBatch>(c: T) {
+export function describeBatch<T extends StoredBatch>(c: T, vialsPerKit: number | null = null) {
   const status = groupBuyMoqStatus(c.committed, c.moq);
   return {
     ...c,
+    vialsPerKit,
     // The clamped count — the board must never render 13/10, whatever a legacy
     // row happens to hold.
     committed: status.committed,
@@ -156,4 +157,16 @@ export function campaignOutcome(
   // A completed batch is full by definition — it closed the moment it filled.
   if (status === 'approved' || status === 'completed') return 'processing';
   return committed >= moq ? 'processing' : 'awaiting_moq';
+}
+
+/** A campaign may contain several products; only show a kit size they all share. */
+export function campaignVialsPerKit(
+  included: unknown,
+  sizes: Record<string, number | null | undefined>,
+): number | null {
+  if (!Array.isArray(included)) return null;
+  const values = included.map((p) => sizes[p.productId]);
+  const size = values[0];
+  return size != null && Number.isInteger(size) && size > 0 && values.every((v) => v === size)
+    ? size : null;
 }

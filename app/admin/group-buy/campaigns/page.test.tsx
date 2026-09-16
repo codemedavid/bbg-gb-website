@@ -64,6 +64,22 @@ describe('the list', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
+  // The admin sizing a batch has to know whether a kit is five pieces or ten —
+  // it is the difference between ordering 50 and 100 of them from the supplier.
+  it('says how many vials a kit holds when it is not the usual ten', () => {
+    feed = { data: [campaign({ pricePerKitPhp: '1975.00', vialsPerKit: 5 })], isLoading: false };
+    render(<AdminCampaignsPage />);
+
+    expect(within(card('c1')).getByText(/5 vials each/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about kit size on an ordinary ten-vial kit', () => {
+    feed = { data: [campaign({ vialsPerKit: 10 })], isLoading: false };
+    render(<AdminCampaignsPage />);
+
+    expect(within(card('c1')).queryByText(/vials each/i)).not.toBeInTheDocument();
+  });
+
   it('shows the batch and progress of each campaign', () => {
     feed = { data: [campaign({ batchNo: 2, committed: 4, capacity: 10, remaining: 6 })], isLoading: false };
     render(<AdminCampaignsPage />);

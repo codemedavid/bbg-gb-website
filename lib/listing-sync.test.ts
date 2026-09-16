@@ -164,19 +164,19 @@ describe('campaignListingPatch', () => {
     ]);
   });
 
-  it('never lowers the MOQ below the kits already committed', () => {
+  it('keeps campaign capacity independent from the kahati vial cap', () => {
     const before = product({ gbMaxVialsPerBatch: 100 });
     const after = product({ gbMaxVialsPerBatch: 20 });
 
-    expect(campaignListingPatch(before, after, batch({ committed: 7 })).moq).toBe(7);
+    expect(campaignListingPatch(before, after, batch({ committed: 7 })).moq).toBeUndefined();
   });
 
-  it('clamps the per-customer minimum to the MOQ the same edit set', () => {
+  it('clamps the per-customer minimum to the existing campaign capacity', () => {
     const before = product({ gbMinVials: 10, gbMaxVialsPerBatch: 100 });
     const after = product({ gbMinVials: 90, gbMaxVialsPerBatch: 20 });
 
-    const patch = campaignListingPatch(before, after, batch());
-    expect(patch.moq).toBe(2);
+    const patch = campaignListingPatch(before, after, batch({ moq: 2 }));
+    expect(patch.moq).toBeUndefined();
     expect(patch.perCustomerMin).toBe(2);
   });
 

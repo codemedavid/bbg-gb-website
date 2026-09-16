@@ -183,7 +183,7 @@ describe('syncListingsForProduct — campaign batches', () => {
     expect(row.pricePerKitPhp).toBe('6600.00');
   });
 
-  it('never drops the MOQ below the kits already committed', async () => {
+  it('keeps campaign capacity when the kahati vial cap changes', async () => {
     const p = await makeProduct({ isGroupBuy: true, gbMaxVialsPerBatch: 100 });
     const before = await catalogRow(p.id);
     const batch = await makeCampaign({
@@ -197,7 +197,7 @@ describe('syncListingsForProduct — campaign batches', () => {
     await syncListingsForProduct(db, before, after);
 
     const [row] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, batch.id));
-    expect(row.moq).toBe(7);
+    expect(row.moq).toBe(10);
   });
 });
 

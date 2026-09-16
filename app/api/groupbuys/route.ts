@@ -51,7 +51,13 @@ export const GET = handler(async () => {
     .leftJoin(products, eq(products.id, groupBuys.productId))
     .where(and(
       eq(groupBuys.status, 'open'),
-      or(isNull(groupBuys.productId), eq(products.isKahati, true)),
+      // A product with the Kahati switch off never reaches this board, and
+      // neither does one the shop has DELISTED: `is_active = false` withdraws a
+      // product from every channel whatever its switches still say
+      // (lib/product-channels.ts), and the seeder has only ever opened counters
+      // for active products. Without this the two disagreed, and a counter
+      // opened while the product was listed outlived the delisting.
+      or(isNull(groupBuys.productId), and(eq(products.isKahati, true), eq(products.isActive, true))),
     ))
     .orderBy(asc(groupBuys.createdAt))
     .then((r) => r.map((row) => row.gb));
@@ -62,7 +68,7 @@ export const GET = handler(async () => {
     return {
       ...g,
       claimedSlots,
-      perVialPhp: perVialPrice(Number(g.pricePerKitPhp)),
+      perVialPhp: perVialPrice(Number(g.pricePerKitPhp), g.totalSlots),
       remaining: Math.max(0, g.totalSlots - claimedSlots),
       progress: kahatiProgressPercent(claimedSlots, g.totalSlots),
     };

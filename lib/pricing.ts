@@ -129,8 +129,9 @@ export function computeTotals(items: PriceableItem[]): OrderTotals {
 }
 
 // Per-vial price for a kahati kit.
-export function perVialPrice(pricePerKitPhp: number): number {
-  return round2(pricePerKitPhp / VIALS_PER_KIT);
+export function perVialPrice(pricePerKitPhp: number, totalSlots: number = VIALS_PER_KIT): number {
+  const divisor = Number.isInteger(totalSlots) && totalSlots > 0 ? totalSlots : VIALS_PER_KIT;
+  return round2(pricePerKitPhp / divisor);
 }
 
 // Validate a kahati commitment against min vials and remaining slots.
@@ -425,21 +426,17 @@ export function kahatiDefaultsFor(c: GroupBuyConfig): KahatiDefaults {
 }
 
 // What a campaign starts at when this product is included. Campaigns count
-// kits, so both vial figures convert:
-//   batch size       = whole kits that fit in the batch, floored at one
-//   per-customer min = kits needed to cover the minimum, rounded UP — a
-//                      customer commits whole kits, so half a kit is one kit.
+// kits. Their batch capacity is independent of kahati vial limits. The
+// per-customer minimum converts to whole kits, rounding partial kits up.
 export type CampaignDefaults = { pricePerKitPhp: number | null; moq: number; perCustomerMin: number };
 
 export function campaignDefaultsFor(c: GroupBuyConfig): CampaignDefaults {
   const vialsPerKit = groupBuyVialsPerKit(c);
-  const maxVials = positiveInt(c.gbMaxVialsPerBatch);
   const minVials = positiveInt(c.gbMinVials);
   return {
     pricePerKitPhp: groupBuyUnitPrice(c, 'kit'),
-    moq: maxVials == null
-      ? MOQ_BATCH_MAX_KITS
-      : batchCapacity(Math.max(1, Math.floor(maxVials / vialsPerKit))),
+    // Kahati vial capacity must not size the whole-kit campaign batch.
+    moq: MOQ_BATCH_MAX_KITS,
     perCustomerMin: minVials == null ? 1 : Math.max(1, Math.ceil(minVials / vialsPerKit)),
   };
 }

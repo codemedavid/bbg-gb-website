@@ -4,6 +4,7 @@ import { apiGet, apiSend } from '@/lib/api-client';
 import { field, label, btnPrimary, btnGhost } from '@/components/admin-ui';
 import { formatPht } from '@/lib/schedule';
 import type { Cycle, ScheduleRecurrence } from '@/lib/schedule-recurrence';
+import type { CycleSource } from '@/lib/cycle-resolver';
 import { scheduleStatus } from '@/lib/schedule-controls';
 import { ScheduleStatusLine } from './ScheduleStatusLine';
 import { MANILA_TZ_LABEL } from '@/lib/timezone';
@@ -22,7 +23,9 @@ import { MANILA_TZ_LABEL } from '@/lib/timezone';
 type Settings = {
   scheduleRecurrence: ScheduleRecurrence;
   schedulePausedUntil: string | null;
-  scheduleCycle: Cycle | null;
+  // `source` is set on a running cycle: 'manual' when an admin started it by
+  // hand with "Start new cycle", overriding this schedule.
+  scheduleCycle: (Cycle & { source?: CycleSource }) | null;
 };
 
 const DAYS = [
@@ -153,6 +156,9 @@ export function SchedulePanel() {
               This cycle: <strong className="font-semibold">{formatPht(cycle.opensAt)}</strong>
               {' → '}
               <strong className="font-semibold">{formatPht(cycle.closesAt)}</strong>
+              {cycle.source === 'manual' && (
+                <span data-testid="schedule-cycle-manual"> — started by hand; the weekly schedule resumes at its next opening.</span>
+              )}
             </p>
           )}
 

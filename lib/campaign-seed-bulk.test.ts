@@ -176,3 +176,23 @@ describe('openCampaignsForGroupBuyProducts', () => {
     expect(report).toMatchObject({ scanned: 0, created: 0, skippedExisting: 0, applied: true });
   });
 });
+
+it('restores a product after the newest batch was cancelled despite older completed batches', async () => {
+  const p = await seedProduct();
+  const includedProducts = [{ productId: p.id, name: p.name, outOfStock: false }];
+  const old = await makeMoqCampaign({ status: 'completed' });
+  const next = await makeMoqCampaign({ status: 'cancelled', seriesId: old.seriesId, batchNo: 2 });
+  const db = await getDb();
+  await db.update(moqCampaigns).set({ includedProducts }).where(eq(moqCampaigns.id, old.id));
+  await db.update(moqCampaigns).set({ includedProducts }).where(eq(moqCampaigns.id, next.id));
+  expect((await openCampaignsForGroupBuyProducts()).created).toBe(1);
+  expect((await openCampaignsForGroupBuyProducts()).created).toBe(0);
+});
+
+it('retains scheduled boards without opening duplicate campaigns', async () => {
+  const p = await seedProduct();
+  const batch = await makeMoqCampaign();
+  const db = await getDb();
+  await db.update(moqCampaigns).set({ status: 'scheduled', includedProducts: [{ productId: p.id, name: p.name, outOfStock: false }] }).where(eq(moqCampaigns.id, batch.id));
+  expect((await openCampaignsForGroupBuyProducts()).created).toBe(0);
+});

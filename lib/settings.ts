@@ -4,13 +4,16 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, paymentMethods, settings } from '@/lib/db';
 import { PACKING_FEE_PHP, type PackingMode, type PackingFees } from '@/lib/pricing';
-import { cycleAt, cycleKeyOf, latestCycle, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
+import { cycleKeyOf, type Cycle, type ScheduleRecurrence } from '@/lib/schedule-recurrence';
+import {
+  currentCycleOf, latestCycleOf, type ResolvedCycle, type ScheduleState,
+} from '@/lib/cycle-resolver';
 import {
   KAHATI_DOWNPAYMENT_KEYS, isDownpaymentWaivableByCycle, parseKahatiDownpaymentPolicy,
   serializeKahatiDownpaymentPolicy, type KahatiDownpaymentPolicy,
 } from '@/lib/kahati-downpayment';
 
-export type { PackingFees, Cycle, ScheduleRecurrence, KahatiDownpaymentPolicy };
+export type { PackingFees, Cycle, ResolvedCycle, ScheduleRecurrence, KahatiDownpaymentPolicy };
 
 const KEY: Record<PackingMode, string> = {
   solo: 'packing_fee_solo',
@@ -70,6 +73,8 @@ const SCHEDULE_KEY = {
 } as const;
 
 const PAUSED_KEY = 'schedule_paused_until';
+
+type Db = Awaited<ReturnType<typeof getDb>>;
 
 /**
  * The configured recurrence, or nulls when it has never been set.
@@ -163,26 +168,91 @@ export async function setScheduleRecurrence(r: ScheduleRecurrence): Promise<Sche
  * schedule is treated, and deliberately so: failing closed on a corrupt pause
  * would keep the storefront dark indefinitely with nothing on screen to say why.
  */
-export async function getSchedulePausedUntil(): Promise<string | null> {
-  const db = await getDb();
+export async function getSchedulePausedUntil(conn?: Db): Promise<string | null> {
+  const db = conn ?? await getDb();
   const [row] = await db.select().from(settings).where(eq(settings.key, PAUSED_KEY));
   const ms = row?.value ? Date.parse(row.value) : NaN;
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
-export async function setSchedulePausedUntil(until: string | null): Promise<string | null> {
-  const db = await getDb();
+export async function setSchedulePausedUntil(until: string | null, conn?: Db): Promise<string | null> {
+  const db = conn ?? await getDb();
   if (until == null) {
     await db.delete(settings).where(eq(settings.key, PAUSED_KEY));
     return null;
   }
+  // Read back through the same handle: inside a caller's transaction, a read
+  // on the root connection would wait on the lock that transaction holds.
   const ms = Date.parse(until);
   if (!Number.isFinite(ms)) throw new Error(`Not a valid date/time: ${until}`);
   const value = new Date(ms).toISOString();
   await db.insert(settings)
     .values({ key: PAUSED_KEY, value })
     .onConflictDoUpdate({ target: settings.key, set: { value } });
-  return getSchedulePausedUntil();
+  return getSchedulePausedUntil(conn);
+}
+
+// ---- The cycle an admin started by hand ------------------------------------
+//
+// "Start new cycle" is a schedule OVERRIDE. The recurrence says when the boards
+// open on their own; this is the one-off window an admin opened by pressing the
+// button, and lib/cycle-resolver.ts decides which of the two is the cycle at
+// any instant (the newer one). Stored as two instants rather than a flag, for
+// the reason lib/schedule.ts gives: a "currently open" boolean drifts from the
+// window it claims to describe, while a window is a fact that expires by itself.
+const MANUAL_CYCLE_KEY = {
+  opensAt: 'cycle_manual_opens_at',
+  closesAt: 'cycle_manual_closes_at',
+} as const;
+
+/** The cycle last started by hand, or null when never, cleared, or unreadable. */
+export async function getManualCycle(conn?: Db): Promise<Cycle | null> {
+  const db = conn ?? await getDb();
+  const rows = await db.select().from(settings)
+    .where(inArray(settings.key, Object.values(MANUAL_CYCLE_KEY)));
+  const byKey = new Map(rows.map((r) => [r.key, r.value]));
+  const opens = Date.parse(byKey.get(MANUAL_CYCLE_KEY.opensAt) ?? '');
+  const closes = Date.parse(byKey.get(MANUAL_CYCLE_KEY.closesAt) ?? '');
+  // Half a window, or one that runs backwards, reads as none — fail closed,
+  // the same posture as a half-set recurrence.
+  if (!Number.isFinite(opens) || !Number.isFinite(closes) || !(opens < closes)) return null;
+  return { opensAt: new Date(opens).toISOString(), closesAt: new Date(closes).toISOString() };
+}
+
+/**
+ * Stores the manual cycle, or clears it. Both instants move together or not
+ * at all. Accepts a transaction handle so starting a cycle can open the window
+ * in the same transaction that claims it (lib/cycle-start-server.ts).
+ */
+export async function setManualCycle(cycle: Cycle | null, db?: Db): Promise<Cycle | null> {
+  if (cycle !== null && !(Date.parse(cycle.opensAt) < Date.parse(cycle.closesAt))) {
+    throw new Error('A cycle must close after it opens.');
+  }
+  const write = async (tx: Db): Promise<void> => {
+    if (cycle === null) {
+      await tx.delete(settings).where(inArray(settings.key, Object.values(MANUAL_CYCLE_KEY)));
+      return;
+    }
+    for (const [key, value] of [[MANUAL_CYCLE_KEY.opensAt, cycle.opensAt], [MANUAL_CYCLE_KEY.closesAt, cycle.closesAt]]) {
+      await tx.insert(settings)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } });
+    }
+  };
+  // A caller's handle is already inside a transaction — nesting another would
+  // deadlock the single-writer embedded database. Only a bare call opens one.
+  if (db) await write(db);
+  else await (await getDb()).transaction(write);
+  // Same handle for the read-back, for the same reason.
+  return getManualCycle(db);
+}
+
+/** Everything the cycle resolution depends on, read once. */
+export async function getScheduleState(): Promise<ScheduleState> {
+  const [recurrence, manual, pausedUntil] = await Promise.all([
+    getScheduleRecurrence(), getManualCycle(), getSchedulePausedUntil(),
+  ]);
+  return { recurrence, manual, pausedUntil };
 }
 
 /**
@@ -190,25 +260,22 @@ export async function setSchedulePausedUntil(until: string | null): Promise<stri
  *
  * The one question every gated route, server component and checkout asks, so
  * none of them can answer it differently — and the source of the cycle key a
- * packing fee is charged against.
+ * packing fee is charged against. Scheduled or started by hand, whichever
+ * opened last: see lib/cycle-resolver.ts.
  */
-export async function getCurrentCycle(now: Date = new Date()): Promise<Cycle | null> {
-  const cycle = cycleAt(await getScheduleRecurrence(), now);
-  if (!cycle) return null;
-  const pausedUntil = await getSchedulePausedUntil();
-  if (pausedUntil && now.getTime() < Date.parse(pausedUntil)) return null;
-  return cycle;
+export async function getCurrentCycle(now: Date = new Date()): Promise<ResolvedCycle | null> {
+  return currentCycleOf(await getScheduleState(), now);
 }
 
 /**
  * The key of the cycle the admin is working — the latest one to have opened,
- * whether or not it is still trading — or null when no schedule is set.
+ * whether or not it is still trading — or null when no cycle has ever opened.
  *
  * Not subject to the pause: pausing closes the boards early, it does not
  * un-name the cycle whose orders are being packed.
  */
 export async function getLatestCycleKey(now: Date = new Date()): Promise<string | null> {
-  const cycle = latestCycle(await getScheduleRecurrence(), now);
+  const cycle = latestCycleOf(await getScheduleState(), now);
   return cycle ? cycleKeyOf(cycle) : null;
 }
 

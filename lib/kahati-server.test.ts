@@ -72,6 +72,19 @@ beforeEach(async () => {
 });
 
 describe('sweepKahatis — viability', () => {
+  it('charges a five-vial kit correctly and closes at its four-vial minimum', async () => {
+    const counter = await makeGroupBuy({ totalSlots: 5, minVials: 1, pricePerKitPhp: 1975 });
+    const { order } = await joinKahati(counter.id, 4);
+    const db = await getDb();
+    const [line] = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+    expect(Number(line.unitPricePhp)).toBe(395);
+    expect(Number(line.lineTotalPhp)).toBe(1580);
+    await expire(counter.id);
+    await sweepKahatis(db);
+    expect(await statusOf(counter.id)).toBe('closed');
+    expect(await orderStatus(order.id)).toBe('proof_review');
+  });
+
   it('closes an expired hatian that met the 7-vial minimum', async () => {
     const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, minVials: 1, closesAt: past() });
     const db = await getDb();

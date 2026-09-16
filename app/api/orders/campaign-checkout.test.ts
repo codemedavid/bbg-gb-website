@@ -397,3 +397,73 @@ describe('repeat commitments to the same group buy', () => {
     expect(rows.map((row) => Number(row.packingFeePhp)).sort((a, b) => a - b)).toEqual([0, 300]);
   });
 });
+
+// Hiding a batch is not refusing it.
+//
+// The board now drops a batch whose product has left the Group Buy channel, but
+// the cart is persisted in the browser: a line added before the switch was
+// flipped survives the batch leaving the board, and so does an id posted
+// straight at this route. The Kahati branch has enforced its own switch here
+// all along; this is the same guard for the other board, and it is the one that
+// decides whether money is taken.
+describe('POST /api/orders — a campaign whose product left the channel', () => {
+  const carrying = async (extra: Record<string, unknown>) => {
+    const product = await makeProduct({ name: 'Retatrutide (Pen Cartridge)', spec: '10mg', pricePhp: 4438, ...extra });
+    const c = await makeMoqCampaign({
+      name: 'Retatrutide (Pen Cartridge) 10mg',
+      pricePerKitPhp: 4438,
+      includedProducts: [{ productId: product.id, name: 'Retatrutide (Pen Cartridge)' }],
+    });
+    return c;
+  };
+
+  it('refuses a commitment to a batch whose product has Group Buy switched off', async () => {
+    await signIn();
+    const c = await carrying({ isGroupBuy: false });
+
+    const { res, body } = await checkout([campaignLine(c.id)]);
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('not available through Group Buy');
+  });
+
+  it('refuses a commitment to a batch whose product has been delisted', async () => {
+    await signIn();
+    const c = await carrying({ isGroupBuy: true, isActive: false });
+
+    const { res, body } = await checkout([campaignLine(c.id)]);
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('not available through Group Buy');
+  });
+
+  it('names the line so the persisted cart can drop it rather than loop', async () => {
+    // The cart survives reloads, so a line the shop has stopped selling would
+    // otherwise 400 the WHOLE basket on every retry. staleCheckoutLine matches
+    // the refusal to the id, and the checkout page removes that line.
+    await signIn();
+    const c = await carrying({ isGroupBuy: false });
+
+    const { body } = await checkout([campaignLine(c.id)]);
+
+    expect(staleCheckoutLine(body.error)).toEqual({ refId: c.id });
+  });
+
+  it('still takes a commitment to a batch whose product is on the channel', async () => {
+    await signIn();
+    const c = await carrying({ isGroupBuy: true });
+
+    const { res } = await checkout([campaignLine(c.id)]);
+
+    expect(res.status).toBe(201);
+  });
+
+  it('still takes a commitment to a hand-composed batch carrying no product', async () => {
+    await signIn();
+    const c = await makeMoqCampaign({ name: 'Bac Water 10ml', includedProducts: [] });
+
+    const { res } = await checkout([campaignLine(c.id)]);
+
+    expect(res.status).toBe(201);
+  });
+});

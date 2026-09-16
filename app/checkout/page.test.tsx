@@ -2,7 +2,7 @@
 //   * the cart must be empty after a successful order
 //   * the page needs a Home link, since it sits outside the bottom nav
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useCart } from '@/lib/store/cart';
@@ -494,5 +494,87 @@ describe('CheckoutPage — fixing the cart before paying', () => {
 
     await waitFor(() => expect(screen.getByText(/wala nang laman/i)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /^place order$/i })).not.toBeInTheDocument();
+  });
+});
+
+
+describe('checkout submission recovery', () => {
+  it('renders a persistent refusal beside checkout without a storefront Toast', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 400,
+      json: async () => ({ success: false, error: 'Only 1 left in stock.' }),
+    })));
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+    const button = await screen.findByRole('button', { name: /^place order$/i });
+    fireEvent.click(button);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only 1 left in stock.');
+    act(() => useToast.getState().hide());
+    expect(screen.getByRole('alert')).toHaveTextContent('Only 1 left in stock.');
+    expect(useCart.getState().items).toHaveLength(1);
+  });
+
+  it('sends only one request for rapid clicks before React renders the busy state', async () => {
+    const fetchMock = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+    const button = await screen.findByRole('button', { name: /^place order$/i });
+    act(() => { button.click(); button.click(); button.click(); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains an oversized request even when the host returns non-JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 413, json: async () => { throw new SyntaxError(); },
+    })));
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+    fireEvent.click(await screen.findByRole('button', { name: /^place order$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/smaller.*proof/i);
+    expect(useCart.getState().items).toHaveLength(1);
+  });
+
+  it('can submit from a browser without crypto.randomUUID', async () => {
+    const original = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: original.getRandomValues.bind(original) });
+    try {
+      seedCart();
+      render(<CheckoutPage />, { wrapper });
+      await attachProof();
+      fireEvent.click(await screen.findByRole('button', { name: /^place order$/i }));
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/success/BBG-2500'));
+      const body = vi.mocked(fetch).mock.calls[0][1]!.body as FormData;
+      expect(body.get('idempotencyKey')).toMatch(/^[a-f0-9]{32}$/);
+    } finally {
+      vi.stubGlobal('crypto', original);
+    }
+  });
+
+  it('offers a sign-in recovery when the session expires during checkout', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 401,
+      json: async () => ({ success: false, error: 'Authentication required.' }),
+    })));
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+    fireEvent.click(await screen.findByRole('button', { name: /^place order$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/session has expired/i);
+    expect(screen.getByRole('link', { name: /sign in to continue/i })).toHaveAttribute('href', '/login?next=%2Fcheckout');
+    expect(useCart.getState().items).toHaveLength(1);
+  });
+
+  it('validates delivery details before sending an order', async () => {
+    seedCart();
+    render(<CheckoutPage />, { wrapper });
+    await attachProof();
+    fireEvent.change(screen.getByPlaceholderText('Mobile number'), { target: { value: '123' } });
+    fireEvent.click(await screen.findByRole('button', { name: /^place order$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/mobile number/i);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

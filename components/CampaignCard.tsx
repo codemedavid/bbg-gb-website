@@ -51,7 +51,7 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
         <div>
           <h3 className="m-0 font-display text-[15px] font-bold leading-tight text-ink">{c.name}</h3>
           <p className="mt-0.5 text-[12px] text-ink-muted">
-            Batch #{c.batchNo} · {php(c.pricePerKitPhp)} per kit
+            Batch #{c.batchNo} · {php(c.pricePerKitPhp)} per kit{c.vialsPerKit && c.vialsPerKit !== 10 ? ` · ${c.vialsPerKit} vials each` : ''}
           </p>
         </div>
         <div className="flex flex-none flex-col items-end gap-1">
@@ -71,7 +71,7 @@ export function CampaignCard({ c, onCommit }: { c: MoqCampaign; onCommit: (c: Mo
             {c.full
               ? 'Batch full 🎉'
               : isOpen
-                ? `${c.remaining} slot${c.remaining === 1 ? '' : 's'} left`
+                ? `${c.remaining} kit${c.remaining === 1 ? '' : 's'} left`
                 : `${c.remaining} unfilled`}
           </span>
         </div>

@@ -200,11 +200,8 @@ export function useMutate() {
   return {
     saveProduct: useMutation({ mutationFn: (p: any) => p.id ? apiSend(`/admin/products/${p.id}`, 'PATCH', p) : apiSend('/admin/products', 'POST', p), onSuccess: invalidate, onError: toastError('Could not save product.') }),
     archiveProduct: useMutation({ mutationFn: (id: string) => apiSend(`/admin/products/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not archive product.') }),
-    saveGroupBuy: useMutation({ mutationFn: (g: any) => g.id ? apiSend(`/admin/groupbuys/${g.id}`, 'PATCH', g) : apiSend('/admin/groupbuys', 'POST', g), onSuccess: invalidate, onError: toastError('Could not save group buy.') }),
-    deleteGroupBuy: useMutation({ mutationFn: (id: string) => apiSend(`/admin/groupbuys/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete group buy.') }),
-    // Ends every hatian counter that has vials on it and opens each one's
-    // successor — the board-level control, not the per-card Close.
-    startKahatiCycle: useMutation({ mutationFn: () => apiSend('/admin/groupbuys/cycle', 'POST'), onSuccess: invalidate, onError: toastError('Could not start a new cycle.') }),
+    saveGroupBuy: useMutation({ mutationFn: (g: any) => g.id ? apiSend(`/admin/groupbuys/${g.id}`, 'PATCH', g) : apiSend('/admin/groupbuys', 'POST', g), onSuccess: invalidate, onError: toastError('Could not save hatian.') }),
+    deleteGroupBuy: useMutation({ mutationFn: (id: string) => apiSend(`/admin/groupbuys/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete hatian.') }),
     // What one transfer was worth. Separate from setOrderStatus because it is a
     // different question — not "where is this order" but "has it been paid" —
     // and an admin types several of these against one order without ever
@@ -240,7 +237,9 @@ export function useMutate() {
     saveCampaign: useMutation({ mutationFn: (c: CampaignPayload) => c.id ? apiSend(`/campaigns/${c.id}`, 'PATCH', c) : apiSend('/campaigns', 'POST', c), onSuccess: invalidate }),
     deleteCampaign: useMutation({ mutationFn: (id: string) => apiSend(`/campaigns/${id}`, 'DELETE'), onSuccess: invalidate, onError: toastError('Could not delete campaign.') }),
     campaignAction: useMutation({ mutationFn: (v: { id: string; action: 'approve' | 'extend' | 'cancel' | 'roll'; deadline?: string | null }) => apiSend(`/campaigns/${v.id}/action`, 'POST', v), onSuccess: invalidate, onError: toastError('Could not update campaign.') }),
-    // Ends every running batch on the board and opens each one's successor.
-    startCycle: useMutation({ mutationFn: () => apiSend('/campaigns/cycle', 'POST'), onSuccess: invalidate, onError: toastError('Could not start a new cycle.') }),
+    // Starts a new cycle on BOTH boards and opens them to customers at once,
+    // overriding the schedule and any pause. One control, whichever board's
+    // button pressed it: there is one cycle. See lib/cycle-start-server.ts.
+    startCycle: useMutation({ mutationFn: () => apiSend('/admin/cycles', 'POST'), onSuccess: invalidate, onError: toastError('Could not start a new cycle.') }),
   };
 }

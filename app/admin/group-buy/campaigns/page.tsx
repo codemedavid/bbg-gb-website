@@ -54,7 +54,7 @@ export default function AdminCampaignsPage() {
   const handleStartCycle = async () => {
     const ok = await confirm({
       title: `Start a new cycle across ${running.length} batch${running.length === 1 ? '' : 'es'}?`,
-      message: 'Every batch with commitments closes and its next batch opens in its place. Batches nobody has joined stay open and are re-read from product management — name, price and batch size come forward from the catalog. Customer orders are not changed.',
+      message: 'Every batch with commitments closes and its next batch opens in its place. Batches nobody has joined stay open and are re-read from product management — name, price and batch size come forward from the catalog. The Hatian board starts its new cycle in the same breath, and both boards open to customers right away — even if the schedule or a pause has them closed. The weekly schedule takes over again at its next opening. Customer orders are not changed.',
       confirmLabel: 'End all & start next',
       cancelLabel: 'Keep the board as it is',
     });

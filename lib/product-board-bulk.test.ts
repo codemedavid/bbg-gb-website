@@ -170,3 +170,40 @@ describe('openBoardsForVialProducts', () => {
     expect(row.isActive).toBe(false);
   });
 });
+
+it('keeps Korean products off Kahati even when legacy kit sizes qualify for bulk enable', async () => {
+  const db = await getDb();
+  const [category] = await db.insert(categories).values({ name: 'Korean Aesthetics', slug: 'aesthetics' }).returning();
+  const p = await seedProduct();
+  await db.update(products).set({ categoryId: category.id }).where(eq(products.id, p.id));
+  await openBoardsForVialProducts();
+  await openBoardsForVialProducts();
+  const [after] = await db.select().from(products).where(eq(products.id, p.id));
+  expect(after.isKahati).toBe(false);
+  expect(after.isGroupBuy).toBe(true);
+});
+
+it('disables existing Korean products without changing group buys or joined counters', async () => {
+  const { groupBuys } = await import('@/lib/db');
+  const { makeGroupBuy } = await import('@/lib/test/harness');
+  const { sql } = await import('drizzle-orm');
+  const { readFileSync } = await import('node:fs');
+  const db = await getDb();
+  const [category] = await db.insert(categories).values({ name: 'Korean Aesthetics', slug: 'aesthetics' }).returning();
+  const empty = await seedProduct({ isKahati: true, isGroupBuy: true });
+  const joined = await seedProduct({ isKahati: true, isGroupBuy: true });
+  for (const p of [empty, joined]) {
+    await db.update(products).set({ categoryId: category.id }).where(eq(products.id, p.id));
+  }
+  const emptyBoard = await makeGroupBuy({ productId: empty.id });
+  const joinedBoard = await makeGroupBuy({ productId: joined.id, claimedSlots: 3 });
+  const migration = readFileSync(new URL('../drizzle/0034_korean_kahati_default.sql', import.meta.url), 'utf8');
+  for (const statement of migration.split('--> statement-breakpoint')) await db.execute(sql.raw(statement));
+  await openBoardsForVialProducts();
+  const rows = await db.select().from(products);
+  expect(rows.every((p) => !p.isKahati && p.isGroupBuy)).toBe(true);
+  const [closed] = await db.select().from(groupBuys).where(eq(groupBuys.id, emptyBoard.id));
+  const [active] = await db.select().from(groupBuys).where(eq(groupBuys.id, joinedBoard.id));
+  expect(closed.status).toBe('closed');
+  expect(active).toMatchObject({ status: 'open', claimedSlots: 3 });
+});

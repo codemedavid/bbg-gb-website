@@ -20,7 +20,7 @@
 // listings are opened by lib/kahati-seed-bulk.ts and lib/campaign-seed-bulk.ts,
 // which both boards run on read.
 import { eq } from 'drizzle-orm';
-import { getDb, products } from '@/lib/db';
+import { getDb, products, categories } from '@/lib/db';
 import { isBoardEligible } from './product-board-eligibility';
 import { listingName } from './campaign-seed';
 
@@ -75,7 +75,12 @@ export async function openBoardsForVialProducts(
     .filter((p) => !isBoardEligible(p) && isBoardEligible({ ...p, pricePhp: '1' }))
     .map((p) => listingName(p));
 
-  const kahatiPending = eligible.filter((p) => !p.isKahati);
+  // Korean products use the Aesthetics category. Its Kahati default stays
+  // off even when older catalog rows still carry a ten-vial kit size.
+  const koreanCategories = await db.select({ id: categories.id }).from(categories)
+    .where(eq(categories.slug, 'aesthetics'));
+  const koreanCategoryIds = new Set(koreanCategories.map((c) => c.id));
+  const kahatiPending = eligible.filter((p) => !p.isKahati && !koreanCategoryIds.has(p.categoryId ?? ''));
   const groupBuyPending = eligible.filter((p) => !p.isGroupBuy);
 
   const report = {

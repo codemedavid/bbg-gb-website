@@ -18,7 +18,7 @@
 // outright runs the same release flow (cancelKahati).
 import { and, asc, eq, gte, inArray, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, groupBuys, orders, orderItems, orderStatusHistory, settlements, users } from '@/lib/db';
-import { KAHATI_MIN_VIABLE_VIALS, nextKahatiClosesAt } from './kahati';
+import { KAHATI_MIN_VIABLE_VIALS, kahatiMinViableVials, nextKahatiClosesAt } from './kahati';
 import { round2, VIALS_PER_KIT } from './pricing';
 import { sendEmail, kahatiCancelledEmail, kahatiPartlyCancelledEmail } from './email';
 import { cancellationRefundNoticeFor, DEFAULT_KAHATI_DOWNPAYMENT_POLICY } from './kahati-downpayment';
@@ -45,6 +45,7 @@ export type KahatiSweepResult = {
 export type CancellationNotice = {
   userId: string; name: string; email: string; orderId: string; orderNo: string;
   kahatiId: string; kahatiName: string; claimedSlots: number; downpayment: number;
+  minViableVials?: number;
   /**
    * Whether the whole order went, or only this hatian's lines.
    *
@@ -78,14 +79,14 @@ const expiredUnviable = (now: Date): SQL | undefined => and(
   eq(groupBuys.status, 'open'),
   isNotNull(groupBuys.closesAt),
   lt(groupBuys.closesAt, now),
-  lt(groupBuys.claimedSlots, KAHATI_MIN_VIABLE_VIALS),
+  lt(groupBuys.claimedSlots, sql`ceil(${groupBuys.totalSlots} * 0.7)`),
 );
 
 // The row-level twin of expiredUnviable above: the same condition asked of a row
 // already in hand rather than of the table. Kept adjacent so the two cannot
 // drift into disagreeing about what "expired without reaching the minimum" is.
 const isExpiredUnviable = (g: GroupBuyRow, now: Date): boolean =>
-  g.closesAt !== null && g.closesAt < now && g.claimedSlots < KAHATI_MIN_VIABLE_VIALS;
+  g.closesAt !== null && g.closesAt < now && g.claimedSlots < kahatiMinViableVials(g.totalSlots);
 
 // An OPEN hatian that has reached its vial cap. Its kit is complete, so it must
 // not stay on the board: nobody can join it, and until it is sealed no successor
@@ -140,7 +141,7 @@ export async function sweepKahatis(db: Db, now: Date = new Date()): Promise<Kaha
       eq(groupBuys.status, 'open'),
       isNotNull(groupBuys.closesAt),
       lt(groupBuys.closesAt, now),
-      gte(groupBuys.claimedSlots, KAHATI_MIN_VIABLE_VIALS),
+      gte(groupBuys.claimedSlots, sql`ceil(${groupBuys.totalSlots} * 0.7)`),
     ))
     .returning({ id: groupBuys.id });
 
@@ -235,8 +236,8 @@ export async function notifyKahatiCancellations(notices: CancellationNotice[]): 
     // Two different things happened to two different customers, and telling the
     // second one the first one's news is worse than telling them nothing.
     const body = notice.orderCancelled
-      ? kahatiCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS, refundNotice })
-      : kahatiPartlyCancelledEmail({ ...notice, minVials: KAHATI_MIN_VIABLE_VIALS });
+      ? kahatiCancelledEmail({ ...notice, minVials: notice.minViableVials ?? KAHATI_MIN_VIABLE_VIALS, refundNotice })
+      : kahatiPartlyCancelledEmail({ ...notice, minVials: notice.minViableVials ?? KAHATI_MIN_VIABLE_VIALS });
     // ONE kind for both, deliberately. PostHog workflows deliver these, keyed
     // on the event, and there is one live workflow for 'kahati_cancelled'. A
     // second kind would have no workflow listening for it, so the mail would be
@@ -258,7 +259,7 @@ export async function notifyKahatiCancellations(notices: CancellationNotice[]): 
         orderCancelled: notice.orderCancelled,
         releasedVials: notice.releasedVials, survivingVials: notice.survivingVials,
         kahatiId: notice.kahatiId, kahatiName: notice.kahatiName,
-        claimedVials: notice.claimedSlots, minVials: KAHATI_MIN_VIABLE_VIALS,
+        claimedVials: notice.claimedSlots, minVials: notice.minViableVials ?? KAHATI_MIN_VIABLE_VIALS,
         refundPhp: notice.downpayment,
       },
     });
@@ -468,7 +469,7 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
       ne(orders.status, 'cancelled'),
     ));
 
-  const note = `Hatian "${g.name}" closed with ${g.claimedSlots} of ${KAHATI_MIN_VIABLE_VIALS} vials needed — batch cancelled.`;
+  const note = `Hatian "${g.name}" closed with ${g.claimedSlots} of ${kahatiMinViableVials(g.totalSlots)} vials needed — batch cancelled.`;
   const notices: CancellationNotice[] = [];
   if (!affected.length) return notices;
 
@@ -548,6 +549,7 @@ async function releaseKahatiOrders(db: Db, g: GroupBuyRow): Promise<Cancellation
         userId: order.userId, name: customer.name, email: customer.email,
         orderId: order.id, orderNo: order.orderNo,
         kahatiId: g.id, kahatiName: g.name, claimedSlots: g.claimedSlots,
+        minViableVials: kahatiMinViableVials(g.totalSlots),
         // Nothing is refunded while the order lives: the deposit is still
         // holding the place its surviving vials have in the parcel.
         downpayment: keepsOrderAlive ? 0 : Number(order.downpaymentPhp),

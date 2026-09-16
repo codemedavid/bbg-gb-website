@@ -61,7 +61,7 @@ vi.mock('@/lib/admin-api', () => ({
   useMutate: () => ({
     saveGroupBuy: { mutateAsync: saveMutate, mutate: vi.fn(), isPending: false },
     deleteGroupBuy: { mutate: vi.fn() },
-    startKahatiCycle: { mutate: startCycleMutate, isPending: false },
+    startCycle: { mutate: startCycleMutate, isPending: false },
   }),
 }));
 

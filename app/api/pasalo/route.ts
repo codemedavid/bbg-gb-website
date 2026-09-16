@@ -28,7 +28,9 @@ export const GET = handler(async () => {
       // A product whose Kahati switch was turned off is off both boards, the
       // same retroactive rule /api/groupbuys applies. Free-text counters with
       // no product link stay: they have no switch that could refuse them.
-      or(isNull(groupBuys.productId), eq(products.isKahati, true)),
+      // ...and neither does a DELISTED product. Rescuing a batch of something
+      // the shop no longer sells only collects vials that must be refunded.
+      or(isNull(groupBuys.productId), and(eq(products.isKahati, true), eq(products.isActive, true))),
     ))
     .orderBy(asc(groupBuys.createdAt))
     .then((r) => r.map((row) => row.gb));
@@ -38,7 +40,7 @@ export const GET = handler(async () => {
     return {
       ...g,
       claimedSlots: q.combinedVials,
-      perVialPhp: perVialPrice(Number(g.pricePerKitPhp)),
+      perVialPhp: perVialPrice(Number(g.pricePerKitPhp), g.totalSlots),
       remaining: q.slotsRemaining,
       progress: q.maxVials > 0 ? Math.round((q.combinedVials / q.maxVials) * 100) : 0,
       kahatiVials: q.kahatiVials,

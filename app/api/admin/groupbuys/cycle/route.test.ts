@@ -56,7 +56,7 @@ describe('POST /api/admin/groupbuys/cycle', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.data.rolled).toBe(1);
+    expect(body.data.kahati.rolled).toBe(1);
     const [sealed, successor] = await countersNamed('KLOW 80mg');
     expect(sealed.status).toBe('closed');
     expect(successor.status).toBe('open');
@@ -72,9 +72,9 @@ describe('POST /api/admin/groupbuys/cycle', () => {
 
     const body = await (await POST()).json();
 
-    expect(body.data.rolled).toBe(1);
-    expect(body.data.skippedEmpty).toBe(1);
-    expect(body.data.counters).toEqual([
+    expect(body.data.kahati.rolled).toBe(1);
+    expect(body.data.kahati.skippedEmpty).toBe(1);
+    expect(body.data.kahati.counters).toEqual([
       expect.objectContaining({ name: 'Joined', endedWithVials: 2 }),
     ]);
   });
@@ -93,10 +93,10 @@ describe('POST /api/admin/groupbuys/cycle', () => {
 
     const body = await (await POST()).json();
 
-    expect(body.data.rolled).toBe(1);
-    expect(body.data.skippedEmpty).toBe(1);
-    expect(body.data.leftForCancellation).toBe(1);
-    expect(body.data.failed).toEqual([]);
+    expect(body.data.kahati.rolled).toBe(1);
+    expect(body.data.kahati.skippedEmpty).toBe(1);
+    expect(body.data.kahati.leftForCancellation).toBe(1);
+    expect(body.data.kahati.failed).toEqual([]);
     expect((await countersNamed('Expired thin'))[0].status).toBe('open');
   });
 
@@ -118,4 +118,32 @@ describe('POST /api/admin/groupbuys/cycle', () => {
     expect(res.status).toBe(401);
     expect((await countersNamed('KLOW 80mg'))[0].status).toBe('open');
   });
+});
+
+// Reset must restore coverage even when the storefront is closed.
+it('retains every enabled product across repeated resets, including missing boards', async () => {
+  await signIn();
+  const { makeProduct } = await import('@/lib/test/harness');
+  const { products, moqCampaigns } = await import('@/lib/db');
+  const { POST: campaignCycle } = await import('@/app/api/campaigns/cycle/route');
+  const db = await getDb();
+  const first = await makeProduct({ name: 'Five-vial kit', isKahati: true, isGroupBuy: true });
+  const second = await makeProduct({ name: 'Second product', isKahati: true, isGroupBuy: true });
+  await db.update(products).set({ gbVialsPerKit: 5 }).where(eq(products.id, first.id));
+  for (let cycle = 0; cycle < 3; cycle++) {
+    expect((await POST()).status).toBe(200);
+    expect((await campaignCycle()).status).toBe(200);
+    const counters = await db.select().from(groupBuys).where(eq(groupBuys.status, 'open'));
+    const batches = await db.select().from(moqCampaigns).where(eq(moqCampaigns.status, 'open'));
+    expect(counters.map((c) => c.productId).sort()).toEqual([first.id, second.id].sort());
+    expect(counters.every((c) => c.claimedSlots === 0 && c.totalSlots === 10)).toBe(true);
+    expect(batches).toHaveLength(2);
+    expect(batches.every((b) => b.committed === 0 && b.moq === 10)).toBe(true);
+    expect(batches.flatMap((b) => (b.includedProducts as { productId: string }[]).map((p) => p.productId)).sort())
+      .toEqual([first.id, second.id].sort());
+    expect(await db.select().from(products)).toHaveLength(2);
+    // Simulate joins during each cycle; the next reset must archive them.
+    await db.update(groupBuys).set({ claimedSlots: 2 }).where(eq(groupBuys.status, 'open'));
+    await db.update(moqCampaigns).set({ committed: 2 }).where(eq(moqCampaigns.status, 'open'));
+  }
 });

@@ -81,7 +81,15 @@ export function isChannelEnabled(p: ProductChannels, channel: SalesChannel): boo
  * away. Deliberately free of any product category: the rule is general now, and
  * a message that still said "Korean" would be the hardcoded rule surviving in
  * the copy after leaving the code.
+ *
+ * Pass the cart line's `refId` whenever this refuses a checkout. The cart lives
+ * in the browser and survives the switch being flipped, so a line the shop has
+ * stopped selling would otherwise loop this same 400 forever and take the rest
+ * of the basket down with it; naming the id is what lets the checkout page drop
+ * that one line (lib/checkout-error.ts). Omitted, the sentence ends in a full
+ * stop as before — for the admin-facing refusals, where there is no cart line.
  */
-export function channelRefusal(productName: string, channel: SalesChannel): string {
-  return `${productName} is not available through ${CHANNEL_LABELS[channel]}.`;
+export function channelRefusal(productName: string, channel: SalesChannel, refId?: string): string {
+  const sentence = `${productName} is not available through ${CHANNEL_LABELS[channel]}`;
+  return refId ? `${sentence}: ${refId}` : `${sentence}.`;
 }

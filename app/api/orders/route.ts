@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { and, desc, eq, gt, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { getDb, orders, orderItems, orderPaymentProofs, orderStatusHistory, products, groupBuys, moqCampaigns, moqProducts, paymentMethods, settlements, users } from '@/lib/db';
-import { ok, handler } from '@/lib/api-response';
+import { ok, fail, handler } from '@/lib/api-response';
 import { requireSession, ApiError } from '@/lib/session';
 import {
   computeTotals, perVialPrice, round2,
@@ -24,6 +24,7 @@ import { isDownpaymentWaivableByCycle, kahatiDownpaymentDue } from '@/lib/kahati
 import type { PaymentPurpose } from '@/lib/payment-purpose';
 import { requireCommitmentsOpen } from '@/lib/schedule-gate';
 import { validateAndStoreProofs } from '@/lib/proof';
+import { findUnavailableLines } from '@/lib/checkout-preflight';
 import { checkoutPaymentStatus } from '@/lib/payment-status';
 import { checkoutLog } from '@/lib/checkout-log';
 import { sendEmail, orderPlacedEmail } from '@/lib/email';
@@ -159,6 +160,20 @@ export const POST = handler(async (req: Request) => {
   // means one order is often paid across several transfers. Stored before the
   // transaction opens (external side effect); a rolled-back order leaves
   // harmless orphaned objects rather than a claimed slot.
+  //
+  // Before any of that, refuse a cart holding listings the shop has stopped
+  // selling — all of them at once. Storing first made a doomed checkout wait out
+  // the whole upload, and refusing only the first dead line made the customer
+  // repeat that once per line (lib/checkout-preflight.ts).
+  const unavailable = await findUnavailableLines(db, body.items);
+  if (unavailable.length > 0) {
+    checkoutLog('checkout_validation_failed', {
+      userId: session.sub, reason: 'unavailable_lines', itemCount: unavailable.length,
+    });
+    return fail(400, unavailable[0].message, {
+      unavailable: unavailable.map(({ refId, kind, name }) => ({ refId, kind, name })),
+    });
+  }
   const proofKeys = knownConfirmOnly ? [] : await validateAndStoreProofs(form.getAll('proof'));
   // Global packing-fee defaults; the on-hand fee has no per-listing home,
   // kahati items carry their own admin-editable fee (below).
@@ -223,7 +238,7 @@ export const POST = handler(async (req: Request) => {
         // switch is off cannot be bought here however its id arrived. Same
         // predicate and same wording as the Kahati guard below: one rule, three
         // channels, so a customer reading either refusal reads the same shape.
-        if (!isChannelEnabled(p, 'on_hand')) throw new ApiError(400, channelRefusal(`${p.name} ${p.spec}`, 'on_hand'));
+        if (!isChannelEnabled(p, 'on_hand')) throw new ApiError(400, channelRefusal(`${p.name} ${p.spec}`, 'on_hand', it.refId));
 
         const unit: OnHandUnit = it.unit ?? 'piece';
         // Quantity is part of the price here: a piece line of ten vials or more
@@ -314,6 +329,33 @@ export const POST = handler(async (req: Request) => {
         const [c] = await tx.select().from(moqCampaigns).where(eq(moqCampaigns.id, it.refId));
         if (!c) throw new ApiError(400, `Campaign not found: ${it.refId}`);
 
+        // The Group Buy switch, enforced where the money is taken — the mirror
+        // of the Kahati branch below. The board now withdraws a batch whose
+        // products have left the channel, but hiding is not refusing: the cart
+        // lives in the browser and outlives the switch being flipped, and a
+        // batch id posted straight at this route never saw the board at all.
+        //
+        // A batch trades while ANY product it carries is still sold, the same
+        // rule the board lists by; one withdrawn item of a mixed batch is what
+        // the per-line `outOfStock` flag is for. A batch carrying no product has
+        // nothing whose switches could refuse it.
+        const carried = (c.includedProducts as { productId: string; name?: string }[] | null) ?? [];
+        const carriedIds = carried.map((p) => p?.productId).filter(Boolean);
+        if (carriedIds.length > 0) {
+          const linked = await tx
+            .select({
+              name: products.name,
+              isGroupBuy: products.isGroupBuy, isActive: products.isActive,
+            })
+            .from(products).where(inArray(products.id, carriedIds));
+          if (!linked.some((p) => isChannelEnabled(p, 'group_buy'))) {
+            // Named by refId as well as by product, so the persisted cart can
+            // drop this one line instead of looping the same 400 on every
+            // retry and taking the rest of the basket with it.
+            throw new ApiError(400, channelRefusal(linked[0]?.name ?? c.name, 'group_buy', it.refId));
+          }
+        }
+
         // The client enforces the per-customer minimum for the sake of the UI,
         // but only the server decides what may be committed.
         if (!Number.isInteger(it.qty) || it.qty < c.perCustomerMin) {
@@ -382,7 +424,7 @@ export const POST = handler(async (req: Request) => {
         // so it buys through this exact path — same guarded claim, same 10-vial
         // database cap, same packing fee. Asking only about 'open' here is what
         // would make Pasalo a board customers can see and cannot buy from.
-        if (!isJoinableKahatiStatus(g.status)) throw new ApiError(400, `Kahati "${g.name}" is already closed.`);
+        if (!isJoinableKahatiStatus(g.status)) throw new ApiError(400, `Kahati "${g.name}" is already closed: ${it.refId}`);
 
         // The Kahati switch, enforced where the money is taken. The board
         // already hides an off-channel product's counters, but hiding is not
@@ -397,7 +439,10 @@ export const POST = handler(async (req: Request) => {
             .select({ isKahati: products.isKahati, isActive: products.isActive, name: products.name })
             .from(products).where(eq(products.id, g.productId));
           if (linked && !isChannelEnabled(linked, 'kahati')) {
-            throw new ApiError(400, channelRefusal(linked.name, 'kahati'));
+            // With the refId, so a cart line for a counter whose product left
+            // the channel is dropped rather than looping forever — this used to
+            // be a 400 the cart could not match.
+            throw new ApiError(400, channelRefusal(linked.name, 'kahati', it.refId));
           }
         }
         // Validate the whole commitment up front. The 10-vial cap belongs to the
@@ -409,7 +454,7 @@ export const POST = handler(async (req: Request) => {
         if (!Number.isInteger(it.qty) || it.qty < g.minVials) {
           throw new ApiError(400, `Minimum kahati commitment is ${g.minVials} vials.`);
         }
-        requireQuoteMatches(it.quotedUnitPricePhp, perVialPrice(Number(g.pricePerKitPhp)), g.name);
+        requireQuoteMatches(it.quotedUnitPricePhp, perVialPrice(Number(g.pricePerKitPhp), g.totalSlots), g.name);
 
         // Claim across counters. Fill the current counter; when it caps, that
         // fill closes it and auto-opens a fresh sibling (the "reset" the client
@@ -477,14 +522,16 @@ export const POST = handler(async (req: Request) => {
             // deadline (or no longer selling) has closed — vials did not "run out".
             const deadline = fresh && isPasaloStage(fresh.status) ? fresh.pasaloClosesAt : fresh?.closesAt;
             if (!fresh || !isJoinableKahatiStatus(fresh.status) || (deadline && deadline <= now)) {
-              throw new ApiError(400, `Kahati "${g.name}" has already closed and is no longer accepting commitments.`);
+              // Named by the cart line's refId, not the counter being claimed:
+              // it is the line the customer holds that has to come out.
+              throw new ApiError(400, `Kahati "${g.name}" has already closed and is no longer accepting commitments: ${it.refId}`);
             }
             throw new ApiError(400, `Only ${Math.max(fresh.totalSlots - fresh.claimedSlots, 0)} vials left in this kahati.`);
           }
 
           priced.push({
             kind: 'group_buy',
-            unitPricePhp: perVialPrice(Number(current.pricePerKitPhp)),
+            unitPricePhp: perVialPrice(Number(current.pricePerKitPhp), current.totalSlots),
             unitPriceUsd: null, // kahati vials are priced in PHP only
             qty: take,
             // The hatian's own fee. chargeCycleFeeOnce decides whether it is

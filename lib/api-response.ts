@@ -6,8 +6,10 @@ import { describeDbProblem } from './db/db-error';
 export const ok = <T>(data: T, status = 200) =>
   NextResponse.json({ success: true, data, error: null }, { status });
 
-export const fail = (status: number, message: string) =>
-  NextResponse.json({ success: false, data: null, error: message }, { status });
+// `data` is for a refusal the client can act on beyond reading it — the dead
+// cart lines of a checkout, say. Null otherwise, as it always was.
+export const fail = (status: number, message: string, data: unknown = null) =>
+  NextResponse.json({ success: false, data, error: message }, { status });
 
 // Wraps a Route Handler so thrown ApiError/ZodError become consistent JSON responses.
 export function handler<T extends unknown[]>(fn: (...args: T) => Promise<Response>) {

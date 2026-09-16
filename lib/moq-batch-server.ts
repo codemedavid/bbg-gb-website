@@ -197,21 +197,20 @@ export async function rollOpenBatches(db: Db, now: Date = new Date()): Promise<C
 // (lib/campaign-seed-bulk.ts LIVE_STATUSES). Between cycles that is right —
 // the campaign is proceeding — but on the NEXT cycle it would mean the campaign
 // is simply gone from the board. A cycle takes every campaign back to 0; it
-// does not remove one. So every series whose newest batch is approved and
+// does not remove one. So every series whose newest batch is approved or
+// completed (with a missing successor), and
 // which has no open or scheduled batch gets the successor an admin's Roll
 // would have given it. Cancelled series are left alone: that was a decision.
 async function reopenApprovedSeries(db: Db): Promise<number> {
-  const approved = await db.select().from(moqCampaigns)
-    .where(eq(moqCampaigns.status, 'approved'))
+  // Inspect the latest batch of each series, including cancellations. Looking
+  // only at approved rows can resurrect an older batch behind a newer one.
+  const batches = await db.select().from(moqCampaigns)
     .orderBy(asc(moqCampaigns.createdAt));
-  if (!approved.length) return 0;
-  const stillOpen = await db.select({ seriesId: moqCampaigns.seriesId }).from(moqCampaigns)
-    .where(inArray(moqCampaigns.status, ['open', 'scheduled']));
-  const openSeries = new Set(stillOpen.map((b) => b.seriesId));
-
-  // Newest batch per series, so the successor continues from the right number.
+  const openSeries = new Set(batches
+    .filter((b) => b.status === 'open' || b.status === 'scheduled')
+    .map(seriesOf));
   const newestBySeries = new Map<string, BatchRow>();
-  for (const batch of approved) {
+  for (const batch of batches) {
     const key = seriesOf(batch);
     const seen = newestBySeries.get(key);
     if (!seen || batch.batchNo > seen.batchNo) newestBySeries.set(key, batch);
@@ -220,6 +219,7 @@ async function reopenApprovedSeries(db: Db): Promise<number> {
   let reopened = 0;
   for (const [seriesId, batch] of newestBySeries) {
     if (openSeries.has(seriesId)) continue;
+    if (batch.status !== 'approved' && batch.status !== 'completed') continue;
     await openSuccessor(db, batch);
     reopened += 1;
   }

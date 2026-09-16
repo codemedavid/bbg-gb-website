@@ -2,16 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { desc, eq, inArray, ne, or } from 'drizzle-orm';
 import { requireAdmin, getSession } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, moqCampaigns } from '@/lib/db';
+import { getDb, moqCampaigns, products } from '@/lib/db';
 import { moqCampaignSchema } from '@/lib/moq-schemas';
 import { getPackingFees, getLatestCycleKey } from '@/lib/settings';
 import { LIVE_CAMPAIGN_STATUSES } from '@/lib/cycle-archive';
-import { describeBatch } from '@/lib/group-buy';
+import { campaignVialsPerKit, describeBatch } from '@/lib/group-buy';
 import { openDueBatches } from '@/lib/moq-batch-server';
 import { openCampaignsForGroupBuyProducts } from '@/lib/campaign-seed-bulk';
 import { openingStatus } from '@/lib/campaign-schedule';
 import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
-import { assertCampaignProductsAreGroupBuy } from '@/lib/channel-guard';
+import { assertCampaignProductsAreGroupBuy, onGroupBuyChannel } from '@/lib/channel-guard';
 import { refreshBoardsForNewCycle } from '@/lib/cycle-boundary-server';
 
 // Public: list batches with derived MOQ progress and lifecycle outcome.
@@ -54,7 +54,21 @@ export const GET = handler(async () => {
   const rows = await db.select().from(moqCampaigns)
     .where(session?.role === 'admin' ? await onBoard() : ne(moqCampaigns.status, 'scheduled'))
     .orderBy(desc(moqCampaigns.createdAt));
-  return ok(rows.map(describeBatch));
+  // A batch whose products have all left the Group Buy channel is withdrawn
+  // from the customer's board — retroactively, the same way the Kahati board
+  // has always treated its own switch. Un-ticking Group Buy on a product used
+  // to remove it from every FUTURE batch and leave the batch already listed
+  // selling it, which is what an admin means by "we unchecked it and it is
+  // still there".
+  //
+  // Withheld by AUDIENCE, not by route, exactly as a scheduled batch already
+  // is: the admin reads this same endpoint, and a batch they cannot see is a
+  // batch they cannot cancel — open, holding commitments, and unreachable from
+  // the only screen that could end it.
+  const listed = session?.role === 'admin' ? rows : await onGroupBuyChannel(rows);
+  const catalog = await db.select({ id: products.id, size: products.gbVialsPerKit }).from(products);
+  const sizes = Object.fromEntries(catalog.map((p) => [p.id, p.size]));
+  return ok(listed.map((row) => describeBatch(row, campaignVialsPerKit(row.includedProducts, sizes))));
 });
 
 // Admin: create a campaign — batch #1 of its own series.

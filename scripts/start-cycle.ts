@@ -5,9 +5,9 @@
 //   DATABASE_URL="<url>" npx tsx scripts/start-cycle.ts
 //   DATABASE_URL="<url>" npx tsx scripts/start-cycle.ts --apply
 //
-// This is the same operation the two admin "Start new cycle" buttons perform —
-// rollOpenKahatis and rollOpenBatches — reached from a terminal instead of from
-// the admin screens. It exists for one situation: the fix that makes a cycle
+// This is the same operation the admin "Start new cycle" buttons perform —
+// startCycleNow, which also OPENS the boards and lifts any pause — reached from
+// a terminal instead of from the admin screens. It exists for one situation: the fix that makes a cycle
 // refresh empty listings is written and tested but not yet deployed, so the
 // buttons on the live site are still running the old code and would do nothing.
 //
@@ -24,8 +24,7 @@
 import 'dotenv/config';
 import { and, eq } from 'drizzle-orm';
 import { getDb, groupBuys, moqCampaigns, products } from '@/lib/db';
-import { rollOpenKahatis } from '@/lib/kahati-server';
-import { rollOpenBatches } from '@/lib/moq-batch-server';
+import { startCycleNow } from '@/lib/cycle-start-server';
 import {
   kahatiRefreshPatch, campaignRefreshPatch, hasListingChanges,
 } from '@/lib/listing-sync';
@@ -118,10 +117,10 @@ async function main() {
     return;
   }
 
-  const kahati = await rollOpenKahatis(db);
-  const campaign = await rollOpenBatches(db);
+  const { cycle, kahati, campaigns: campaign } = await startCycleNow(db);
 
   console.log('\n--- APPLIED ---');
+  console.log(`Cycle ${cycle.cycleKey}: boards OPEN from ${cycle.opensAt} until ${cycle.closesAt} (pause lifted)`);
   console.log(`Kahati:    ended ${kahati.rolled.length}, refreshed ${kahati.refreshed}, left empty ${kahati.skippedEmpty}, left for cancellation ${kahati.leftForCancellation}, failed ${kahati.failed.length}`);
   for (const f of kahati.failed) console.log(`  FAILED ${f.name}: ${f.reason}`);
   console.log(`Group Buy: ended ${campaign.rolled.length}, refreshed ${campaign.refreshed}, left empty ${campaign.skippedEmpty}`);

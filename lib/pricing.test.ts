@@ -174,6 +174,21 @@ describe('perVialPrice', () => {
     expect(perVialPrice(9000)).toBe(900);
     expect(perVialPrice(6875)).toBe(687.5);
   });
+
+  // A hatian counter is priced by the kit it splits, and not every kit holds
+  // ten. A 5-pair kit at PHP 1,975 split ten ways charges PHP 197.50 a vial and
+  // collects PHP 987.50 for a kit that cost PHP 1,975 — half the money, on
+  // every counter for that product. The divisor is the counter's own cap.
+  it('divides by the counter s own vial cap when a kit does not hold ten', () => {
+    expect(perVialPrice(1975, 5)).toBe(395);
+    expect(perVialPrice(1975, 5) * 5).toBe(1975);
+  });
+
+  // A cap of zero or nonsense must not yield Infinity or NaN on a price.
+  it('falls back to the ten-vial kit when the cap is unusable', () => {
+    expect(perVialPrice(9000, 0)).toBe(900);
+    expect(perVialPrice(9000, Number.NaN)).toBe(900);
+  });
 });
 
 describe('validateKahatiCommit', () => {
@@ -434,9 +449,11 @@ describe('kahatiDefaultsFor', () => {
 });
 
 describe('campaignDefaultsFor', () => {
-  it('converts the vial figures a product declares into the kits a campaign counts', () => {
+  it('converts the per-person vial minimum a product declares into the kits a campaign counts', () => {
     const c = gbConfig({ gbPricePerKitPhp: '4500', gbVialsPerKit: 10, gbMaxVialsPerBatch: 50, gbMinVials: 20 });
-    expect(campaignDefaultsFor(c)).toEqual({ pricePerKitPhp: 4500, moq: 5, perCustomerMin: 2 });
+    expect(campaignDefaultsFor(c)).toEqual({
+      pricePerKitPhp: 4500, moq: MOQ_BATCH_MAX_KITS, perCustomerMin: 2,
+    });
   });
 
   it('rounds a part-kit minimum up — half a kit is still a whole kit to commit', () => {
@@ -450,14 +467,24 @@ describe('campaignDefaultsFor', () => {
     });
   });
 
-  it('clamps a batch beyond the hard ceiling — bigger runs continue as batch #2', () => {
-    const c = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 500 });
-    expect(campaignDefaultsFor(c).moq).toBe(MOQ_BATCH_MAX_KITS);
+  // gb_max_vials_per_batch caps a HATIAN counter (kahatiDefaultsFor reads it);
+  // it says nothing about how many kits a supplier consignment pools. Sizing the
+  // campaign batch from it too is what put the two boards' numbers on each
+  // other's screens: a 5-pair product carries "5 vials", which shrank its
+  // campaign to floor(5 / 5) = one kit — a group buy of one, which is not a
+  // group buy. A batch is sized by the campaign's own MOQ, admin-editable per
+  // batch, and starts at the ceiling.
+  it('does not let a hatian s vial cap shrink a campaign batch', () => {
+    const fivePairKit = gbConfig({ gbVialsPerKit: 5, gbMaxVialsPerBatch: 5 });
+    expect(campaignDefaultsFor(fivePairKit).moq).toBe(MOQ_BATCH_MAX_KITS);
+
+    const tenVialKit = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 4 });
+    expect(campaignDefaultsFor(tenVialKit).moq).toBe(MOQ_BATCH_MAX_KITS);
   });
 
-  it('floors a batch smaller than one kit at one kit rather than at nothing', () => {
-    const c = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 4 });
-    expect(campaignDefaultsFor(c).moq).toBe(1);
+  it('still caps every seeded batch at the hard ceiling', () => {
+    const c = gbConfig({ gbVialsPerKit: 10, gbMaxVialsPerBatch: 500 });
+    expect(campaignDefaultsFor(c).moq).toBe(MOQ_BATCH_MAX_KITS);
   });
 });
 

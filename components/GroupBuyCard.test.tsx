@@ -111,3 +111,36 @@ describe('GroupBuyCard', () => {
     expect(onJoin).not.toHaveBeenCalled();
   });
 });
+
+// A counter for a product whose kit holds 5 pairs opens with 5 slots, and the
+// 7-vial minimum is then a threshold it can never cross. The card promised a
+// minimum of 7 on a counter that holds five, drew the marker off the end of the
+// bar, and told a customer who had filled it that 2 vials were still needed.
+describe('a counter whose kit holds fewer than ten vials', () => {
+  const fivePair = (o: Partial<GroupBuy> = {}) =>
+    gb({ pricePerKitPhp: '1975', perVialPhp: 395, totalSlots: 5, remaining: 5, ...o });
+
+  it('counts down to its own minimum, not to seven', () => {
+    render(<GroupBuyCard g={fivePair({ claimedSlots: 2, remaining: 3 })} onJoin={vi.fn()} />);
+
+    expect(screen.getByText('2 MORE TO GO')).toBeInTheDocument();
+    expect(screen.getByText(/2 more vials to reach the 4-vial minimum/i)).toBeInTheDocument();
+  });
+
+  it('reads Good to go once it reaches that minimum', () => {
+    render(<GroupBuyCard g={fivePair({ claimedSlots: 4, remaining: 1 })} onJoin={vi.fn()} />);
+
+    expect(screen.getByText('GOOD TO GO')).toBeInTheDocument();
+    expect(screen.getByText(/past the 4-vial minimum/i)).toBeInTheDocument();
+  });
+
+  // The marker sat at 7/5 of the bar, which clamps to the far end — telling the
+  // customer the batch is never secured however full the counter gets.
+  it('puts the viability marker inside the bar', () => {
+    render(<GroupBuyCard g={fivePair({ claimedSlots: 0 })} onJoin={vi.fn()} />);
+
+    const marker = document.querySelector('[aria-hidden][style*="left"]') as HTMLElement;
+    expect(marker).toBeTruthy();
+    expect(parseFloat(marker.style.left)).toBeLessThan(100);
+  });
+});

@@ -102,8 +102,8 @@ describe('POST /api/campaigns/cycle', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.data.rolled).toBe(1);
-    expect(body.data.skippedEmpty).toBe(1);
+    expect(body.data.campaigns.rolled).toBe(1);
+    expect(body.data.campaigns.skippedEmpty).toBe(1);
     expect(await seriesRows(joined.seriesId)).toHaveLength(2);
     expect(await seriesRows(empty.seriesId)).toHaveLength(1);
   });

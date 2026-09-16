@@ -59,12 +59,12 @@ export function CampaignCard({ c, busy, actions, muted = false }: Props) {
         <div className="min-w-0 break-words font-bold text-ink">{c.name} <span className="text-ink-muted">· Batch #{c.batchNo}</span></div>
         <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold ${STATUS_STYLE[c.status]}`}>{c.status}</span>
       </div>
-      <div className="mt-1 text-[12px] text-ink-muted">{php(c.pricePerKitPhp)}/kit · {OUTCOME_LABEL[c.outcome]}</div>
+      <div className="mt-1 text-[12px] text-ink-muted">{php(c.pricePerKitPhp)}/kit{c.vialsPerKit && c.vialsPerKit !== 10 ? ` · ${c.vialsPerKit} vials each` : ''} · {OUTCOME_LABEL[c.outcome]}</div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf2ea]">
         <div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
       <div className="mt-1 text-[12px] font-semibold text-brand-greendark">
-        {c.committed}/{c.capacity} kits{c.full ? ' · batch full' : ` · ${c.remaining} slot${c.remaining === 1 ? '' : 's'} left`}
+        {c.committed}/{c.capacity} kits{c.full ? ' · batch full' : ` · ${c.remaining} kit${c.remaining === 1 ? '' : 's'} left`}
       </div>
       {c.deadline && <div className="mt-1 text-[11px] text-ink-muted">Deadline: {new Date(c.deadline).toLocaleString()}</div>}
 

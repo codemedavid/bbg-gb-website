@@ -10,6 +10,8 @@ const UPLOADS_UNAVAILABLE =
   'We couldn’t process your payment proof right now. Please try again in a few minutes.';
 
 export function friendlyCheckoutError(status: number, serverMessage: string): string {
+  if (status === 401) return 'Your session has expired. Sign in again to place your order. Your cart is saved.';
+  if (status === 413) return 'These payment proofs are too large to send together. Attach smaller proof images or PDFs and try again.';
   if (status === 503) return UPLOADS_UNAVAILABLE;
   return serverMessage || GENERIC;
 }
@@ -35,13 +37,48 @@ const STALE_BY_REF = new RegExp(
   ].join('|') + '): (\\S+)$',
 );
 const STALE_KAHATI = /^Kahati "(.+)" (?:is already closed|has already closed)/;
+// A line refused because its product left that sales channel — the admin
+// un-ticked Group Buy or Kahati on the product, or delisted it outright
+// (lib/product-channels.ts channelRefusal). Same shape as the prefixes above:
+// the id is what the cart needs, the sentence before it is what a log reader
+// needs. A channel refusal is permanent for that line, so the cart drops it.
+const STALE_CHANNEL = / is not available through .+: (\S+)$/;
+
+// A closed kahati that also carries its id. Checked before the name-only
+// pattern: counters are re-seeded under the same name, so a name match can
+// drop the customer's NEW line for the listing that replaced the dead one.
+const STALE_KAHATI_BY_REF = /^Kahati ".+" (?:is already closed|has already closed)[^:]*: (\S+)$/;
 
 export function staleCheckoutLine(serverMessage: string): StaleCheckoutLine | null {
   const byRef = STALE_BY_REF.exec(serverMessage);
   if (byRef) return { refId: byRef[1] };
+  const kahatiByRef = STALE_KAHATI_BY_REF.exec(serverMessage);
+  if (kahatiByRef) return { refId: kahatiByRef[1] };
+  const byChannel = STALE_CHANNEL.exec(serverMessage);
+  if (byChannel) return { refId: byChannel[1] };
   const kahati = STALE_KAHATI.exec(serverMessage);
   if (kahati) return { kahatiName: kahati[1] };
   return null;
+}
+
+export type UnavailableCheckoutLine = { refId: string; name: string };
+
+/**
+ * Every dead cart line a checkout refusal lists in `data.unavailable`
+ * (lib/checkout-preflight.ts), so the page can drop them all in one go instead
+ * of one per failed attempt.
+ *
+ * The body is untrusted input and this decides what gets DELETED from a cart,
+ * so an entry without a string refId is skipped rather than guessed at.
+ */
+export function unavailableCheckoutLines(body: unknown): UnavailableCheckoutLine[] {
+  const listed = (body as { data?: { unavailable?: unknown } } | null)?.data?.unavailable;
+  if (!Array.isArray(listed)) return [];
+  return listed.flatMap((entry) => {
+    const { refId, name } = (entry ?? {}) as { refId?: unknown; name?: unknown };
+    if (typeof refId !== 'string' || refId.length === 0) return [];
+    return [{ refId, name: typeof name === 'string' ? name : '' }];
+  });
 }
 
 // The suffix the cart appends to a kahati line's name (components/JoinSheet.tsx).

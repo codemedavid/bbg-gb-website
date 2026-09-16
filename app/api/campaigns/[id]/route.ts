@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
-import { getDb, moqCampaigns } from '@/lib/db';
+import { getDb, moqCampaigns, products } from '@/lib/db';
 import { moqCampaignPatchSchema } from '@/lib/moq-schemas';
-import { describeBatch } from '@/lib/group-buy';
+import { campaignVialsPerKit, describeBatch } from '@/lib/group-buy';
 import { requireBoardsOpenOrAdmin } from '@/lib/schedule-gate';
 import { assertCampaignProductsAreGroupBuy } from '@/lib/channel-guard';
 
@@ -19,7 +19,9 @@ export const GET = handler(async (_req: Request, ctx: Ctx) => {
   const db = await getDb();
   const [c] = await db.select().from(moqCampaigns).where(eq(moqCampaigns.id, id));
   if (!c) throw new ApiError(404, 'Campaign not found.');
-  return ok(describeBatch(c));
+  const catalog = await db.select({ id: products.id, size: products.gbVialsPerKit }).from(products);
+  const sizes = Object.fromEntries(catalog.map((p) => [p.id, p.size]));
+  return ok(describeBatch(c, campaignVialsPerKit(c.includedProducts, sizes)));
 });
 
 // Admin: edit campaign fields (mid-campaign price/MOQ edits apply to new joins).

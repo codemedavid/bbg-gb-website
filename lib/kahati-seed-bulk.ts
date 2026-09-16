@@ -24,7 +24,7 @@ import type { SeedableProduct } from './campaign-seed';
 // the empty one — splitting the very demand the Pasalo needs to survive. So
 // while a product is in Pasalo it is sold there and only there; the next
 // Kahati counter opens on the first board read after the stage closes.
-const LIVE_STATUSES = ['open', 'pasalo'] as const;
+const LIVE_STATUSES = ['scheduled', 'open', 'pasalo'] as const;
 
 export type OpenKahatisReport = {
   /** Flagged, listed products considered. */

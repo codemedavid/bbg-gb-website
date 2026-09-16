@@ -41,7 +41,7 @@ async function main() {
       orderNo: orders.orderNo, orderStatus: orders.status, paymentStatus: orders.paymentStatus,
       settlementId: orders.settlementId, orderTotal: orders.totalPhp, email: users.email,
       counterId: groupBuys.id, counterName: groupBuys.name, counterStatus: groupBuys.status,
-      kitPrice: groupBuys.pricePerKitPhp, unitPrice: orderItems.unitPricePhp, qty: orderItems.qty,
+      totalSlots: groupBuys.totalSlots, kitPrice: groupBuys.pricePerKitPhp, unitPrice: orderItems.unitPricePhp, qty: orderItems.qty,
     })
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
@@ -49,13 +49,13 @@ async function main() {
     .innerJoin(users, eq(users.id, orders.userId))
     .where(and(
       ne(orders.status, 'cancelled'),
-      sql`${orderItems.unitPricePhp} > round(${groupBuys.pricePerKitPhp} / 10, 2)`,
+      sql`${orderItems.unitPricePhp} > round(${groupBuys.pricePerKitPhp} / ${groupBuys.totalSlots}, 2)`,
     ));
 
   let totalOver = 0;
   console.log(`overpriced commitments: ${rows.length}`);
   for (const r of rows) {
-    const vial = perVialPrice(Number(r.kitPrice));
+    const vial = perVialPrice(Number(r.kitPrice), r.totalSlots);
     const over = (Number(r.unitPrice) - vial) * r.qty;
     totalOver += over;
     console.log([

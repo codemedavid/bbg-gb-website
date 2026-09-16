@@ -26,7 +26,7 @@ vi.mock('@/lib/session', () => {
   };
 });
 
-const { GET: LIST } = await import('./route');
+const { GET: LIST, POST: START } = await import('./route');
 const { GET: ONE } = await import('./[key]/route');
 const { getDb, orders, groupBuys, moqCampaigns } = await import('@/lib/db');
 const { eq } = await import('drizzle-orm');
@@ -117,5 +117,62 @@ describe('GET /api/admin/cycles/[key]', () => {
 
   it('400s for a key that is not a cycle', async () => {
     expect((await one('not-a-cycle')).status).toBe(400);
+  });
+});
+
+// POST /api/admin/cycles — "Start new cycle", the one control behind both
+// boards' buttons. It is a schedule OVERRIDE: it opens the boards to customers
+// at once, whatever the schedule or a pause says, and the schedule takes over
+// again at its next opening.
+describe('POST /api/admin/cycles', () => {
+  const DAY = 86_400_000;
+
+  async function pausedSchedule(): Promise<void> {
+    const { setScheduleRecurrence, setSchedulePausedUntil } = await import('@/lib/settings');
+    await setScheduleRecurrence({ openDay: 6, openTime: '04:00', closeDay: 0, closeTime: '23:00' });
+    await setSchedulePausedUntil(new Date(Date.now() + 30 * DAY).toISOString());
+  }
+
+  it('opens a paused storefront to customers and reports both boards', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    session.current = { sub: admin.id, role: 'admin', email: admin.email };
+    await pausedSchedule();
+    await makeGroupBuy({ name: 'KLOW 80mg', totalSlots: 10, claimedSlots: 4 });
+    await makeMoqCampaign({ moq: 10, committed: 2 });
+    const { GET: publicBoard } = await import('@/app/api/groupbuys/route');
+    expect((await publicBoard()).status).toBe(404);
+
+    const res = await START();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.data.cycle).toMatchObject({ cycleKey: expect.any(String), opensAt: expect.any(String), closesAt: expect.any(String) });
+    expect(body.data.kahati).toMatchObject({ rolled: 1, skippedEmpty: 0, failed: [] });
+    expect(body.data.kahati.counters).toEqual([expect.objectContaining({ name: 'KLOW 80mg', endedWithVials: 4 })]);
+    expect(body.data.campaigns).toMatchObject({ rolled: 1, skippedEmpty: 0 });
+    expect(body.data.campaigns.batches).toEqual([expect.objectContaining({ endedBatchNo: 1, openedBatchNo: 2, endedWithKits: 2 })]);
+    // The customer-facing board is reachable now, and shows the fresh counter.
+    const board = await publicBoard();
+    expect(board.status).toBe(200);
+    expect((await board.json()).data).toEqual([expect.objectContaining({ name: 'KLOW 80mg', claimedSlots: 0 })]);
+    // And the archive lists the new cycle as the current one.
+    const list = await (await LIST()).json();
+    expect(list.data.find((c: { current: boolean }) => c.current)?.cycleKey).toBe(body.data.cycle.cycleKey);
+  });
+
+  it('refuses a customer without touching the schedule', async () => {
+    const customer = await makeUser({ role: 'customer' });
+    session.current = { sub: customer.id, role: 'customer', email: customer.email };
+    await pausedSchedule();
+
+    const res = await START();
+
+    expect(res.status).toBe(403);
+    expect(await getCurrentCycle()).toBeNull();
+  });
+
+  it('refuses a signed-out visitor', async () => {
+    session.current = null;
+    expect((await START()).status).toBe(401);
   });
 });

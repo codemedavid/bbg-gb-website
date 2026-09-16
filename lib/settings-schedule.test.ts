@@ -99,7 +99,8 @@ describe('getCurrentCycle', () => {
   it('resolves the running cycle from the stored recurrence', async () => {
     await setScheduleRecurrence(WED_TO_WED);
 
-    expect(await getCurrentCycle(MID_CYCLE)).toEqual(CYCLE);
+    // Named by its source, so the admin card can tell a scheduled cycle from one started by hand.
+    expect(await getCurrentCycle(MID_CYCLE)).toEqual({ ...CYCLE, source: 'schedule' });
   });
 
   it('is null between the close and the next opening', async () => {

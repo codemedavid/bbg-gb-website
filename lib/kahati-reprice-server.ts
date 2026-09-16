@@ -13,7 +13,7 @@
 // simply ends up with a total below what it collected, which the admin's proof
 // reconciliation reports as an overpayment to send back.
 import { and, eq, gt, ne } from 'drizzle-orm';
-import { getDb, orders, orderItems, orderStatusHistory } from '@/lib/db';
+import { getDb, groupBuys, orders, orderItems, orderStatusHistory } from '@/lib/db';
 import { applyOrderItemEdit } from '@/lib/order-edit-server';
 import { perVialPrice } from '@/lib/pricing';
 
@@ -32,7 +32,10 @@ export async function passPriceDropToCommitments(
   counterId: string,
   pricePerKitPhp: string | number,
 ): Promise<number> {
-  const newVialPrice = perVialPrice(Number(pricePerKitPhp));
+  const [counter] = await db.select({ totalSlots: groupBuys.totalSlots }).from(groupBuys)
+    .where(eq(groupBuys.id, counterId));
+  if (!counter) return 0;
+  const newVialPrice = perVialPrice(Number(pricePerKitPhp), counter.totalSlots);
 
   const overpriced = await db
     .select({ line: orderItems })

@@ -76,7 +76,7 @@ const NOTHING: BoardRefreshResult = {
  * stored key is still a DIFFERENT cycle, so the second caller's statement
  * matches nothing, returns nothing, and reports the claim lost.
  */
-async function claimCycle(db: Db, cycleKey: string): Promise<boolean> {
+export async function claimCycle(db: Db, cycleKey: string): Promise<boolean> {
   const claimed = await db.insert(settings)
     .values({ key: BOARDS_REFRESHED_KEY, value: cycleKey })
     .onConflictDoUpdate({
@@ -88,7 +88,7 @@ async function claimCycle(db: Db, cycleKey: string): Promise<boolean> {
   return claimed.length > 0;
 }
 
-async function stampLiveListings(db: Db, cycleKey: string): Promise<void> {
+export async function stampLiveListings(db: Db, cycleKey: string): Promise<void> {
   await db.update(groupBuys).set({ cycleKey })
     .where(and(
       inArray(groupBuys.status, [...LIVE_KAHATI_STATUSES]),

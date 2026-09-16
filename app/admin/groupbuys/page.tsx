@@ -51,11 +51,11 @@ function GroupBuyForm({ initial, onClose }: { initial: Partial<GroupBuy>; onClos
       } as any);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save group buy.');
+      setError(err instanceof Error ? err.message : 'Could not save hatian.');
     }
   };
   return (
-    <Modal title={f.id ? 'Edit group buy' : 'New group buy'} onClose={onClose}>
+    <Modal title={f.id ? 'Edit hatian' : 'New hatian'} onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2"><Labeled label="Name"><input className={field} value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} /></Labeled></div>
         <Labeled label="Price / kit ₱ (editable)"><input className={field} type="number" value={f.pricePerKitPhp as any} onChange={(e) => setF({ ...f, pricePerKitPhp: e.target.value })} /></Labeled>
@@ -122,14 +122,14 @@ const commitStamp = (iso: string): string =>
 // Which hatian this is, stated before the money. Counters that filled roll into
 // same-named siblings, so "Bioglutide" alone does not identify the one whose
 // participants are listed below — the status and the fill do.
-function GroupBuyDetails({ groupBuy }: { groupBuy: GroupBuy }) {
+function HatianDetails({ groupBuy }: { groupBuy: GroupBuy }) {
   const claimed = kahatiClaimedDisplay(groupBuy.claimedSlots, groupBuy.totalSlots);
   const progress = kahatiProgressPercent(claimed, groupBuy.totalSlots);
   return (
-    <section data-testid="group-buy-details" aria-label="Group buy details" className="mb-4 rounded-[12px] border border-line-soft bg-surface-mist px-4 py-3">
-      <h3 className="m-0 mb-2.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">Group buy details</h3>
+    <section data-testid="hatian-details" aria-label="Hatian details" className="mb-4 rounded-[12px] border border-line-soft bg-surface-mist px-4 py-3">
+      <h3 className="m-0 mb-2.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">Hatian details</h3>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
-        <Detail label="Campaign name"><span className="font-semibold text-ink">{groupBuy.name}</span></Detail>
+        <Detail label="Hatian name"><span className="font-semibold text-ink">{groupBuy.name}</span></Detail>
         <Detail label="Status">
           <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-bold ${groupBuy.status === 'open' ? 'bg-[#e8f5db] text-brand-greendark' : groupBuy.status === 'cancelled' ? 'bg-[#fbe4e4] text-[#b23b3b]' : 'bg-line text-ink-body'}`}>{groupBuy.status}</span>
         </Detail>
@@ -290,7 +290,7 @@ function BatchSummary({ rows, groupBuy }: { rows: StagedCommitment<HatianCommitm
     // never computes perVialPhp, so trusting that field would put undefined
     // through the money formatter — the exact shape of the crash this panel
     // was fixed for.
-    perVialPhp: perVialPrice(Number(groupBuy.pricePerKitPhp)),
+    perVialPhp: perVialPrice(Number(groupBuy.pricePerKitPhp), groupBuy.totalSlots),
   });
   const figures: { label: string; value: string; testId: string; tone?: string }[] = [
     { label: 'Total participants', value: String(s.totalParticipants), testId: 'summary-participants' },
@@ -342,7 +342,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
         {/* Outside the loading/empty branches: which hatian this is does not
             depend on whether anyone has joined it, and an admin who opened the
             wrong counter needs to see that immediately. */}
-        <GroupBuyDetails groupBuy={groupBuy} />
+        <HatianDetails groupBuy={groupBuy} />
         {isLoading ? <div className="py-6 text-ink-muted">Loading…</div> : rows.length === 0 ? (
           <div className="py-6 text-[13px] text-ink-muted">Walang sumali pa sa hatian na ito.</div>
         ) : (
@@ -422,7 +422,7 @@ function ParticipantsPanel({ groupBuy, onClose }: { groupBuy: GroupBuy; onClose:
 
 export default function AdminGroupBuysPage() {
   const { data: gbs = [], isLoading, error } = useAdminGroupBuys();
-  const { deleteGroupBuy, saveGroupBuy, startKahatiCycle } = useMutate();
+  const { deleteGroupBuy, saveGroupBuy, startCycle } = useMutate();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<GroupBuy> | null>(null);
   const [viewing, setViewing] = useState<GroupBuy | null>(null);
@@ -471,19 +471,20 @@ export default function AdminGroupBuysPage() {
         idle > 0
           ? `The ${idle} counter${idle === 1 ? '' : 's'} nobody has joined stay${idle === 1 ? 's' : ''} open and ${idle === 1 ? 'is' : 'are'} re-read from product management — name, price and slots come forward from the catalog.`
           : '',
+        'The Group Buy board starts its new cycle in the same breath, and both boards open to customers right away — even if the schedule or a pause has them closed. The weekly schedule takes over again at its next opening.',
         'Customer orders are not changed — settle those on the orders screen.',
       ].filter(Boolean).join(' '),
       confirmLabel: 'End all & start next',
       cancelLabel: 'Keep the board as it is',
     });
-    if (ok) startKahatiCycle.mutate();
+    if (ok) startCycle.mutate();
   };
 
   const handleDelete = async (g: GroupBuy) => {
     const ok = await confirm({
       title: `Delete "${g.name}"?`,
-      message: 'This permanently removes the group buy. This cannot be undone.',
-      confirmLabel: 'Delete group buy',
+      message: 'This permanently removes the hatian counter. This cannot be undone.',
+      confirmLabel: 'Delete hatian',
     });
     if (ok) deleteGroupBuy.mutate(g.id);
   };
@@ -492,20 +493,20 @@ export default function AdminGroupBuysPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="m-0 font-display text-[24px] font-bold">Group Buys</h1>
-          <p className="mt-1 text-[13px] text-ink-muted">Edit kahati prices, slots &amp; close orders.</p>
+          <h1 className="m-0 font-display text-[24px] font-bold">Hatian</h1>
+          <p className="mt-1 text-[13px] text-ink-muted">Edit kahati prices, vial caps &amp; close counters.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-none">
           {open.length > 0 && (
             <button
               onClick={handleStartCycle}
-              disabled={startKahatiCycle.isPending}
+              disabled={startCycle.isPending}
               className={btnBoardAction}
             >
               Start new cycle
             </button>
           )}
-          <button className={btnPrimary} onClick={() => setEditing(blank())}>+ New group buy</button>
+          <button className={btnPrimary} onClick={() => setEditing(blank())}>+ New hatian</button>
         </div>
       </div>
 
@@ -514,7 +515,7 @@ export default function AdminGroupBuysPage() {
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
-            aria-label="Search group buys"
+            aria-label="Search hatian counters"
             placeholder="Search by name…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -564,7 +565,7 @@ export default function AdminGroupBuysPage() {
               </div>
               <div className="mt-1 text-[12px] text-ink-muted">{php(g.pricePerKitPhp)}/kit · ₱{Number(g.pricePerKitPhp) / 10}/vial</div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf2ea]"><div className="h-full bg-gradient-to-r from-brand-blue to-brand-green" style={{ width: `${progress}%` }} /></div>
-              <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{claimed}/{g.totalSlots} vials</div>
+              <div className="mt-1 text-[12px] font-semibold text-brand-greendark">{claimed}/{g.totalSlots} vials · {Math.max(0, g.totalSlots - claimed)} slots left</div>
               <button onClick={() => setViewing(g)}
                 className="mt-2 w-full rounded-[9px] bg-surface-mist py-1.5 text-[12.5px] font-semibold text-ink-body hover:bg-[#eaf0e6]">
                 👥 Participants &amp; payments

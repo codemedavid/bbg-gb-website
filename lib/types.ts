@@ -142,6 +142,7 @@ export type MoqCampaign = {
   // The trading cycle this batch took its kits in — see GroupBuy.cycleKey.
   cycleKey?: string | null;
   // Derived server-side.
+  vialsPerKit?: number | null;
   capacity: number;  // kits this batch holds — the denominator the UI shows
   progress: number;  // 0..1
   remaining: number; reached: boolean; full: boolean;

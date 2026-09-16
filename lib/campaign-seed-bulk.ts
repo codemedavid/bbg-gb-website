@@ -12,14 +12,14 @@
 // `included_products`, the same link the admin campaign form writes — so this
 // needs no new column and no migration.
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb, products, moqCampaigns } from '@/lib/db';
 import { getPackingFees } from '@/lib/settings';
 import { campaignSeedFor, type SeedableProduct } from './campaign-seed';
 import type { IncludedProduct } from './types';
 
 /** Statuses that mean a product is already represented on the board. */
-const LIVE_STATUSES = ['open', 'approved', 'completed'] as const;
+const LIVE_STATUSES = ['scheduled', 'open', 'approved', 'completed'] as const;
 
 export type OpenCampaignsReport = {
   /** Flagged, listed products considered. */
@@ -53,9 +53,19 @@ export async function openCampaignsForGroupBuyProducts(
   const flagged = await db.select().from(products)
     .where(and(eq(products.isGroupBuy, true), eq(products.isActive, true)));
 
-  const live = await db.select({ includedProducts: moqCampaigns.includedProducts })
-    .from(moqCampaigns)
-    .where(inArray(moqCampaigns.status, [...LIVE_STATUSES]));
+  const batches = await db.select().from(moqCampaigns);
+  const newest = new Map<string, typeof batches[number]>();
+  for (const batch of batches) {
+    const series = batch.seriesId ?? batch.id;
+    const previous = newest.get(series);
+    if (!previous || batch.batchNo > previous.batchNo) newest.set(series, batch);
+  }
+  // Historical completed batches must not hide a product after its newest
+  // batch was cancelled. Scheduled boards still count, to avoid duplicates.
+  const live = batches.filter((b) =>
+    b.status === 'open' || b.status === 'scheduled' ||
+    (newest.get(b.seriesId ?? b.id)?.id === b.id &&
+      (LIVE_STATUSES as readonly string[]).includes(b.status)));
 
   const alreadyListed = new Set(
     live.flatMap((c) => (c.includedProducts as IncludedProduct[]).map((p) => p.productId)),

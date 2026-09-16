@@ -66,3 +66,36 @@ describe('GET /api/groupbuys', () => {
     expect(await statusOf(live.id)).toBe('open');
   });
 });
+
+// The money. A hatian counter is priced by the kit it splits, and the board
+// quotes the per-vial figure a customer is charged — orders re-derive it and
+// refuse a mismatched quote, so this number IS the sale price. Dividing every
+// kit by ten collected PHP 987.50 for a PHP 1,975 kit on a 5-slot counter:
+// half the money, silently, on every commitment.
+describe('per-vial price on a counter that is not ten vials', () => {
+  it('divides the kit by the counter s own vial cap', async () => {
+    await makeGroupBuy({ name: 'Skin Repair SM1', pricePerKitPhp: 1975, totalSlots: 5, closesAt: future() });
+
+    const body = await (await GET()).json();
+
+    expect(body.data[0].perVialPhp).toBe(395);
+  });
+
+  it('still divides an ordinary kit by ten', async () => {
+    await makeGroupBuy({ name: 'Retatrutide', pricePerKitPhp: 9000, totalSlots: 10, closesAt: future() });
+
+    const body = await (await GET()).json();
+
+    expect(body.data[0].perVialPhp).toBe(900);
+  });
+
+  // A full counter sells its whole kit for the kit price. Anything else means
+  // the board and the supplier invoice disagree.
+  it('collects the kit price when every slot is taken', async () => {
+    await makeGroupBuy({ name: 'Skin Repair SM2', pricePerKitPhp: 1975, totalSlots: 5, closesAt: future() });
+
+    const body = await (await GET()).json();
+
+    expect(body.data[0].perVialPhp * body.data[0].totalSlots).toBe(1975);
+  });
+});

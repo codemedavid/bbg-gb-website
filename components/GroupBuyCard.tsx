@@ -1,7 +1,7 @@
 'use client';
 import type { GroupBuy } from '@/lib/types';
 import { php, closesIn } from '@/lib/format';
-import { KAHATI_MIN_VIABLE_VIALS, isKahatiViable, kahatiBadge, kahatiProgressPercent } from '@/lib/kahati';
+import { kahatiMinViableVials, isKahatiViable, kahatiBadge, kahatiProgressPercent } from '@/lib/kahati';
 
 export function GroupBuyCard({ g, onJoin }: { g: GroupBuy; onJoin: (g: GroupBuy) => void }) {
   const badge = kahatiBadge(g.status, g.claimedSlots, g.totalSlots);
@@ -9,9 +9,10 @@ export function GroupBuyCard({ g, onJoin }: { g: GroupBuy; onJoin: (g: GroupBuy)
   const closed = g.status !== 'open';
   // Reaching the minimum is what decides whether the batch is ordered at all, so
   // it earns the green treatment — the cap only decides when the counter rolls over.
-  const viable = isKahatiViable(g.claimedSlots);
-  const minMarkerPct = kahatiProgressPercent(KAHATI_MIN_VIABLE_VIALS, g.totalSlots);
-  const stillNeeded = Math.max(0, KAHATI_MIN_VIABLE_VIALS - g.claimedSlots);
+  const minimum = kahatiMinViableVials(g.totalSlots);
+  const viable = isKahatiViable(g.claimedSlots, g.totalSlots);
+  const minMarkerPct = kahatiProgressPercent(minimum, g.totalSlots);
+  const stillNeeded = Math.max(0, minimum - g.claimedSlots);
   return (
     <div className="rounded-[16px] bg-white p-4 shadow-card">
       <div className="mb-0.5 flex items-baseline justify-between gap-2">
@@ -36,11 +37,12 @@ export function GroupBuyCard({ g, onJoin }: { g: GroupBuy; onJoin: (g: GroupBuy)
       </div>
       <div className={`mb-3 text-[11.5px] font-semibold ${viable ? 'text-brand-greendark' : 'text-warn-fg'}`}>
         {closed
-          ? `Needed ${KAHATI_MIN_VIABLE_VIALS} vials to push through`
+          ? `Needed ${minimum} vials to push through`
           : viable
-            ? `✓ Good to go — past the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum`
-            : `${stillNeeded} more ${stillNeeded === 1 ? 'vial' : 'vials'} to reach the ${KAHATI_MIN_VIABLE_VIALS}-vial minimum`}
+            ? `✓ Good to go — past the ${minimum}-vial minimum`
+            : `${stillNeeded} more ${stillNeeded === 1 ? 'vial' : 'vials'} to reach the ${minimum}-vial minimum`}
       </div>
+      <div className="mb-2 text-[12px] text-ink-muted">{g.remaining} slots left</div>
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[11px] text-ink-muted">Per vial</div>

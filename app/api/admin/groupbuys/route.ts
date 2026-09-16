@@ -1,3 +1,4 @@
+import { refreshBoardsForNewCycle } from '@/lib/cycle-boundary-server';
 import { desc, eq, inArray, or } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
@@ -16,6 +17,7 @@ export const GET = handler(async () => {
   // Resolve expired counters (cancel unfilled, close full) before listing so the
   // admin board reflects the real lifecycle state on load.
   await sweepKahatis(db);
+  await refreshBoardsForNewCycle(db);
   // Then open a counter for every flagged product that lacks one. The public
   // board does this on read too, but that read is gated shut outside trading
   // hours — and the admin's board is where the catalog gets looked over BEFORE

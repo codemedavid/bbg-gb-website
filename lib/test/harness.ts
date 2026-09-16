@@ -91,8 +91,10 @@ export async function openBoards(): Promise<void> {
  * which side of the window they sit on.
  */
 export async function closeBoards(): Promise<void> {
-  const { setScheduleRecurrence } = await import('@/lib/settings');
+  const { setScheduleRecurrence, setManualCycle } = await import('@/lib/settings');
   await setScheduleRecurrence({ openDay: null, openTime: null, closeDay: null, closeTime: null });
+  // A cycle started by hand outlives the recurrence it overrode.
+  await setManualCycle(null);
 }
 
 export async function makeUser(
@@ -123,10 +125,10 @@ export async function makeProduct(
     // auto-lists on its board.
     isGroupBuy: boolean; isKahati: boolean; isActive: boolean;
     gbPricePerKitPhp: number | null; gbMinVials: number | null; gbMaxVialsPerBatch: number | null;
-  }> = {},
-): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
     // The explicit per-vial group buy price and the kit size it divides by.
     gbPricePerPiecePhp: number | null; gbVialsPerKit: number | null;
+  }> = {},
+): Promise<{ id: string; pricePhp: number; onHandPiecePhp: number | null; onHandKitPhp: number | null }> {
   const db = await getDb();
   const [cat] = await db.insert(categories).values({
     name: 'Peptides', slug: `peptides-${Math.random().toString(36).slice(2, 8)}`,
@@ -152,10 +154,10 @@ export async function makeProduct(
     // split still get the counter they expect from `isGroupBuy: true` alone.
     isKahati: overrides.isKahati ?? overrides.isGroupBuy ?? false,
     gbPricePerKitPhp: overrides.gbPricePerKitPhp != null ? String(overrides.gbPricePerKitPhp) : null,
-    gbMinVials: overrides.gbMinVials ?? null,
-    gbMaxVialsPerBatch: overrides.gbMaxVialsPerBatch ?? null,
     gbPricePerPiecePhp: overrides.gbPricePerPiecePhp != null ? String(overrides.gbPricePerPiecePhp) : null,
     gbVialsPerKit: overrides.gbVialsPerKit ?? null,
+    gbMinVials: overrides.gbMinVials ?? null,
+    gbMaxVialsPerBatch: overrides.gbMaxVialsPerBatch ?? null,
   }).returning();
   return { id: row.id, pricePhp, onHandPiecePhp, onHandKitPhp };
 }
@@ -206,6 +208,11 @@ export async function makeMoqCampaign(
     // A batch later in an existing series; omitted, the campaign is batch #1 of
     // its own series, which is what the create route writes.
     seriesId: string; batchNo: number; deadline: Date | null;
+    // The catalog products the batch carries, the same link the admin campaign
+    // form and the bulk seeder write. Empty by default: a hand-composed batch
+    // carries no product, and that is the shape most tests here want.
+    includedProducts: { productId: string; name: string }[];
+    name: string;
   }> = {},
 ): Promise<{ id: string; moq: number; committed: number; perCustomerMin: number; seriesId: string }> {
   const db = await getDb();
@@ -216,9 +223,10 @@ export async function makeMoqCampaign(
   const seriesId = overrides.seriesId ?? id;
   const [row] = await db.insert(moqCampaigns).values({
     id, seriesId, batchNo: overrides.batchNo ?? 1,
-    name: 'Test Campaign', pricePerKitPhp: String(overrides.pricePerKitPhp ?? 10400),
+    name: overrides.name ?? 'Test Campaign', pricePerKitPhp: String(overrides.pricePerKitPhp ?? 10400),
     moq, committed, perCustomerMin, status: overrides.status ?? 'open',
     deadline: overrides.deadline ?? null,
+    includedProducts: overrides.includedProducts ?? [],
   }).returning();
   return { id: row.id, moq, committed, perCustomerMin, seriesId };
 }

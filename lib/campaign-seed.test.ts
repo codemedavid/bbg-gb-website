@@ -83,7 +83,7 @@ describe('campaignSeedFor', () => {
     // 40 vials a batch at 10 to a kit is 4 kits; a 15-vial minimum is 2 kits
     // once rounded up, because a customer commits whole kits.
     const seed = campaignSeedFor(product({ gbMaxVialsPerBatch: 40, gbMinVials: 15 }));
-    expect(seed?.moq).toBe(4);
+    expect(seed?.moq).toBe(10);
     expect(seed?.perCustomerMin).toBe(2);
   });
 

@@ -19,16 +19,21 @@ export function isKahatiFull(claimedSlots: number, totalSlots: number): boolean 
 // A hatian is worth ordering once it reaches the minimum, even if the kit never
 // filled. This is the "Good to Go" threshold, distinct from isKahatiFull, which
 // marks the cap at which the counter closes early and a sibling opens.
-export function isKahatiViable(claimedSlots: number): boolean {
-  return claimedSlots >= KAHATI_MIN_VIABLE_VIALS;
+export function kahatiMinViableVials(totalSlots: number = KAHATI_MAX_VIALS): number {
+  const cap = Number.isInteger(totalSlots) && totalSlots > 0 ? totalSlots : KAHATI_MAX_VIALS;
+  return Math.ceil(cap * KAHATI_MIN_VIABLE_VIALS / KAHATI_MAX_VIALS);
+}
+
+export function isKahatiViable(claimedSlots: number, totalSlots: number = KAHATI_MAX_VIALS): boolean {
+  return claimedSlots >= kahatiMinViableVials(totalSlots);
 }
 
 // Terminal status for an OPEN hatian whose deadline has passed:
 //   >= 7 vials -> 'closed'    (viable; proceeds to fulfillment)
 //   <  7 vials -> 'cancelled' (batch never ordered; participants are refunded)
 // The cap is deliberately not consulted: 7-9 vials is a success, not a shortfall.
-export function resolveExpiredKahatiStatus(claimedSlots: number): 'closed' | 'cancelled' {
-  return isKahatiViable(claimedSlots) ? 'closed' : 'cancelled';
+export function resolveExpiredKahatiStatus(claimedSlots: number, totalSlots: number = KAHATI_MAX_VIALS): 'closed' | 'cancelled' {
+  return isKahatiViable(claimedSlots, totalSlots) ? 'closed' : 'cancelled';
 }
 
 // Fill percentage (0-100) for the progress bar. Clamped at both ends and
@@ -64,13 +69,13 @@ export function kahatiBadge(status: KahatiStatus, claimedSlots: number, totalSlo
   // A counter in the second stage is SELLING, not finished. Falling through to
   // 'CLOSED' here would put a dead badge on the one board whose whole purpose
   // is to say a batch can still be saved.
-  if (status === 'pasalo') return isKahatiViable(claimedSlots) ? 'BATCH SECURED' : 'PASALO';
+  if (status === 'pasalo') return isKahatiViable(claimedSlots, totalSlots) ? 'BATCH SECURED' : 'PASALO';
   if (status !== 'open') return 'CLOSED';
   if (claimedSlots >= totalSlots) return 'FULL';
-  if (isKahatiViable(claimedSlots)) return 'GOOD TO GO';
+  if (isKahatiViable(claimedSlots, totalSlots)) return 'GOOD TO GO';
   if (claimedSlots <= 0) return 'OPEN';
   // A hatian whose cap is below the minimum can never be viable; fall back to the cap.
-  const needed = Math.min(KAHATI_MIN_VIABLE_VIALS, totalSlots) - claimedSlots;
+  const needed = kahatiMinViableVials(totalSlots) - claimedSlots;
   return `${needed} MORE TO GO`;
 }
 

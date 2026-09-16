@@ -36,10 +36,31 @@ describe('CampaignCard', () => {
     expect(screen.getByText(/4 \/ 10 kits/)).toBeInTheDocument();
   });
 
-  it('tells an under-filled batch how many slots are still open', () => {
+  it('tells an under-filled batch how many kits are still available', () => {
     render(<CampaignCard c={campaign({ committed: 4, moq: 10, remaining: 6 })} onCommit={vi.fn()} />);
 
-    expect(screen.getByText(/6 slots left/i)).toBeInTheDocument();
+    expect(screen.getByText(/6 kits left/i)).toBeInTheDocument();
+  });
+
+  // A kit is not always ten vials — the Skin Repair SM range ships 5 pairs — and
+  // "PHP 1,975 per kit" alone does not say which. Stated only when it is not the
+  // familiar ten, so the exception is what draws the eye.
+  it('says how many vials a kit holds when it is not the usual ten', () => {
+    render(<CampaignCard c={campaign({ pricePerKitPhp: '1975.00', vialsPerKit: 5 })} onCommit={vi.fn()} />);
+
+    expect(screen.getByText(/5 vials each/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about kit size on an ordinary ten-vial kit', () => {
+    render(<CampaignCard c={campaign({ vialsPerKit: 10 })} onCommit={vi.fn()} />);
+
+    expect(screen.queryByText(/vials each/i)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about kit size when the batch does not know it', () => {
+    render(<CampaignCard c={campaign({ vialsPerKit: null })} onCommit={vi.fn()} />);
+
+    expect(screen.queryByText(/vials each/i)).not.toBeInTheDocument();
   });
 
   it('names the batch it is showing, so a series reads as #1, #2, #3', () => {

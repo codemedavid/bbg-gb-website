@@ -308,3 +308,28 @@ describe('the board a customer actually loads', () => {
     expect(Number(listed.pricePerKitPhp)).toBe(3350);
   });
 });
+
+it('restores a completed series with a missing successor on the next cycle', async () => {
+  const db = await getDb();
+  const ended = await makeMoqCampaign({ committed: 10, status: 'completed' });
+  await refreshBoardsForNewCycle(db);
+  await refreshBoardsForNewCycle(db);
+  const open = await db.select().from(moqCampaigns)
+    .where(and(eq(moqCampaigns.seriesId, ended.seriesId), eq(moqCampaigns.status, 'open')));
+  expect(open).toHaveLength(1);
+  expect(open[0]).toMatchObject({ committed: 0, batchNo: 2 });
+});
+
+it('keeps five-vial group buy kits separate from ten-slot kahati counters on both feeds', async () => {
+  const db = await getDb();
+  const p = await makeProduct({ isGroupBuy: true, isKahati: true });
+  await db.update(products).set({ gbVialsPerKit: 5 }).where(eq(products.id, p.id));
+  const { GET: campaigns } = await import('@/app/api/campaigns/route');
+  const { GET: kahatis } = await import('@/app/api/groupbuys/route');
+  const groupBuy = await (await campaigns()).json();
+  const kahati = await (await kahatis()).json();
+  expect(groupBuy.data).toHaveLength(1);
+  expect(groupBuy.data[0]).toMatchObject({ vialsPerKit: 5, committed: 0, capacity: 10 });
+  expect(kahati.data).toHaveLength(1);
+  expect(kahati.data[0]).toMatchObject({ totalSlots: 10, remaining: 10, claimedSlots: 0 });
+});

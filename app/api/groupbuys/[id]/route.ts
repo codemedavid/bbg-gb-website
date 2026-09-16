@@ -20,7 +20,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ id: st
   return ok({
     ...g,
     claimedSlots,
-    perVialPhp: perVialPrice(Number(g.pricePerKitPhp)),
+    perVialPhp: perVialPrice(Number(g.pricePerKitPhp), g.totalSlots),
     remaining: g.totalSlots - claimedSlots,
     progress: kahatiProgressPercent(claimedSlots, g.totalSlots),
   });

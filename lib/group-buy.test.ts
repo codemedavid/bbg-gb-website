@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   applyCampaignAction, canCommit, campaignOutcome,
   batchCapacity, isBatchFull, planBatchAllocation, nextBatchDeadline,
+  campaignVialsPerKit, describeBatch,
   MOQ_BATCH_MAX_KITS,
 } from './group-buy';
 
@@ -156,5 +157,52 @@ describe('nextBatchDeadline', () => {
   it('never produces a window that runs backwards', () => {
     const past = new Date('2026-06-20T00:00:00Z'); // deadline before creation
     expect(nextBatchDeadline(created, past, now)).toEqual(now);
+  });
+});
+
+
+// A group buy sells whole KITS, and a kit is not always ten vials: the Skin
+// Repair SM range ships 5 pairs. Nothing on the board said so, so the same
+// PHP 1,975 kit read identically whether it held five pieces or ten. The kit
+// size belongs to the PRODUCT (products.gb_vials_per_kit), so a batch reports
+// the one its products agree on and says nothing when they disagree.
+describe('campaignVialsPerKit', () => {
+  const included = (...ids: string[]) => ids.map((productId) => ({ productId, name: productId, outOfStock: false }));
+
+  it('reports the kit size the batch s product declares', () => {
+    expect(campaignVialsPerKit(included('sm1'), { sm1: 5 })).toBe(5);
+  });
+
+  it('reports the shared size when every product in the batch agrees', () => {
+    expect(campaignVialsPerKit(included('sm1', 'sm2'), { sm1: 5, sm2: 5 })).toBe(5);
+  });
+
+  // A mixed batch has no single answer, and guessing one would misprice the
+  // card for half of it. Better to say nothing than to say the wrong number.
+  it('reports nothing when the batch mixes kit sizes', () => {
+    expect(campaignVialsPerKit(included('sm1', 'reta'), { sm1: 5, reta: 10 })).toBeNull();
+  });
+
+  it('reports nothing for a batch whose products declare no kit size', () => {
+    expect(campaignVialsPerKit(included('reta'), { reta: null })).toBeNull();
+    expect(campaignVialsPerKit(included('reta'), {})).toBeNull();
+  });
+
+  it('reports nothing for a free-text batch carrying no products', () => {
+    expect(campaignVialsPerKit([], {})).toBeNull();
+  });
+});
+
+describe('describeBatch', () => {
+  const row = {
+    id: 'c1', seriesId: 'c1', batchNo: 1, status: 'open' as const, committed: 0, moq: 10,
+  };
+
+  it('carries the kit size onto the batch it describes', () => {
+    expect(describeBatch(row, 5).vialsPerKit).toBe(5);
+  });
+
+  it('describes a batch with no known kit size as having none', () => {
+    expect(describeBatch(row).vialsPerKit).toBeNull();
   });
 });
