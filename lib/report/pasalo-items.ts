@@ -1,4 +1,5 @@
 import { counterQuantities, type MeasurableCounter } from '../kahati-quantity';
+import type { Workbook } from 'exceljs';
 
 export type PasaloItem = ReturnType<typeof buildPasaloItems>[number];
 
@@ -13,7 +14,7 @@ export function buildPasaloItems(counters: readonly (MeasurableCounter & {
     return [{
       id: counter.id, name: counter.name, code: counter.code ?? '', spec: counter.spec ?? '',
       status: counter.status, ...q,
-      category: q.neededToQualify > 0 ? 'Pasalo' as const : 'Bunuan' as const,
+      category: q.neededToQualify > 0 ? 'Cancel' as const : 'Pasalo' as const,
     }];
   }).sort((a, b) => b.neededToQualify - a.neededToQualify || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
@@ -28,20 +29,24 @@ export function pasaloItemStatus(item: Pick<PasaloItem, 'status'>) {
 }
 
 export async function buildPasaloItemsWorkbook(items: PasaloItem[], batchLabel: string) {
-  const { Workbook } = await import('exceljs');
-  const book = new Workbook();
+  const { default: ExcelJS } = await import('exceljs');
+  const book = new ExcelJS.Workbook();
+  addPasaloItemsSheet(book, items, batchLabel);
+  return book;
+}
+
+export function addPasaloItemsSheet(book: Workbook, items: PasaloItem[], batchLabel: string) {
   const sheet = book.addWorksheet('Pasalo and Bunuan');
   sheet.addRow([batchLabel]);
   sheet.addRow(['Committed quantities; closed/cancelled counters require review before offering.']);
-  sheet.addRow(['Product', 'Code', 'Spec', 'Counter', 'Type', 'Committed vials', 'Minimum', 'Kit size', 'Needed to qualify', 'Needed to complete kit', 'Stage']);
+  sheet.addRow(['Product', 'Code', 'Spec', 'Counter', 'Type', 'Committed vials', 'Needed to qualify', 'Needed to complete kit', 'Stage']);
   for (const item of items) sheet.addRow([
     item.name, item.code, item.spec, item.id, item.category, item.combinedVials,
-    item.minRequired, item.maxVials, item.neededToQualify, item.slotsRemaining, pasaloItemStatus(item),
+    item.neededToQualify, item.slotsRemaining, pasaloItemStatus(item),
   ]);
-  sheet.columns.forEach((column, i) => { column.width = [35, 14, 20, 38, 12, 20, 12, 12, 22, 25, 42][i]; });
+  sheet.columns.forEach((column, i) => { column.width = [35, 14, 20, 38, 12, 20, 22, 25, 42][i]; });
   sheet.getRow(3).font = { bold: true };
-  sheet.autoFilter = { from: 'A3', to: `K${Math.max(3, sheet.rowCount)}` };
-  return book;
+  sheet.autoFilter = { from: 'A3', to: `I${Math.max(3, sheet.rowCount)}` };
 }
 
 export async function downloadPasaloItems(items: PasaloItem[], batchLabel: string) {

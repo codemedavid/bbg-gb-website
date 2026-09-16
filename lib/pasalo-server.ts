@@ -1,24 +1,5 @@
-// Pasalo (Bunuan) — the database side of the stage.
-//
-// Two admin actions, both explicit and both idempotent:
-//
-//   openPasaloStage   ends Kahati. Every counter with vials on it moves to
-//                     'pasalo' and keeps selling on a second, admin-set clock.
-//                     Nothing is cancelled and nobody is refunded.
-//   closePasaloStage  decides every one of them. At or above the minimum the
-//                     counter closes and is fulfilled; below it, the counter is
-//                     cancelled and its LINES — not its customers' whole orders
-//                     — become refunds.
-//
-// Neither is a sweep. There is no scheduler in this app (see lib/kahati-server.ts),
-// and the outcome of a Pasalo moves customers' money, so it is settled by a
-// person pressing a button rather than by a clock reaching a time.
-//
-// Every transition is a guarded conditional UPDATE whose WHERE re-checks the
-// state it was decided on, with RETURNING deciding what this run actually did —
-// the same pattern sweepKahatis uses, and what makes running either action
-// twice a no-op rather than a second refund.
-import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
+// Pasalo opening and closing decisions are atomic and scoped to the selected batch.
+import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   getDb, groupBuys, orders, orderItems, orderItemRefunds, orderStatusHistory, settlements, users,
 } from '@/lib/db';
@@ -39,6 +20,10 @@ type Db = Awaited<ReturnType<typeof getDb>>;
 type GroupBuyRow = typeof groupBuys.$inferSelect;
 
 export type PasaloOpenResult = {
+  cancelled: string[];
+  refundsWritten: number;
+  refundTotalPhp: number;
+  ordersCancelled: number;
   /** Counter ids moved into the stage. */
   opened: string[];
   /** Open counters nobody had joined — left running, exactly as a cycle roll does. */
@@ -53,61 +38,52 @@ export type PasaloOpenResult = {
   skippedOutOfRange: number;
 };
 
-/**
- * End Kahati and open Pasalo across the board.
- *
- * Every counter from 1 vial to one short of full enters, the already-qualified
- * 7-9 included: those batches are going ahead regardless, and leaving them
- * sellable is margin that would otherwise be thrown away when they close with
- * everything else.
- *
- * `kahati_vials` is frozen here and nowhere else. It is the only record that
- * survives of how the counter stood when Kahati ended — claimed_slots keeps
- * moving through the stage — and "3 Kahati + 2 Pasalo" on the dashboard and in
- * the refund sheet is read straight off it.
- *
- * Guarded on 'open', so a counter that another request has already moved is
- * skipped rather than re-frozen at a figure that now includes Pasalo vials.
- */
+/** Qualify the batch, record failed-line refunds, and open only incomplete qualified kits. */
 export async function openPasaloStage(
   db: Db,
   opts: { pasaloClosesAt?: Date | null; window?: BatchWindow | null } = {},
 ): Promise<PasaloOpenResult> {
-  const running = await db.select().from(groupBuys).where(eq(groupBuys.status, 'open'));
+  const policy = await getKahatiDownpaymentPolicy();
+  return db.transaction(async tx => {
+    // Lock before counting: checkout must not change the qualification decision
+    // halfway through recording refunds. A second open sees the final states.
+    const running = await tx.select().from(groupBuys)
+      .where(inArray(groupBuys.status, ['open', 'pasalo'])).orderBy(asc(groupBuys.id)).for('update');
+    const scoped = running.filter(counter => isCounterInBatchWindow(counter, opts.window));
+    const decisions = scoped.map(counter => ({ counter, q: counterQuantities(counter),
+      verdict: counter.status === 'pasalo' && counterQuantities(counter).state === 'short'
+        ? 'cancel_short' : pasaloEligibility({ status: counter.status, ...counterQuantities(counter) }) }));
+    const failed = decisions.filter(d => d.verdict === 'cancel_short');
+    const qualified = decisions.filter(d => d.verdict === 'open_pasalo');
+    const reasons = new Map(failed.map(d => [d.counter.id,
+      `Kahati closed with ${d.q.combinedVials}/${d.q.minRequired} minimum. Cancelled before Pasalo; only qualified kits enter Pasalo.`]));
+    const quantities = new Map(decisions.map(d => [d.counter.id, d.q]));
 
-  const opened: string[] = [];
-  let skippedEmpty = 0;
-  let skippedFull = 0;
-  let skippedOutOfRange = 0;
+    // Preserve the failed kit's final count; releasing order lines must not
+    // decrement it now that it is a historical cancellation.
+    for (const d of failed) await tx.update(groupBuys).set({
+      status: 'cancelled', kahatiVials: d.counter.kahatiVials ?? d.q.combinedVials,
+    }).where(eq(groupBuys.id, d.counter.id));
 
-  for (const counter of running) {
-    // Judged before eligibility, and counted apart from it. A counter from
-    // last cycle is not "empty" or "full" — it is not this batch's business at
-    // all, and folding it into either figure would tell the admin the board
-    // contains something it does not.
-    if (!isCounterInBatchWindow(counter, opts.window)) { skippedOutOfRange += 1; continue; }
-    const q = counterQuantities(counter);
-    const verdict = pasaloEligibility({ status: counter.status, ...q });
-    if (verdict === 'skip_empty') { skippedEmpty += 1; continue; }
-    if (verdict === 'skip_full') { skippedFull += 1; continue; }
-    if (verdict !== 'open_pasalo') continue;
+    const { lines, orderFacts } = failed.length
+      ? await readBatchLines(tx, scoped.map(c => c.id), reasons)
+      : { lines: [], orderFacts: [] };
+    const refunds = buildPasaloRefunds(lines, orderFacts, policy);
+    const refundsWritten = await writeRefundRows(tx, refunds, lines, quantities);
+    const ordersCancelled = await releaseRefundedLines(tx, refunds, lines);
+    for (const d of qualified) await tx.update(groupBuys).set({
+      status: 'pasalo', kahatiVials: d.q.combinedVials,
+      pasaloClosesAt: opts.pasaloClosesAt ?? null,
+    }).where(eq(groupBuys.id, d.counter.id));
 
-    const [moved] = await db.update(groupBuys)
-      .set({
-        status: 'pasalo',
-        // Frozen from the row we just read, not from claimed_slots in SQL: a
-        // commitment landing between the read and this write belongs to Kahati
-        // either way, and re-reading would be no more true. What matters is
-        // that it is written once — the guard below is what enforces that.
-        kahatiVials: q.combinedVials,
-        pasaloClosesAt: opts.pasaloClosesAt ?? null,
-      })
-      .where(and(eq(groupBuys.id, counter.id), eq(groupBuys.status, 'open')))
-      .returning({ id: groupBuys.id });
-    if (moved) opened.push(moved.id);
-  }
-
-  return { opened, skippedEmpty, skippedFull, skippedOutOfRange };
+    return {
+      opened: qualified.map(d => d.counter.id), cancelled: failed.map(d => d.counter.id),
+      skippedEmpty: decisions.filter(d => d.verdict === 'skip_empty').length,
+      skippedFull: decisions.filter(d => d.verdict === 'skip_full').length,
+      skippedOutOfRange: running.length - scoped.length,
+      refundsWritten, refundTotalPhp: pasaloRefundTotals(refunds).totalPhp, ordersCancelled,
+    };
+  });
 }
 
 export type PasaloCloseResult = {
@@ -225,7 +201,7 @@ async function readBatchLines(
 ): Promise<{ lines: BatchLine[]; orderFacts: BatchOrderFacts[] }> {
   // Which orders this batch touches at all — anyone holding a line on a staged
   // counter.
-  const touched = await tx.selectDistinct({ orderId: orderItems.orderId })
+  const touched = await tx.selectDistinct({ orderId: orderItems.orderId, userId: orders.userId, cycleKey: orders.cycleKey })
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .where(and(
@@ -263,9 +239,12 @@ async function readBatchLines(
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .leftJoin(settlements, eq(settlements.id, orders.settlementId))
+    .leftJoin(orderItemRefunds, eq(orderItemRefunds.orderItemId, orderItems.id))
     .where(and(
       isNotNull(orderItems.groupBuyId),
-      inArray(orderItems.orderId, orderIds),
+      or(inArray(orderItems.orderId, orderIds), ...touched.filter(t => t.cycleKey != null).map(t =>
+        and(eq(orders.userId, t.userId), eq(orders.cycleKey, t.cycleKey!)))),
+      isNull(orderItemRefunds.id),
       ne(orders.status, 'cancelled'),
     ));
 
@@ -400,6 +379,10 @@ async function releaseRefundedLines(
   // it gets cancelled outright and re-billed to zero, taking vials the customer
   // is still owed down with it. That is the same order-granularity mistake this
   // whole function was written to end, one level up.
+  const previousRefunds = await tx.select({ id: orderItemRefunds.orderItemId }).from(orderItemRefunds)
+    .where(inArray(orderItemRefunds.orderId, touchedOrders));
+  for (const r of previousRefunds) refundedItemIds.add(r.id);
+
   const allLines = await tx.select({
     id: orderItems.id,
     orderId: orderItems.orderId,

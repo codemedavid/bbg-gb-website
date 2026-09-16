@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, groupBuys, orders, orderItems, orderItemRefunds } from '@/lib/db';
 import { resetDb, makeUser, makeGroupBuy } from '@/lib/test/harness';
 import { openPasaloStage, closePasaloStage } from './pasalo-server';
@@ -62,11 +62,105 @@ const refundsOf = async () => {
 };
 
 describe('openPasaloStage', () => {
-  it('moves a short counter into Pasalo instead of cancelling it', async () => {
+  it('rolls back cancellations and stage changes if a refund cannot be recorded', async () => {
+    const db = await getDb();
+    const user = await makeUser();
+    const short = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const qualified = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
+    const { order } = await makeKahatiOrder({ userId: user.id, lines: [{ groupBuyId: short.id, qty: 3 }] });
+    await db.execute(sql`CREATE FUNCTION reject_pasalo_test_refund() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test refund failure'; END $$`);
+    await db.execute(sql`CREATE TRIGGER reject_pasalo_test_refund BEFORE INSERT ON order_item_refunds FOR EACH ROW EXECUTE FUNCTION reject_pasalo_test_refund()`);
+    try {
+      await expect(openPasaloStage(db)).rejects.toThrow('test refund failure');
+      expect((await counterOf(short.id)).status).toBe('open');
+      expect((await counterOf(qualified.id)).status).toBe('open');
+      expect((await orderOf(order.id)).status).toBe('payment_confirmed');
+      expect(await refundsOf()).toHaveLength(0);
+    } finally {
+      await db.execute(sql`DROP TRIGGER reject_pasalo_test_refund ON order_item_refunds`);
+      await db.execute(sql`DROP FUNCTION reject_pasalo_test_refund()`);
+    }
+  });
+  it('cancels a short counter already in Pasalo under the old rule without refreezing qualified counters', async () => {
+    const db = await getDb();
+    const short = await makeGroupBuy({ totalSlots: 10, claimedSlots: 5, kahatiVials: 4, status: 'pasalo' });
+    const qualified = await makeGroupBuy({ totalSlots: 10, claimedSlots: 9, kahatiVials: 7, status: 'pasalo' });
+    const result = await openPasaloStage(db);
+    expect(result.cancelled).toEqual([short.id]);
+    expect(result.opened).toEqual([]);
+    expect((await counterOf(qualified.id)).kahatiVials).toBe(7);
+    expect((await counterOf(qualified.id)).status).toBe('pasalo');
+  });
+  it('cancels every 1–6 kit, opens 7–9, and records a collected deposit only once', async () => {
+    const db = await getDb();
+    const user = await makeUser();
+    const counters = [];
+    for (let qty = 1; qty <= 10; qty++) counters.push(await makeGroupBuy({ totalSlots: 10, claimedSlots: qty }));
+    const failedOrder = await makeKahatiOrder({ userId: user.id,
+      lines: counters.slice(0, 6).map((c, index) => ({ groupBuyId: c.id, qty: index + 1 })) });
+    const result = await openPasaloStage(db);
+    expect(result.cancelled.sort()).toEqual(counters.slice(0, 6).map(c => c.id).sort());
+    expect(result.opened.sort()).toEqual(counters.slice(6, 9).map(c => c.id).sort());
+    expect(result.skippedFull).toBe(1);
+    expect(result.refundsWritten).toBe(6);
+    expect(result.refundTotalPhp).toBe(150);
+    expect((await orderOf(failedOrder.order.id)).status).toBe('cancelled');
+    for (let index = 0; index < 6; index++) {
+      const row = await counterOf(counters[index].id);
+      expect(row.status).toBe('cancelled');
+      expect(row.claimedSlots).toBe(index + 1);
+    }
+    const repeat = await openPasaloStage(db);
+    expect(repeat.cancelled).toEqual([]);
+    expect(repeat.refundsWritten).toBe(0);
+    expect(await refundsOf()).toHaveLength(6);
+  });
+
+  it('preserves a mixed order and charges only its surviving product plus packing', async () => {
+    const db = await getDb();
+    const user = await makeUser();
+    const short = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const qualified = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
+    const { order } = await makeKahatiOrder({ userId: user.id, lines: [
+      { groupBuyId: short.id, qty: 3 }, { groupBuyId: qualified.id, qty: 7 },
+    ] });
+    const result = await openPasaloStage(db);
+    expect(result.refundTotalPhp).toBe(0);
+    expect((await orderOf(order.id)).status).toBe('payment_confirmed');
+    expect(Number((await orderOf(order.id)).totalPhp)).toBe(7 * 550 + 150);
+    expect((await counterOf(qualified.id)).status).toBe('pasalo');
+  });
+
+  it('keeps the packing deposit when the same customer has a separate surviving order in this cycle', async () => {
+    const db = await getDb();
+    const user = await makeUser();
+    const short = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const full = await makeGroupBuy({ totalSlots: 10, claimedSlots: 10, status: 'closed' });
+    await makeKahatiOrder({ userId: user.id, orderNo: 'KH-FAILED', lines: [{ groupBuyId: short.id, qty: 3 }] });
+    await makeKahatiOrder({ userId: user.id, orderNo: 'KH-SURVIVES', downpaymentPhp: 0,
+      lines: [{ groupBuyId: full.id, qty: 10 }] });
+    expect((await openPasaloStage(db)).refundTotalPhp).toBe(0);
+    expect((await refundsOf())[0].depositPhp).toBe('0.00');
+  });
+
+  it('uses exact cycle membership even when counters were created on the same date', async () => {
+    const db = await getDb();
+    const current = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const old = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    await db.update(groupBuys).set({ cycleKey: 'current' }).where(eq(groupBuys.id, current.id));
+    await db.update(groupBuys).set({ cycleKey: 'old' }).where(eq(groupBuys.id, old.id));
+    const result = await openPasaloStage(db, { window: {
+      start: new Date('2000-01-01'), end: new Date('2000-01-02'), cycleKeys: ['current'],
+    } });
+    expect(result.cancelled).toEqual([current.id]);
+    expect((await counterOf(old.id)).status).toBe('open');
+  });
+
+  it('moves a qualified counter into Pasalo', async () => {
     // The whole point: 3/10 used to be a cancellation and a refund four vials
     // short of a batch that would have gone ahead.
     const db = await getDb();
-    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
 
     const result = await openPasaloStage(db, { pasaloClosesAt: new Date('2026-09-12T12:00:00Z') });
 
@@ -78,9 +172,9 @@ describe('openPasaloStage', () => {
 
   it('freezes the Kahati figure so the two halves stay tellable apart', async () => {
     const db = await getDb();
-    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
     await openPasaloStage(db);
-    expect((await counterOf(gb.id)).kahatiVials).toBe(3);
+    expect((await counterOf(gb.id)).kahatiVials).toBe(7);
   });
 
   it('takes a qualified 7-9 counter in too, so it can still top up', async () => {
@@ -108,17 +202,17 @@ describe('openPasaloStage', () => {
 
   it('is idempotent — a second open re-freezes nothing', async () => {
     const db = await getDb();
-    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
     await openPasaloStage(db);
     // A Pasalo vial lands, then the admin fumbles the button a second time.
-    await db.update(groupBuys).set({ claimedSlots: 5 }).where(eq(groupBuys.id, gb.id));
+    await db.update(groupBuys).set({ claimedSlots: 9 }).where(eq(groupBuys.id, gb.id));
 
     const second = await openPasaloStage(db);
 
     expect(second.opened).toEqual([]);
     // Still 3, not 5: re-freezing would erase the fact that two of those vials
     // were bought during Pasalo, which is the evidence the refund sheet cites.
-    expect((await counterOf(gb.id)).kahatiVials).toBe(3);
+    expect((await counterOf(gb.id)).kahatiVials).toBe(7);
   });
 });
 

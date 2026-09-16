@@ -9,10 +9,10 @@ const q = (claimedSlots: number, kahatiVials: number | null = null, totalSlots =
   counterQuantities({ claimedSlots, totalSlots, kahatiVials, minViableVials: 7 });
 
 describe('pasaloEligibility — which counters enter the stage when Kahati closes', () => {
-  it('opens Pasalo for a counter that fell short — the whole point', () => {
-    expect(pasaloEligibility({ status: 'open', ...q(3) })).toBe('open_pasalo');
-    expect(pasaloEligibility({ status: 'open', ...q(1) })).toBe('open_pasalo');
-    expect(pasaloEligibility({ status: 'open', ...q(6) })).toBe('open_pasalo');
+  it('cancels joined counters below the minimum', () => {
+    expect(pasaloEligibility({ status: 'open', ...q(3) })).toBe('cancel_short');
+    expect(pasaloEligibility({ status: 'open', ...q(1) })).toBe('cancel_short');
+    expect(pasaloEligibility({ status: 'open', ...q(6) })).toBe('cancel_short');
   });
 
   it('also opens Pasalo for a qualified counter, so it can still top up', () => {

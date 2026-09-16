@@ -11,7 +11,7 @@ it('exports numeric gaps using each kit minimum/cap and preserves review status'
   const sheet = readBack.getWorksheet('Pasalo and Bunuan')!;
   expect(sheet.getCell('A1').value).toBe('Batch 8');
   expect(sheet.getRow(4).values).toEqual([
-    undefined, 'Test kit', 'TEST', '20mg', 'kit-1', 'Pasalo', 3, 4, 5, 1, 2,
+    undefined, 'Test kit', 'TEST', '20mg', 'kit-1', 'Cancel', 3, 1, 2,
     'Cancelled — review before offering',
   ]);
 });

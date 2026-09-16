@@ -27,6 +27,7 @@ export const GET = handler(async (req: Request) => {
   const { start, end } = dateRangeBounds(from, to);
 
   const db = await getDb();
+  const cycleKey = params.get('cycleKey');
   const orderRows = await db
     .select({
       id: orders.id, orderNo: orders.orderNo, status: orders.status, buyType: orders.buyType,
@@ -38,7 +39,7 @@ export const GET = handler(async (req: Request) => {
     })
     .from(orders)
     .leftJoin(users, eq(orders.userId, users.id))
-    .where(and(gte(orders.createdAt, start), lt(orders.createdAt, end)))
+    .where(cycleKey ? eq(orders.cycleKey, cycleKey) : and(gte(orders.createdAt, start), lt(orders.createdAt, end)))
     .orderBy(desc(orders.createdAt));
 
   // One batched query for line items instead of N per order. The product join

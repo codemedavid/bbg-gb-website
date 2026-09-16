@@ -1,3 +1,4 @@
+import { pasaloScope } from '@/lib/pasalo-scope-server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
@@ -17,6 +18,7 @@ import {
 // Read-only. Downloading or viewing a refund determination never marks anything
 // refunded; only PATCH /api/admin/refunds/[id] does that.
 const querySchema = z.object({
+  cycleKey: z.string().min(1).max(40).optional(),
   from: z.string().refine(isValidYmd, 'Start date must be YYYY-MM-DD.'),
   to: z.string().refine(isValidYmd, 'End date must be YYYY-MM-DD.'),
 });
@@ -24,7 +26,8 @@ const querySchema = z.object({
 export const GET = handler(async (req: Request) => {
   await requireAdmin();
   const url = new URL(req.url);
-  const { from, to } = querySchema.parse({
+  const { from, to, cycleKey } = querySchema.parse({
+    cycleKey: url.searchParams.get('cycleKey') ?? undefined,
     from: url.searchParams.get('from'),
     to: url.searchParams.get('to'),
   });
@@ -40,7 +43,7 @@ export const GET = handler(async (req: Request) => {
     to,
     // The stage as it stands right now, which is a different question from what
     // a past close decided — the admin watches this table while Pasalo runs.
-    board: await loadPasaloBoard(db, { start, end }),
+    board: await loadPasaloBoard(db, await pasaloScope(db, { from, to, cycleKey })),
     customers: buildCustomerRefundRows(refunds, successful),
     refunds,
     successful,

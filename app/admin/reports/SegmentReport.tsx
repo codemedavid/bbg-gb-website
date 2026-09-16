@@ -4,6 +4,8 @@ import { SEGMENT_LABEL, SEGMENT_SHORT_LABEL, type ReportSegment } from '@/lib/re
 import { btnGhost, btnPrimary } from '@/components/admin-ui';
 import { OrderSummaryReport } from './OrderSummaryReport';
 import { ProductTotalsReport } from './ProductTotalsReport';
+import { KahatiCartExport } from './KahatiCartExport';
+import type { ReportCycle } from '@/lib/report/cycles';
 
 // One report segment — its orders, product rollup, and own download.
 //
@@ -12,6 +14,7 @@ import { ProductTotalsReport } from './ProductTotalsReport';
 // what is still owed to the supplier. Reading a kit count off a table that
 // holds both over-orders every product sold on-hand that week.
 type Props = {
+  cycle?: ReportCycle;
   segment: ReportSegment;
   report: WeeklyReport;
   isBusy: boolean;
@@ -20,7 +23,7 @@ type Props = {
   onPrintPackingList: (segment: ReportSegment) => void;
 };
 
-export function SegmentReport({ segment, report, isBusy, onDownload, onPrintPackingList }: Props) {
+export function SegmentReport({ segment, report, cycle, isBusy, onDownload, onPrintPackingList }: Props) {
   const headingId = `segment-${segment}-heading`;
   const label = SEGMENT_LABEL[segment];
   const isEmpty = !report.rows.length;
@@ -39,6 +42,7 @@ export function SegmentReport({ segment, report, isBusy, onDownload, onPrintPack
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {segment === 'kahati' && <KahatiCartExport report={report} cycle={cycle} />}
           {/* Packing day works off addresses, not off a spreadsheet: this is the
               same range as one printable block per parcel, which the browser's
               print dialog saves as a PDF. */}

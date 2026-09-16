@@ -136,6 +136,7 @@ export default function AdminReportsPage() {
             key={segment}
             segment={segment}
             report={segments[segment]}
+            cycle={cycles.find(c => c.cycleKey === cycleKey)}
             isBusy={busySegment === segment}
             onDownload={download}
             onPrintPackingList={printPackingList}
@@ -147,7 +148,7 @@ export default function AdminReportsPage() {
           filled AFTER that is reconciled against the supplier's sheet below. */}
       <details className="rounded-[16px] border border-line-soft bg-white p-4">
         <summary className="cursor-pointer font-semibold">Refund records and Pasalo stage controls (selected date range)</summary>
-        <PasaloRefundPanel from={from} to={to} />
+        <PasaloRefundPanel from={from} to={to} cycle={cycles.find(c => c.cycleKey === cycleKey)} />
       </details>
 
       {/* Sits under the segment reports because it answers the question that

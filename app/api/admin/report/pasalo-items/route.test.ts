@@ -35,8 +35,8 @@ describe('Pasalo / Bunuan item report', () => {
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(data.items).toHaveLength(2);
-    expect(data.items[0]).toMatchObject({ name: 'Needs rescue', category: 'Pasalo', combinedVials: 5, neededToQualify: 2, slotsRemaining: 5 });
-    expect(data.items[1]).toMatchObject({ name: 'Top up kit', category: 'Bunuan', combinedVials: 8, neededToQualify: 0, slotsRemaining: 2 });
+    expect(data.items[0]).toMatchObject({ name: 'Needs rescue', category: 'Cancel', combinedVials: 5, neededToQualify: 2, slotsRemaining: 5 });
+    expect(data.items[1]).toMatchObject({ name: 'Top up kit', category: 'Pasalo', combinedVials: 8, neededToQualify: 0, slotsRemaining: 2 });
   });
 
   it('keeps sibling kits separate and retains closed/cancelled state for review', async () => {

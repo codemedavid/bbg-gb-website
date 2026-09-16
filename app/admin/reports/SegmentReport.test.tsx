@@ -6,6 +6,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SegmentReport } from './SegmentReport';
 import { buildWeeklyReport, type ReportOrderInput } from '@/lib/report/build';
+import { apiGet } from '@/lib/api-client';
+vi.mock('@/lib/api-client', () => ({ apiGet: vi.fn(async () => ({ items: [] })), qs: (q: Record<string, string>) => `?${new URLSearchParams(q)}` }));
+import userEvent from '@testing-library/user-event';
+import { downloadKahatiCartXlsx } from '@/lib/report/kahati-cart-xlsx';
+vi.mock('@/lib/report/kahati-cart-xlsx', () => ({ downloadKahatiCartXlsx: vi.fn() }));
 
 const counterLine = (qty: number, frozen: number | null) => ({
   nameSnapshot: 'Retatrutide', qty, unitPriceUsd: null, unitPricePhp: '1040',
@@ -29,12 +34,26 @@ const kahatiReport = () => buildWeeklyReport('2026-05-25', [
 ]);
 
 const props = {
+  cycle: { cycleKey: 'current', from: '2026-05-25', to: '2026-05-31', orderCount: 2, vials: 5 },
   isBusy: false,
   onDownload: vi.fn(),
   onPrintPackingList: vi.fn(),
 };
 
 describe('SegmentReport', () => {
+  it('exports the displayed Kahati data with a separate cart button', async () => {
+    const report = kahatiReport();
+    render(<SegmentReport segment="kahati" report={report} {...props} />);
+    await userEvent.click(screen.getByRole('button', { name: /Kahati Cart \+ Pasalo Excel/ }));
+    expect(downloadKahatiCartXlsx).toHaveBeenCalledWith(report.kahatiCart, report.rangeLabel, []);
+    expect(apiGet).toHaveBeenCalledWith('/admin/report/pasalo-items?cycleKey=current');
+    expect(screen.getByRole('button', { name: /⬇ Kahati Excel/ })).toBeInTheDocument();
+  });
+
+  it('disables the combined export for an unscoped custom range', () => {
+    render(<SegmentReport segment="kahati" report={buildWeeklyReport('2026-05-25', [])} {...props} cycle={undefined} />);
+    expect(screen.getByRole('button', { name: /Kahati Cart \+ Pasalo Excel/ })).toBeDisabled();
+  });
   it('says the Kahati report includes Pasalo, and how much of it is Pasalo', () => {
     render(<SegmentReport segment="kahati" report={kahatiReport()} {...props} />);
 
@@ -49,5 +68,6 @@ describe('SegmentReport', () => {
   it('does not put the stage split on a report that has no counters', () => {
     render(<SegmentReport segment="onhand" report={kahatiReport()} {...props} />);
     expect(screen.queryByTestId('kahati-stage-split')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Kahati Cart \+ Pasalo Excel/ })).not.toBeInTheDocument();
   });
 });

@@ -1,16 +1,4 @@
-// Pasalo (Bunuan) — the stage between a hatian falling short and anybody being
-// refunded. Pure decisions, no I/O and no clock.
-//
-// A hatian needs 7 vials to be worth ordering and holds 10. A counter that
-// ended Kahati at 3 used to be CANCELLED outright: the batch was never placed
-// and every participant was refunded, four vials short of a batch that would
-// have gone ahead. Pasalo is the second selling window that gets asked for
-// those four vials before any money goes back.
-//
-// Two admin actions bound it, both deliberate and both explicit. Opening the
-// stage moves the short counters into it; closing the stage decides each one.
-// Neither is a clock: the deadline on a counter stops new commitments, but
-// what happens to a customer's money is settled by a person pressing a button.
+// Pasalo tops up qualified kits. Opening cancels joined kits below their minimum.
 import type { CounterQuantities } from './kahati-quantity';
 
 /**
@@ -20,7 +8,7 @@ import type { CounterQuantities } from './kahati-quantity';
  * 'skip_not_open' because the admin is told what the action did NOT do, and
  * "4 counters skipped" is not an answer — "3 nobody joined, 1 already full" is.
  */
-export type PasaloEligibility = 'open_pasalo' | 'skip_empty' | 'skip_full' | 'skip_not_open';
+export type PasaloEligibility = 'open_pasalo' | 'cancel_short' | 'skip_empty' | 'skip_full' | 'skip_not_open';
 
 export function pasaloEligibility(
   counter: { status: string } & Pick<CounterQuantities, 'combinedVials' | 'state'>,
@@ -36,10 +24,8 @@ export function pasaloEligibility(
   // A complete kit has no slots left to sell, so a second selling window would
   // be an empty offer.
   if (counter.state === 'full') return 'skip_full';
-  // Everything from 1 to 9 enters — including the already-qualified 7-9. Those
-  // batches are going ahead either way, and leaving them sellable through the
-  // stage costs nothing: they close with everything else when the admin closes
-  // Pasalo, and any vials they gain are margin that would otherwise be lost.
+  if (counter.state === 'short') return 'cancel_short';
+  // Only qualified, incomplete kits enter Pasalo (7–9 of 10 vials).
   return 'open_pasalo';
 }
 
@@ -123,7 +109,7 @@ export function counterStartedAt(counter: { opensAt: Date | null; createdAt: Dat
 }
 
 /** The batch an admin has selected, as the half-open range dateRangeBounds returns. */
-export type BatchWindow = { start: Date; end: Date };
+export type BatchWindow = { start: Date; end: Date; cycleKeys?: readonly string[] };
 
 /**
  * Is this counter part of the batch the admin is acting on?
@@ -139,10 +125,11 @@ export type BatchWindow = { start: Date; end: Date };
  * function is only as precise as the range it is handed.
  */
 export function isCounterInBatchWindow(
-  counter: { opensAt: Date | null; createdAt: Date },
+  counter: { opensAt: Date | null; createdAt: Date; cycleKey?: string | null },
   window: BatchWindow | null | undefined,
 ): boolean {
   if (!window) return true;
+  if (window.cycleKeys) return counter.cycleKey != null && window.cycleKeys.includes(counter.cycleKey);
   const startedAt = counterStartedAt(counter).getTime();
   return startedAt >= window.start.getTime() && startedAt < window.end.getTime();
 }

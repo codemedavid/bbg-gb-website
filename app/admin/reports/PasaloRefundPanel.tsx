@@ -1,4 +1,5 @@
 'use client';
+import type { ReportCycle } from '@/lib/report/cycles';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, qs } from '@/lib/api-client';
@@ -36,7 +37,8 @@ type PasaloReport = {
 const cell = 'px-2.5 py-2 text-[12.5px]';
 const headCell = 'px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted';
 
-export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
+export function PasaloRefundPanel({ from, to, cycle }: { from: string; to: string; cycle?: ReportCycle }) {
+  const scope = cycle ? { cycleKey: cycle.cycleKey } : {};
   const showToast = useToast((s) => s.show);
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -44,12 +46,12 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
   const [deadline, setDeadline] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'pasalo-refund', from, to],
-    queryFn: () => apiGet<PasaloReport>(`/admin/report/pasalo-refund${qs({ from, to })}`),
+    queryKey: ['admin', 'pasalo-refund', from, to, cycle?.cycleKey],
+    queryFn: () => apiGet<PasaloReport>(`/admin/report/pasalo-refund${qs({ from, to, ...scope })}`),
     enabled: !!from && !!to && to >= from,
   });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['admin', 'pasalo-refund'] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['admin'] });
 
   const call = async (path: string, body?: unknown) => {
     const res = await fetch(`/api${path}`, {
@@ -65,9 +67,9 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
   const openStage = async () => {
     const ok = await confirm({
       title: 'End Kahati and open Pasalo?',
-      message: `Only counters that started between ${from} and ${to} will move to Pasalo — anything from an `
-        + 'earlier batch stays on the Kahati board. They keep selling on the deadline you set. '
-        + 'Nothing is cancelled and nobody is refunded — that only happens when you close the stage.',
+      message: `For ${cycle ? 'the selected batch' : `${from} – ${to}`}, kits with 7–9 committed vials (of 10) enter Pasalo. `
+        + 'Kits with 1–6 are cancelled and any collected refundable payment is recorded for refund. '
+        + 'Full kits and empty counters are left alone. Cancellation cannot be undone.',
       confirmLabel: 'Open Pasalo',
       cancelLabel: 'Not yet',
     });
@@ -75,11 +77,12 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
     setBusy('open');
     try {
       const result = await call('/admin/groupbuys/pasalo', {
+        ...scope,
         closesAt: deadline ? new Date(deadline).toISOString() : null,
         from,
         to,
       });
-      showToast(`Pasalo opened on ${result.opened} counter(s). `
+      showToast(`Pasalo opened on ${result.opened} counter(s). ${result.cancelled} cancelled; ${result.refundsWritten} refund record(s), ${php(result.refundTotalPhp)}. `
         + `${result.skippedEmpty} empty and ${result.skippedFull} full were left alone.`
         + (result.skippedOutOfRange > 0
           ? ` ${result.skippedOutOfRange} from another batch were not touched.`
@@ -115,7 +118,7 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
     if (!ok) return;
     setBusy('close');
     try {
-      const result = await call('/admin/groupbuys/pasalo/close', { from, to });
+      const result = await call('/admin/groupbuys/pasalo/close', { from, to, ...scope });
       showToast(`${result.fulfilled} product(s) proceeding, ${result.failed} failed. `
         + `${result.refundsWritten} refund(s) recorded — ${php(result.refundTotalPhp)} across ${result.customersOwed} customer(s).`
         + (result.skippedOutOfRange > 0
@@ -144,7 +147,7 @@ export function PasaloRefundPanel({ from, to }: { from: string; to: string }) {
         <div>
           <h2 id="pasalo-panel" className="m-0 font-display text-[18px] font-bold">Pasalo / Bunuan</h2>
           <p className="mt-1 text-[12.5px] text-ink-muted">
-            The last window before anything is refunded. Close the stage to decide the batch.
+            Only qualified kits enter Pasalo. Opening cancels below-minimum kits and records refunds.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">

@@ -1,10 +1,11 @@
+import { pasaloScope } from '@/lib/pasalo-scope-server';
 import { z } from 'zod';
 import { requireAdmin, ApiError } from '@/lib/session';
 import { ok, handler } from '@/lib/api-response';
 import { getDb } from '@/lib/db';
 import { closePasaloStage } from '@/lib/pasalo-server';
 import { checkoutLog } from '@/lib/checkout-log';
-import { dateRangeBounds, isValidYmd } from '@/lib/report/week';
+import { isValidYmd } from '@/lib/report/week';
 
 // Admin: close Pasalo (Bunuan) and decide every counter in it.
 //
@@ -32,6 +33,7 @@ import { dateRangeBounds, isValidYmd } from '@/lib/report/week';
 // earlier close is cancelled and its customers refunded alongside a batch they
 // were never part of.
 const bodySchema = z.object({
+  cycleKey: z.string().min(1).max(40).optional(),
   from: z.string().refine(isValidYmd, 'Start date must be YYYY-MM-DD.').optional(),
   to: z.string().refine(isValidYmd, 'End date must be YYYY-MM-DD.').optional(),
 });
@@ -41,13 +43,13 @@ export const POST = handler(async (req?: Request) => {
   // An absent or unparseable body is a valid request — "close the whole stage",
   // which is what this did before it could be scoped.
   const raw = req ? await req.json().catch(() => ({})) : {};
-  const { from, to } = bodySchema.parse(raw ?? {});
+  const { from, to, cycleKey } = bodySchema.parse(raw ?? {});
   if (from && to && to < from) throw new ApiError(400, 'Batch end date must be on or after the start date.');
 
   const db = await getDb();
 
   const result = await closePasaloStage(db, {
-    window: from && to ? dateRangeBounds(from, to) : null,
+    window: await pasaloScope(db, { from, to, cycleKey }),
   });
 
   // Money decisions belong in the same log as the checkout ones — this is the

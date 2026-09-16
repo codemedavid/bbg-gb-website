@@ -91,7 +91,7 @@ describe('POST /api/admin/groupbuys/pasalo — authorisation', () => {
 describe('POST /api/admin/groupbuys/pasalo', () => {
   it('opens the stage on a short counter and reports what it skipped', async () => {
     await signIn();
-    await makeGroupBuy({ totalSlots: 10, claimedSlots: 3, name: 'Short' });
+    await makeGroupBuy({ totalSlots: 10, claimedSlots: 7, name: 'Short' });
     await makeGroupBuy({ totalSlots: 10, claimedSlots: 0, name: 'Empty' });
     await makeGroupBuy({ totalSlots: 10, claimedSlots: 10, name: 'Full' });
 
@@ -104,7 +104,7 @@ describe('POST /api/admin/groupbuys/pasalo', () => {
 
   it('accepts an empty body — a stage with no deadline runs until it is closed', async () => {
     await signIn();
-    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const gb = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
     const res = await OPEN(new Request('http://localhost/api/admin/groupbuys/pasalo', { method: 'POST' }));
 
     expect(res.status).toBe(200);

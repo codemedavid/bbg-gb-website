@@ -97,12 +97,27 @@ const statusOf = async (id: string) => {
 };
 
 describe('POST /api/admin/groupbuys/pasalo — opening only this batch', () => {
+  it('uses the selected cycle instead of dates for cancellation and stage opening', async () => {
+    await signIn();
+    const db = await getDb();
+    const short = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    const qualified = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7 });
+    const previous = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3 });
+    for (const id of [short.id, qualified.id]) await db.update(groupBuys).set({ cycleKey: 'selected' }).where(eq(groupBuys.id, id));
+    await db.update(groupBuys).set({ cycleKey: 'previous' }).where(eq(groupBuys.id, previous.id));
+    const res = await OPEN(openReq({ from: '2000-01-01', to: '2000-01-02', cycleKey: 'selected' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toMatchObject({ opened: 1, cancelled: 1, skippedOutOfRange: 1 });
+    expect(await statusOf(short.id)).toBe('cancelled');
+    expect(await statusOf(qualified.id)).toBe('pasalo');
+    expect(await statusOf(previous.id)).toBe('open');
+  });
   it('leaves a counter from an earlier cycle on the Kahati board', async () => {
     await signIn();
     const stale = await makeGroupBuy({
-      totalSlots: 10, claimedSlots: 3, name: 'Last cycle', createdAt: LAST_CYCLE,
+      totalSlots: 10, claimedSlots: 7, name: 'Last cycle', createdAt: LAST_CYCLE,
     });
-    const current = await makeGroupBuy({ totalSlots: 10, claimedSlots: 3, name: 'This cycle' });
+    const current = await makeGroupBuy({ totalSlots: 10, claimedSlots: 7, name: 'This cycle' });
 
     const res = await OPEN(openReq({ from: today(), to: today() }));
     const body = await res.json();
@@ -118,7 +133,7 @@ describe('POST /api/admin/groupbuys/pasalo — opening only this batch', () => {
     // Written weeks early for this cycle. Its created_at belongs to the old
     // batch; its schedule is what decides.
     const scheduled = await makeGroupBuy({
-      totalSlots: 10, claimedSlots: 3, name: 'Scheduled ahead',
+      totalSlots: 10, claimedSlots: 7, name: 'Scheduled ahead',
       createdAt: LAST_CYCLE, opensAt: new Date(),
     });
 
@@ -131,7 +146,7 @@ describe('POST /api/admin/groupbuys/pasalo — opening only this batch', () => {
   it('still sweeps the whole board when no range is given', async () => {
     await signIn();
     const stale = await makeGroupBuy({
-      totalSlots: 10, claimedSlots: 3, name: 'Last cycle', createdAt: LAST_CYCLE,
+      totalSlots: 10, claimedSlots: 7, name: 'Last cycle', createdAt: LAST_CYCLE,
     });
 
     const res = await OPEN(openReq());

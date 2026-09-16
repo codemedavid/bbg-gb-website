@@ -2,6 +2,7 @@
 // renders. No I/O, no clock — fully testable.
 import { PAID_STATUSES, PAYMENT_STATUS_LABEL, PENDING_STATUSES, REPORT_STATUS_LABEL } from './constants';
 import { num } from './money';
+import { buildKahatiCart, type KahatiCartRow } from './kahati-cart';
 import { buildBuyerSummary, type BuyerSummary } from './buyer-summary';
 import { buildProductTotals, type ProductTotals } from './product-totals';
 import { partitionBySegment, type ReportSegment } from './segment';
@@ -104,6 +105,8 @@ export type ReportRow = {
 };
 
 export type WeeklyReport = {
+  /** Peso product totals for the separate Kahati Cart export. */
+  kahatiCart?: KahatiCartRow[];
   weekNo: number;
   rangeLabel: string; // "Mon May 25 – Sun May 31"
   orderCount: number;
@@ -202,6 +205,7 @@ export function buildWeeklyReport(mondayYmd: string, orders: ReportOrderInput[])
     totals,
     rows,
     productTotals: buildProductTotals(orders),
+    kahatiCart: buildKahatiCart(orders),
     buyerSummary: buildBuyerSummary(orders),
     kahatiStage: splitKahatiStageVials(orders),
   };
