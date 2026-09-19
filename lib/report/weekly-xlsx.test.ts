@@ -539,7 +539,7 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
 
     expect(pivotRowsOf(sheet)).toEqual([
       [...SUMMARY_HEADERS],
-      ['Abba Gaspar', 2, 5950],
+      ['Abba Gaspar', 2, 5950, 'BBG-0001'],
       ['RJ HB', 1, 2500],
       ['RJ HEALER', 1, 3450],
       ['Grand Total', 2, 5950],
@@ -557,11 +557,25 @@ describe('buildWeeklyWorkbook — SUMMARY sheet', () => {
 
     expect(pivotRowsOf(sheet)).toEqual([
       [...SUMMARY_HEADERS],
-      ['Venice Gaa', 1, 5000],
+      ['Venice Gaa', 1, 5000, 'BBG-0001'],
       ['TR30', 1, 4850],
       ['Packing fee', 0, 150],
       ['Grand Total', 1, 5000],
     ]);
+  });
+
+  // Packing day ends at the order sheet: the buyer row has to say which GB
+  // numbers to pull, and a buyer who checked out twice has two of them.
+  it("lists every GB number behind a buyer on that buyer's row", async () => {
+    const { sheet } = await summarySheet([
+      order({ orderNo: 'GB-2601', shipName: 'Elle Santos', packingFeePhp: '0' }),
+      order({ orderNo: 'GB-2559', shipName: 'Elle Santos', packingFeePhp: '0' }),
+      order({ orderNo: 'GB-2600', shipName: 'Elle Santos', packingFeePhp: '0', status: 'cancelled' }),
+    ]);
+
+    const gbCol = SUMMARY_HEADERS.indexOf('GB No.') + 1;
+    expect(sheet.getRow(2).getCell(1).value).toBe('Elle Santos');
+    expect(sheet.getRow(2).getCell(gbCol).value).toBe('GB-2559, GB-2601');
   });
 
   it('writes money and quantity as numbers with a format, not as text', async () => {

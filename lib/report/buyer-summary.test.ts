@@ -22,6 +22,7 @@ describe('buildBuyerSummary', () => {
 
     expect(summary.groups).toEqual([{
       buyer: 'Abba Gaspar',
+      orderNos: ['GB-2559'],
       qty: 2,
       amountPhp: 5950,
       lines: [
@@ -42,6 +43,7 @@ describe('buildBuyerSummary', () => {
     ]);
 
     expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0].orderNos).toEqual(['GB-1', 'GB-2']);
     expect(summary.groups[0].lines).toEqual([
       { label: 'BAC3', qty: 3, amountPhp: 1425 },
       { label: 'TR30', qty: 1, amountPhp: 4850 },

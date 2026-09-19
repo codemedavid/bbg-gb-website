@@ -49,8 +49,10 @@ const GROUP_BUY_PRODUCT_COLUMN_WIDTHS = [11.75, 26.75, 10.875, 10.375, 9, 0, 0];
 // ("Row Labels", "Sum of Quantity", "Sum of Amount") so the sheet reads as the
 // one they know rather than as a new report to learn.
 export const SUMMARY_SHEET = 'SUMMARY';
-export const SUMMARY_HEADERS = ['Row Labels', 'Sum of Quantity', 'Sum of Amount'] as const;
-const SUMMARY_COLUMN_WIDTHS = [34, 17, 17];
+// GB No. sits after the pivot's own three columns so formulas pointed at A-C
+// keep working; it is filled on the buyer row only.
+export const SUMMARY_HEADERS = ['Row Labels', 'Sum of Quantity', 'Sum of Amount', 'GB No.'] as const;
+const SUMMARY_COLUMN_WIDTHS = [34, 17, 17, 24];
 const GRAND_TOTAL_LABEL = 'Grand Total';
 
 const MONEY_FORMAT = '#,##0.00';
@@ -257,8 +259,9 @@ function addBuyerSummarySheet(workbook: Workbook, report: WeeklyReport): void {
   headerRow.alignment = { vertical: 'middle', wrapText: true };
 
   for (const group of report.buyerSummary.groups) {
-    const buyerRow = sheet.addRow([group.buyer, group.qty, group.amountPhp]);
+    const buyerRow = sheet.addRow([group.buyer, group.qty, group.amountPhp, group.orderNos.join(', ')]);
     buyerRow.font = { bold: true };
+    buyerRow.getCell(SUMMARY_HEADERS.indexOf('GB No.') + 1).alignment = { wrapText: true, vertical: 'top' };
 
     for (const line of group.lines) {
       // Indented rather than moved into a second column: a pivot's row labels

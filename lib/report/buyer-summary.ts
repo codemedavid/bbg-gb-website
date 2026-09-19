@@ -28,6 +28,8 @@ export type BuyerSummaryLine = {
 
 export type BuyerSummaryGroup = {
   buyer: string;
+  /** Every order number behind this buyer's lines, so packing can pull them. */
+  orderNos: string[];
   qty: number;
   amountPhp: number;
   lines: BuyerSummaryLine[];
@@ -43,6 +45,7 @@ export const PACKING_FEE_LABEL = 'Packing fee';
 type Accumulator = {
   buyer: string;
   packingFeePhp: number;
+  orderNos: Set<string>;
   /** Keyed by label so a product repeated across orders lands on one line. */
   lines: Map<string, BuyerSummaryLine>;
 };
@@ -56,8 +59,9 @@ export function buildBuyerSummary(orders: readonly ReportOrderInput[]): BuyerSum
     if (order.status === 'cancelled') continue;
 
     const buyer = order.shipName;
-    const acc = byBuyer.get(buyer) ?? { buyer, packingFeePhp: 0, lines: new Map() };
+    const acc = byBuyer.get(buyer) ?? { buyer, packingFeePhp: 0, orderNos: new Set(), lines: new Map() };
     acc.packingFeePhp += num(order.packingFeePhp);
+    acc.orderNos.add(order.orderNo);
 
     for (const item of order.items) {
       // The sheet is read against the price list, so the code leads where there
@@ -88,6 +92,7 @@ export function buildBuyerSummary(orders: readonly ReportOrderInput[]): BuyerSum
 
       return {
         buyer: acc.buyer,
+        orderNos: [...acc.orderNos].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
         qty: lines.reduce((sum, l) => sum + l.qty, 0),
         amountPhp: round2(lines.reduce((sum, l) => sum + l.amountPhp, 0)),
         lines,
