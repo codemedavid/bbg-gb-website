@@ -34,7 +34,7 @@ export default function CheckoutPage() {
   const paidThisCycle = !!kahatiHeld?.paidThisCycle;
   // A hatian pays a deposit now; the goods are settled once its kit completes.
   const {
-    hasKahati, dueNow, downpayment, downpaymentPolicy, downpaymentIsDeposit, downpaymentPolicyLoaded,
+    hasKahati, dueNow, dueOnOtherModes, downpayment, downpaymentPolicy, downpaymentIsDeposit, downpaymentPolicyLoaded,
     downpaymentPolicyFailed, retryDownpaymentPolicy,
   } = useOrderTotals(paidThisCycle);
 
@@ -414,7 +414,9 @@ export default function CheckoutPage() {
             selectedId={methodId}
             onSelect={setMethodId}
             amount={fullAmountDue}
-            amountLabel={hasKahati && !collectingDownpayment ? 'Packing fee due now' : 'Amount to send'}
+            // "Packing fee" only when the fee is the whole amount; beside any
+            // on-hand or Group Buy line the figure is mostly goods.
+            amountLabel={hasKahati && !collectingDownpayment && dueOnOtherModes <= 0 ? 'Packing fee due now' : 'Amount to send'}
             emptyNotice="No payment methods are available right now. Please contact us to complete your payment."
           />
         </div>

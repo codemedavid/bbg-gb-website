@@ -24,6 +24,7 @@ import { channelRefusal, isChannelEnabled } from '@/lib/product-channels';
 import { isJoinableKahatiStatus } from '@/lib/pasalo';
 import { canCommit } from '@/lib/group-buy';
 import { resolveOpenBatch } from '@/lib/moq-batch-server';
+import { resolveJoinableKahati } from '@/lib/kahati-server';
 
 type Db = Parameters<typeof resolveOpenBatch>[0];
 
@@ -82,8 +83,11 @@ const checkCampaign: Check = async (db, refId) => {
 };
 
 const checkKahati: Check = async (db, refId) => {
-  const [g] = await db.select().from(groupBuys).where(eq(groupBuys.id, refId));
-  if (!g) return { name: '', message: `Group buy not found: ${refId}` };
+  const [held] = await db.select().from(groupBuys).where(eq(groupBuys.id, refId));
+  if (!held) return { name: '', message: `Group buy not found: ${refId}` };
+  // A counter that filled and sealed rolls into its product's open successor,
+  // so it is not dead. Same rule as the route.
+  const g = await resolveJoinableKahati(db, held);
   if (!isJoinableKahatiStatus(g.status)) {
     return { name: g.name, message: `Kahati "${g.name}" is already closed: ${refId}` };
   }

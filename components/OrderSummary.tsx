@@ -110,13 +110,12 @@ export function useOrderTotals(paidThisCycle = false) {
 export function OrderSummary({ paidThisCycle = false }: { paidThisCycle?: boolean } = {}) {
   const { subtotal, packingFee, total, hasKahati, dueNow, dueOnOtherModes, balance, cycleFeeWaived, downpaymentIsDeposit } =
     useOrderTotals(paidThisCycle);
-  // "Downpayment due now" names the whole figure, so it may only be used when
-  // the whole figure IS the deposit. On a mixed cart `dueNow` is the deposit
-  // PLUS the full price of every on-hand line, and calling that a downpayment
-  // invites the customer to read the lot as refundable.
-  const dueNowLabel = dueNow <= 0 ? 'Due now'
+  // "Downpayment due now" and "Packing fee due now" each name the whole figure,
+  // so either may only be used when the whole figure IS that. On a mixed cart
+  // `dueNow` is the hatian's share PLUS the full price of every other line, and
+  // naming the lot after the smaller part misstates what the money is for.
+  const dueNowLabel = dueNow <= 0 || dueOnOtherModes > 0 ? 'Due now'
     : !downpaymentIsDeposit ? 'Packing fee due now'
-    : dueOnOtherModes > 0 ? 'Due now'
     : 'Downpayment due now';
   const Row = ({ label, value }: { label: string; value: number }) => (
     <div className="mb-1.5 flex justify-between text-[13px] text-ink-body"><span>{label}</span><span>{php(value)}</span></div>

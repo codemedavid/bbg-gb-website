@@ -11,7 +11,7 @@ import {
 } from '@/lib/pricing';
 import { isKahatiFull } from '@/lib/kahati';
 import { isChannelEnabled, channelRefusal } from '@/lib/product-channels';
-import { closeFullKahati, sealFullPasalo } from '@/lib/kahati-server';
+import { closeFullKahati, resolveJoinableKahati, sealFullPasalo } from '@/lib/kahati-server';
 import { isJoinableKahatiStatus, isPasaloStage } from '@/lib/pasalo';
 import { listCyclePayments } from '@/lib/packing-cycle-server';
 import { chargeCycleFeeOnce, hasPaidPackingFeeThisCycle } from '@/lib/packing-cycle';
@@ -417,8 +417,12 @@ export const POST = handler(async (req: Request) => {
           });
         }
       } else {
-        const [g] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
-        if (!g) throw new ApiError(400, `Group buy not found: ${it.refId}`);
+        const [held] = await tx.select().from(groupBuys).where(eq(groupBuys.id, it.refId));
+        if (!held) throw new ApiError(400, `Group buy not found: ${it.refId}`);
+        // A cart saved before its counter filled still names the sealed one.
+        // The line follows the product to the successor that opened in its
+        // place, rather than being refused and dropped from a paid-for cart.
+        const g = await resolveJoinableKahati(tx, held);
         // Both selling stages take vials. A Pasalo counter is a hatian that
         // fell short and is being given a second window rather than cancelled,
         // so it buys through this exact path — same guarded claim, same 10-vial

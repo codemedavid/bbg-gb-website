@@ -279,6 +279,28 @@ export async function closeFullKahati(db: Db, g: GroupBuyRow): Promise<KahatiRol
   return sealKahatiAndOpenSuccessor(db, g);
 }
 
+/**
+ * The counter a cart line pointing at `g` should actually buy from.
+ *
+ * A sealed ('closed') counter is never the end of its product on the board:
+ * sealKahatiAndOpenSuccessor opens a sibling in the same step. A cart saved
+ * before the seal still holds the old id, so the line follows the product to
+ * its one open counter — the same way a filled Group Buy batch rolls into its
+ * series' successor (resolveOpenBatch). Refusing it instead dropped the line
+ * from a cart whose proof had already paid for it (KH-3075, 2026-09-25).
+ *
+ * Only 'closed' rolls. A cancelled counter is a reseed or an admin's call, not
+ * a rollover, and every other status is returned untouched for the caller to
+ * judge. No open sibling (or no product link) also returns `g` unchanged.
+ */
+export async function resolveJoinableKahati(db: Db, g: GroupBuyRow): Promise<GroupBuyRow> {
+  if (g.status !== 'closed' || !g.productId) return g;
+  const [successor] = await db.select().from(groupBuys)
+    .where(and(eq(groupBuys.productId, g.productId), eq(groupBuys.status, 'open')))
+    .limit(1);
+  return successor ?? g;
+}
+
 // The seal-and-succeed itself, with no opinion on WHY the counter is ending. A
 // fill reaches it through closeFullKahati; an admin ending a trading cycle
 // reaches it through rollOpenKahatis. Sealing before inserting is not incidental
