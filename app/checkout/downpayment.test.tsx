@@ -269,3 +269,16 @@ describe('a kahati checkout under the default packing-fee rule', () => {
     expect(screen.getAllByText('Packing fee due now').length).toBeGreaterThan(0);
   });
 });
+
+describe('a mixed cart under the default packing-fee rule', () => {
+  it('never labels the full-price amount a packing fee', () => {
+    // Reported 2026-09-25: "Packing fee due now ₱14,851" on a cart where
+    // ₱14,551 of that was on-hand goods.
+    seedKahatiCart();
+    addOnHandLine();
+
+    render(<CheckoutPage />, { wrapper });
+
+    expect(screen.queryByText('Packing fee due now')).not.toBeInTheDocument();
+  });
+});

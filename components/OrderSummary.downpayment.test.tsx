@@ -124,3 +124,31 @@ describe('the "due now" label on a mixed cart', () => {
     expect(screen.getByText('Downpayment due now')).toBeInTheDocument();
   });
 });
+
+// Reported 2026-09-25: a hatian + on-hand cart under the packing-fee rule showed
+// "Packing fee due now ₱14,851" — ₱14,551 of goods and one ₱300 fee, all
+// called a packing fee.
+describe('the "due now" label under the default packing-fee rule', () => {
+  const onHandLine = (): CartItem => ({
+    key: 'product:p1:piece', kind: 'product', refId: 'p1', name: 'Test Peptide',
+    spec: '10mg', unitPricePhp: 1000, qty: 2, minQty: 1, unit: 'piece', stock: 100,
+  });
+
+  it('does not call goods a packing fee on a mixed cart', () => {
+    useCart.getState().add(kahatiLine());
+    useCart.getState().add(onHandLine());
+
+    render(<OrderSummary />);
+
+    expect(screen.queryByText('Packing fee due now')).toBeNull();
+    expect(screen.getByText('Due now')).toBeInTheDocument();
+  });
+
+  it('still calls it the packing fee when the fee is all there is', () => {
+    useCart.getState().add(kahatiLine());
+
+    render(<OrderSummary />);
+
+    expect(screen.getByText('Packing fee due now')).toBeInTheDocument();
+  });
+});

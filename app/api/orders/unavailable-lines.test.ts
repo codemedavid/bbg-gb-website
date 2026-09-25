@@ -172,3 +172,50 @@ describe('POST /api/orders — lines that are still sellable', () => {
     expect(body.data?.unavailable ?? []).toEqual([]);
   });
 });
+
+// Reported 2026-09-25 (KH-3075 / KH-3076): T30 SF sat in the cart on a counter
+// that had since filled and sealed, with its successor already open. Checkout
+// dropped the line as "no longer available", the customer re-placed without
+// it, and the proof they had already sent covered vials no order held.
+describe('POST /api/orders — a cart line on a kahati counter that has since filled', () => {
+  async function filledWithSuccessor() {
+    const product = await makeProduct({ isKahati: true });
+    const filled = await makeGroupBuy({
+      productId: product.id, status: 'closed', claimedSlots: 10, totalSlots: 10, minVials: 1,
+    });
+    const successor = await makeGroupBuy({ productId: product.id, status: 'open', minVials: 1 });
+    return { filled, successor };
+  }
+
+  it('places the line on the open successor instead of refusing it', async () => {
+    await signIn();
+    const onHand = await makeProduct();
+    const { filled, successor } = await filledWithSuccessor();
+
+    const res = await placeOrder(checkoutRequest([
+      { kind: 'group_buy', refId: filled.id, qty: 2 },
+      { kind: 'product', refId: onHand.id, qty: 1, unit: 'piece' },
+    ]));
+
+    expect(res.status).toBe(201);
+    const { getDb, orderItems, groupBuys } = await import('@/lib/db');
+    const { eq } = await import('drizzle-orm');
+    const db = await getDb();
+    const kahatiLines = (await db.select().from(orderItems)).filter((l) => l.kind === 'group_buy');
+    expect(kahatiLines).toHaveLength(1);
+    expect(kahatiLines[0]).toMatchObject({ groupBuyId: successor.id, qty: 2 });
+    const [after] = await db.select().from(groupBuys).where(eq(groupBuys.id, successor.id));
+    expect(after.claimedSlots).toBe(2);
+  });
+
+  it('does not list it as unavailable', async () => {
+    await signIn();
+    const { filled } = await filledWithSuccessor();
+
+    const res = await placeOrder(checkoutRequest([{ kind: 'group_buy', refId: filled.id, qty: 1 }]));
+    const body = await res.json() as Body;
+
+    expect(body.data?.unavailable ?? []).toEqual([]);
+    expect(res.status).toBe(201);
+  });
+});

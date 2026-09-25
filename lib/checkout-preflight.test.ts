@@ -133,3 +133,31 @@ describe('kahati counters', () => {
     expect(await check([{ kind: 'group_buy', refId: g.id }])).toEqual([]);
   });
 });
+
+// Reported 2026-09-25 (KH-3075): the cart held T30 SF on a counter that had
+// filled 10/10 and sealed. Its successor for the same product was open the
+// whole time, yet the line was flagged dead, dropped from the cart, and the
+// customer placed the rest against a proof that had paid for it.
+describe('kahati counters that filled and rolled over', () => {
+  it('passes a sealed counter whose product has an open successor — the vials roll forward', async () => {
+    const p = await makeProduct({ isKahati: true });
+    const filled = await makeGroupBuy({ productId: p.id, status: 'closed', claimedSlots: 10, totalSlots: 10 });
+    await makeGroupBuy({ productId: p.id, status: 'open' });
+    expect(await check([{ kind: 'group_buy', refId: filled.id }])).toEqual([]);
+  });
+
+  it('still flags a sealed counter whose product has no open successor', async () => {
+    const p = await makeProduct({ isKahati: true });
+    const filled = await makeGroupBuy({ productId: p.id, status: 'closed', claimedSlots: 10, totalSlots: 10 });
+    const [dead] = await check([{ kind: 'group_buy', refId: filled.id }]);
+    expect(droppedByMessage(dead.message)).toBe(filled.id);
+  });
+
+  it('still flags a cancelled counter even when its product has an open one — a reseed is not a rollover', async () => {
+    const p = await makeProduct({ isKahati: true });
+    const cancelled = await makeGroupBuy({ productId: p.id, status: 'cancelled' });
+    await makeGroupBuy({ productId: p.id, status: 'open' });
+    const [dead] = await check([{ kind: 'group_buy', refId: cancelled.id }]);
+    expect(droppedByMessage(dead.message)).toBe(cancelled.id);
+  });
+});
